@@ -1,0 +1,20 @@
+/* ============ git log (history / timeline slides) ============ */
+.commit{display:flex;align-items:baseline;gap:24px;line-height:1.1;}
+.commit .graph{flex:0 0 22px;text-align:center;font-size:.8em;}
+.commit .hash{flex:0 0 132px;font-weight:var(--fw-semibold);}
+.commit .ref{flex:0 0 auto;color:var(--text-faint);}
+.commit .cyear{flex:0 0 96px;color:var(--text-dim);font-weight:var(--fw-bold);}
+.commit .cmsg{flex:1 1 auto;color:var(--text-muted);}
+.rail{height:30px;margin-left:10px;border-left:var(--bw-pane) solid var(--border-pane);}
+/* ============ htop meters (metrics slides) ============ */
+.metric{display:flex;flex-direction:column;gap:11px;}
+.m-row{display:flex;justify-content:space-between;gap:18px;font-size:var(--fs-mono);color:var(--text-muted);white-space:nowrap;}
+.m-pct{color:var(--text-strong);font-weight:var(--fw-bold);}
+.meter{height:26px;background:var(--surface-bar);border-radius:var(--r-chip);overflow:hidden;box-shadow:var(--shadow-inset-track);}
+.meter .fill{height:100%;width:var(--val,50%);background:linear-gradient(90deg,var(--g1,var(--accent-d)),var(--g2,var(--accent)));}
+.metric.rainbowfill .meter .fill{background:linear-gradient(90deg,var(--red),var(--orange),var(--yellow),var(--green),var(--aqua),var(--blue),var(--purple),var(--red));background-size:200% 100%;animation:rainbow-pan 16s linear infinite;}
+@media (prefers-reduced-motion:no-preference){
+  .meter .fill.anim{animation:grow var(--dur-meter) var(--ease-out) both;animation-delay:var(--d,.5s);}
+  .metric.rainbowfill .meter .fill.anim{animation:grow var(--dur-meter) var(--ease-out) both,rainbow-pan 16s linear infinite;animation-delay:var(--d,.5s),0s;}
+}
+@keyframes grow{from{width:0;}}

@@ -1,0 +1,30 @@
+/* gruvbox dark medium. Base palette first, then semantic aliases.
+   --accent / --accent-d are re-pointed per slide or per section, inline. */
+:root{
+  /* ---- base palette · backgrounds ---- */
+  --bg-h:#1d2021; --bg0:#282828; --bg1:#3c3836; --bg2:#504945;
+  --bg3:#665c54; --bg4:#7c6f64; --gray:#928374;
+  /* ---- base palette · foregrounds ---- */
+  --fg0:#fbf1c7; --fg1:#ebdbb2; --fg2:#d5c4a1; --fg3:#bdae93; --fg4:#a89984;
+  /* ---- base palette · bright hues ---- */
+  --red:#fb4934; --green:#b8bb26; --yellow:#fabd2d; --blue:#83a598;
+  --purple:#d3869b; --aqua:#8ec07c; --orange:#fe8019;
+  /* ---- base palette · dim hues (meter gradients, powerline shadows) ---- */
+  --red-d:#cc241d; --green-d:#98971a; --yellow-d:#d79921; --blue-d:#458588;
+  --purple-d:#b16286; --aqua-d:#689d6a; --orange-d:#d65d0e;
+
+  /* ---- accent · one hue per section, set inline on the slide ---- */
+  --accent:var(--aqua); --accent-d:var(--aqua-d);
+
+  /* ---- semantic aliases ---- */
+  --surface-deck:#0f1011;      /* space around the slide */
+  --surface-slide:var(--bg0);  /* slide field */
+  --surface-pane:var(--bg-h);  /* inside a pane — darker than the slide */
+  --surface-bar:var(--bg1);    /* tmux + pane title bars */
+  --surface-raised:var(--bg2); /* active tmux window, meter track edge */
+  --text-strong:var(--fg0); --text-body:var(--fg1); --text-muted:var(--fg2);
+  --text-dim:var(--fg3); --text-faint:var(--fg4); --text-comment:var(--gray);
+  --border-pane:var(--bg2); --border-hard:var(--bg-h); --border-dashed:var(--bg3);
+  --status-ok:var(--green); --status-warn:var(--yellow); --status-bad:var(--red);
+  --diff-add:var(--green); --diff-del:var(--red); --diff-mod:var(--yellow);
+}

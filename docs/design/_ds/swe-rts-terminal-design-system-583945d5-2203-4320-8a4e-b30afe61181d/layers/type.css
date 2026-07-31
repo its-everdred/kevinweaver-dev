@@ -1,0 +1,25 @@
+/* ============ rainbow / gradient type ============
+   Seamless loop: gradient runs red->...->red (one full period), background-size
+   is 200%, keyframe shifts exactly 200% — end frame is pixel-identical to start.
+   ONE rainbow element per slide, on the phrase that carries the slide. */
+.rainbow{background:linear-gradient(100deg,var(--red),var(--orange),var(--yellow),var(--green),var(--aqua),var(--blue),var(--purple),var(--red));background-size:200% 100%;background-position:0% 50%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:transparent;animation:rainbow-pan var(--dur-rainbow) linear infinite;}
+@keyframes rainbow-pan{to{background-position:200% 50%;}}
+/* gradient-highlight "marker" behind a word — dark text on top */
+.hl{position:relative;color:var(--bg-h);font-weight:var(--fw-bold);padding:.02em .22em;border-radius:var(--r-chip);white-space:nowrap;background:linear-gradient(100deg,var(--orange),var(--yellow),var(--green),var(--aqua),var(--blue),var(--purple),var(--red),var(--orange));background-size:200% 100%;background-position:0% 50%;animation:rainbow-pan 16s linear infinite;}
+/* accent-tinted highlight (single hue, calmer) */
+.mark{color:var(--bg-h);font-weight:var(--fw-bold);padding:.02em .22em;border-radius:var(--r-chip);background:var(--accent);}
+/* underline-style gradient highlight */
+.uhl{color:var(--fg0);font-weight:var(--fw-semibold);background:linear-gradient(100deg,var(--red),var(--orange),var(--yellow),var(--green),var(--aqua),var(--blue),var(--purple),var(--red));background-size:200% .16em;background-repeat:no-repeat;background-position:0% 100%;padding-bottom:.06em;animation:uhl-pan 16s linear infinite;}
+@keyframes uhl-pan{to{background-position:200% 100%;}}
+.accent{color:var(--accent);}
+.dim{color:var(--text-faint);}
+.gray{color:var(--text-comment);}
+.kicker{font-size:var(--fs-small);color:var(--accent);font-weight:var(--fw-semibold);letter-spacing:var(--ls-caps);text-transform:uppercase;display:flex;gap:14px;align-items:center;}
+.kicker::before{content:"\25B8";opacity:.7;}
+.prompt{color:var(--accent);font-weight:var(--fw-bold);}
+.cursor{display:inline-block;width:.52em;height:.78em;background:var(--accent);vertical-align:-0.04em;margin-left:.1em;animation:blink var(--dur-blink) steps(1) infinite;}
+@keyframes blink{50%{opacity:0;}}
+/* vim gutter line-number cells */
+.ln-cell{display:flex;align-items:center;justify-content:flex-end;font-size:var(--fs-lead);line-height:1;color:var(--bg4);font-weight:var(--fw-medium);font-variant-numeric:tabular-nums;user-select:none;}
+.ln-cell.cur{color:var(--accent);font-weight:var(--fw-black);}
+.ln-cell.tilde{color:var(--bg3);font-size:34px;}
