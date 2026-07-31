@@ -1,0 +1,83 @@
+tracker:
+  kind: github
+  base_branch: main
+  active_states:
+    - todo
+    - in-progress
+    - rework
+    - merging
+  terminal_states:
+    - done
+    - cancelled
+    - canceled
+  github:
+    repo: its-everdred/kevinweaver-dev
+    label_prefix: agent
+    # its-applekid is NOT currently a collaborator on this repo (verified:
+    # GET /repos/its-everdred/kevinweaver-dev/collaborators/its-applekid -> 404).
+    # Until it is granted push access, agents authenticate as the repo owner.
+    bot_account: its-everdred
+    planning_root_limit: 100
+    planning_page_budget: 4
+    planning_call_budget: 4
+polling:
+  interval_seconds: 30
+max_vertical_panes: 3
+pre_warmed_sessions: 2
+max_log_history_mb: 500
+server:
+  # Bound to the tailnet address (host `orangekid`) so the dashboard is
+  # reachable from any device on the tailnet, not just this machine.
+  host: 100.89.62.105
+  # 4096/4097/4099 belong to the aiur-repo fleet already running as
+  # aiur-everdred-539163312d@127.0.0.1. 4300 was verified free.
+  port: 4300
+workspace:
+  # Deliberately NOT ~/code/aiur-workspaces — that root belongs to the other
+  # running fleet and sharing it would let the two reap each other's worktrees.
+  root: ~/code/kwdev-workspaces
+hooks_file: hooks
+agent:
+  kind: codex
+  # The aiur-repo fleet is configured for up to 32 agents on this 16-core box.
+  # Two fleets at 32 would thrash, so this one is capped well below it.
+  max_concurrent_agents: 8
+  max_concurrent_builds: 3
+  build_start_stagger_seconds: 5
+  max_load_average: 1.5
+  target_load_average: 6.0
+  load_ramp_step: 2
+  load_cooldown_seconds: 20
+  max_turns: 12
+  max_dispatches_per_ticket: 20
+  max_turns_by_complexity:
+    1: 4
+    2: 8
+    3: 12
+  stall_timeout_ms: 3600000
+  # Codex families (luna/terra/sol) rather than pinned versions, so each level
+  # keeps resolving to the newest model in that family. Claude credits are low
+  # (operator, 2026-07-31), so every level routes to codex.
+  routing:
+    1: "codex:luna:low"
+    2: "codex:luna:medium"
+    3: "codex:terra:high"
+    4: "codex:terra:xhigh"
+    5: "codex:sol:max"
+  codex:
+    command: codex app-server
+    approval_policy: never
+    thread_sandbox: workspace-write
+    turn_sandbox_policy:
+      type: workspaceWrite
+      writableRoots:
+        - /home/everdred/code/kwdev-workspaces
+        - /tmp
+      networkAccess: true
+prompt_file: prompt.md
+prewarm:
+  # Build one shared base of main (npm ci) once, then materialize each agent
+  # workspace from it copy-on-write instead of cold-installing per agent.
+  enabled: true
+  base_build_file: prewarm
+  poll_seconds: 0
