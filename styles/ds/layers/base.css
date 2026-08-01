@@ -1,0 +1,21 @@
+*{box-sizing:border-box;}
+deck-stage:not(:defined){visibility:hidden;}
+deck-stage{background:var(--surface-deck);}
+.slide{font-family:var(--mono);background:var(--surface-slide);color:var(--text-body);display:flex;flex-direction:column;overflow:hidden;-webkit-font-smoothing:antialiased;position:relative;}
+/* faint CRT scanline texture — always on, always subtle */
+.slide::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:40;background:var(--scanline);opacity:var(--scanline-opacity);mix-blend-mode:multiply;}
+.slide-body{flex:1 1 auto;position:relative;min-height:0;padding:var(--slide-pad);display:flex;flex-direction:column;}
+.slide-body.image-led{padding:var(--slide-pad-image);}
+/* ambient glow behind hero slides — subtle, cool, never muddy */
+.glow{position:absolute;inset:-25% -10% auto -10%;height:130%;z-index:0;pointer-events:none;filter:blur(var(--glow-blur));opacity:var(--glow-opacity);background:radial-gradient(42% 60% at 22% 32%,var(--aqua) 0,transparent 60%),radial-gradient(46% 58% at 78% 30%,var(--blue) 0,transparent 62%),radial-gradient(40% 55% at 52% 78%,var(--purple) 0,transparent 60%);background-size:200% 200%;animation:glow-drift 26s ease-in-out infinite alternate;}
+@keyframes glow-drift{0%{background-position:0% 0%,50% 100%,100% 0%;}100%{background-position:30% 40%,40% 60%,70% 30%;}}
+a{color:var(--accent);text-decoration:none;border-bottom:1px solid color-mix(in oklab,var(--accent) 45%,transparent);}
+a:hover{color:var(--fg0);border-bottom-color:var(--fg0);}
+
+/* Entrance motion — a JS driver toggles .anim and REMOVES it on animationend,
+   so elements rest at their visible base state (screenshot / PDF / PPTX safe). */
+.reveal{opacity:1;transform:none;}
+@media (prefers-reduced-motion:no-preference){
+  .reveal.anim{animation:fade-up var(--dur-reveal) var(--ease-out) both;animation-delay:var(--d,0s);}
+}
+@keyframes fade-up{from{opacity:0;transform:translateY(22px);}to{opacity:1;transform:none;}}

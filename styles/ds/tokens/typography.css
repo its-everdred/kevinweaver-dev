@@ -1,0 +1,21 @@
+/* One family, one scale. Sizes are authored against the 1920x1080 slide
+   canvas — deck-stage scales the whole slide, so never re-tune per viewport. */
+:root{
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace; /* @kind font */
+  --font-ui:var(--mono); /* @kind font */
+  --fs-stat:240px; --fs-hero:200px; --fs-h1:108px; --fs-h2:72px; --fs-h3:52px;
+  --fs-lead:40px; --fs-body:30px; --fs-mono:28px; --fs-small:24px; --fs-micro:24px;
+  --fw-light:300; /* @kind font */
+  --fw-regular:400; /* @kind font */
+  --fw-medium:500; /* @kind font */
+  --fw-semibold:600; /* @kind font */
+  --fw-bold:700; /* @kind font */
+  --fw-black:800; /* @kind font */
+  --lh-tight:.9; /* @kind font */
+  --lh-heading:1.04; /* @kind font */
+  --lh-body:1.5; /* @kind font */
+  --lh-code:1.6; /* @kind font */
+  --ls-display:-.02em; /* @kind font */
+  --ls-heading:-.01em; /* @kind font */
+  --ls-caps:.16em; /* @kind font */
+}
