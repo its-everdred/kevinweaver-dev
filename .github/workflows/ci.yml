@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Never use `paths-ignore` on a required check — PRs that touch only ignored paths
+# deadlock forever at "Expected — Waiting for status". Skip work inside the jobs instead.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Build
+        run: npm run build
+
+  # Single aggregator so branch protection has exactly one stable required check to
+  # name, regardless of how the matrix above evolves. `if: always()` so it still
+  # reports when an upstream job is skipped or cancelled.
+  ci-ok:
+    name: ci-ok
+    runs-on: ubuntu-latest
+    needs: [verify]
+    if: always()
+    steps:
+      - name: Assert no upstream failure
+        run: |
+          echo "verify=${{ needs.verify.result }}"
+          case "${{ needs.verify.result }}" in
+            success|skipped) echo "ci-ok" ;;
+            *) echo "upstream job failed or was cancelled" >&2; exit 1 ;;
+          esac
