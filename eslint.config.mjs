@@ -23,6 +23,9 @@ const eslintConfig = [
       'docs/**',
       'test-results/**',
       'playwright-report/**',
+      // ESLint 9 flat config does not consult .gitignore, so generated coverage
+      // output would be linted and fail the gate after any local --coverage run.
+      'coverage/**',
     ],
   },
   ...nextCoreWebVitals,
