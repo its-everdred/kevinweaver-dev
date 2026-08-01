@@ -53,7 +53,7 @@ beforeAll(() => {
     'its.applekid@gmail.com',
     '2026-01-03T04:00:00+00:00'
   )
-  commit(work, 'unknown.ts', 'kevin@bluer.com', '2026-01-04T04:00:00+00:00')
+  commit(work, 'unknown.ts', 'kevin@example.com', '2026-01-04T04:00:00+00:00')
   git(fixtureRoot, [
     'clone',
     '--filter=blob:none',
