@@ -3,7 +3,8 @@
 ## Provenance
 
 Vendored on 2026-08-01 from design-system project
-`583945d5-2203-4320-8a4e-b30afe61181d`.
+`583945d5-2203-4320-8a4e-b30afe61181d`. Upstream paths below are relative to
+`docs/design/_ds/swe-rts-terminal-design-system-583945d5-2203-4320-8a4e-b30afe61181d/`.
 
 | Vendored file           | Upstream source         |
 | ----------------------- | ----------------------- |
