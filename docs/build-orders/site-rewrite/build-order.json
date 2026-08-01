@@ -442,7 +442,7 @@
   },
   {
    "id": "DEC-015",
-   "summary": "The phone number 856-723-2521 never enters the repository or the build output. The email decision is deferred to GATE-005.",
+   "summary": "The phone number <redacted-personal-phone> never enters the repository or the build output. The email decision is deferred to GATE-005.",
    "status": "accepted",
    "rationale": "The content track's SIM-swap analysis, confirmed by its verifier. kevinweaver.dev already has five live Namecheap MX records, so an alias is a registrar-panel row rather than a new service. Rejected: obfuscation, which does not survive OCR; publishing the number as-is.",
    "design_evidence_refs": []
@@ -1050,7 +1050,7 @@
     "Create `content/identity.ts`: person-level facts \u2014 name, title, location, timezone, the two actors, the contact link set with visible accessible labels, and the `whoami` / `id` / `finger` block.",
     "Create `content/boot.ts`: the sixteen cold-start log lines as `{token}` templates, the token vocabulary, and a pure `fill()` substitution function that throws on an unresolved token.",
     "Enforce DEC-008 inside `content/`: no contribution, repo-count, day-count or streak figure exists as an integer literal.",
-    "Enforce DEC-015 inside `content/` and the build output: the string `856-723-2521` appears nowhere.",
+    "Enforce DEC-015 inside `content/` and the build output: the string `<redacted-personal-phone>` appears nowhere.",
     "Restrict every string in `content/` to ASCII plus the sixteen non-ASCII codepoints GT-12 measured in the comp."
    ],
    "non_goals": [
@@ -1116,7 +1116,7 @@
    "conflict_exceptions": [],
    "acceptance": {
     "agent_gate": [
-     "`grep -rn '856-723-2521' . --exclude-dir=node_modules --exclude-dir=.git` returns nothing, and after `npm run build` the same grep over `.next/` and `public/` also returns nothing.",
+     "`grep -rn '<redacted-personal-phone>' . --exclude-dir=node_modules --exclude-dir=.git` returns nothing, and after `npm run build` the same grep over `.next/` and `public/` also returns nothing.",
      "No contribution integer literal exists in `content/`: every numeric literal in the five files is a year, a month, an ISO date, a roff column width, or an array index \u2014 verified by reading the output of `grep -rnE '[0-9][0-9,]{2,}' content/` line by line and confirming each hit against the permitted list.",
      "Every employer from the authoritative resume is present in `content/resume.ts`: Optimism, Metropolis, ConsenSys, Stitch Fix, EMS Heroes, Omni Developers and Rowan University, newest first, with the start/end months in the table above; and `grep -ric 'ethereum foundation' content/` returns 0.",
      "Every `hash` in `content/career-log.ts` matches `^[0-9a-f]{7}$`, all are unique, and no two share a two-character prefix; each equals `sha1(<org>:<startMonth>).slice(0,7)` for its entity, re-checked with `printf '%s' \"Optimism:2025-05\" | sha1sum | cut -c1-7`.",
@@ -1127,7 +1127,7 @@
     ],
     "at_merge_gate": [
      "`ci-ok` is green on the exact PR head, i.e. `npm ci && npm run typegen && npm run typecheck && npm run lint && npm run build` passes on Node 24 in the KW-001 workflow.",
-     "The CI build artifact contains no occurrence of `856-723-2521` and no occurrence of the personal address `kevinweaver2@gmail.com` unless GATE-005 (b) explicitly selected it.",
+     "The CI build artifact contains no occurrence of `<redacted-personal-phone>` and no occurrence of the personal address `kevinweaver2@gmail.com` unless GATE-005 (b) explicitly selected it.",
      "No change to `package.json` or `package-lock.json` (DEC-003 freezes both after KW-001)."
     ],
     "human_or_e2e": []
@@ -2226,7 +2226,7 @@
      "`ci-ok` is green on the exact PR head, i.e. KW-001's `.github/workflows/ci.yml` ran `typegen`, `typecheck`, `lint` and `build` on Node 24.",
      "The PR diff touches no file owned by a sibling: none of `app/globals.css`, `styles/**`, `content/**`, `components/ds/**`, `app/page.tsx`, `app/layout.tsx`, `app/regions/_contract.ts`, any other `app/regions/*.tsx`, `package.json` or `package-lock.json` (DEC-003, DEC-005).",
      "`git diff --stat origin/main...HEAD -- package.json package-lock.json` is empty \u2014 no dependency was added for a media query, a pager or an icon.",
-     "After a production build, the privacy scrub still holds: `grep -rn '856-723-2521' .next public` returns nothing (DEC-015).",
+     "After a production build, the privacy scrub still holds: `grep -rn '<redacted-personal-phone>' .next public` returns nothing (DEC-015).",
      "Rebasing onto current `main` produces no conflict outside `app/regions/ManPage.tsx`."
     ],
     "human_or_e2e": []
@@ -3514,7 +3514,7 @@
     "Add `app/resume.txt/route.ts`: the man page, the eight-row career log and the identity block rendered as 80-column plain text generated from `content/`, served as `text/plain; charset=utf-8`.",
     "Add `app/kevinweaver.1/route.ts`: the same man page emitted as real roff `man(7)` source, served as `text/troff; charset=utf-8`, so `curl -sL kevinweaver.dev/kevinweaver.1 | man -l -` renders.",
     "Add one `<noscript>` element to `app/layout.tsx` that names the two text URLs and the scripting requirement of the instrument pane, and duplicates no career or man-page text.",
-    "Prove, over the built output, that the phone number `856-723-2521` appears in none of the three new routes and in no metadata value."
+    "Prove, over the built output, that the phone number `<redacted-personal-phone>` appears in none of the three new routes and in no metadata value."
    ],
    "non_goals": [
     "The final composition of `app/page.tsx`. KW-032 owns it.",
@@ -3608,7 +3608,7 @@
      "The served head is complete: `curl -s http://localhost:3000/ > /tmp/home.html`, then each of `grep -c '<html lang=\"en\"'`, `grep -c 'rel=\"canonical\"'`, `grep -c 'property=\"og:image\"'`, `grep -c 'name=\"twitter:card\" content=\"summary_large_image\"'`, `grep -c 'rel=\"alternate\" type=\"text/plain\"'` and `grep -c 'rel=\"icon\"'` returns exactly `1`.",
      "`grep -c 'property=\"og:image\"' /tmp/home.html` returns `1` and not `2` \u2014 the file-convention tag is not duplicated by a hand-written `openGraph.images`.",
      "The `<noscript>` contains no career text: `grep -A5 '<noscript>' /tmp/home.html | grep -cE 'Optimism|Metropolis|ConsenSys|Stitch Fix'` returns `0`.",
-     "Privacy (DEC-015): `curl -s http://localhost:3000/resume.txt http://localhost:3000/kevinweaver.1 http://localhost:3000/ | grep -c '856-723-2521'` returns `0`, and `grep -rc 'tel:' /tmp/home.html` returns `0`.",
+     "Privacy (DEC-015): `curl -s http://localhost:3000/resume.txt http://localhost:3000/kevinweaver.1 http://localhost:3000/ | grep -c '<redacted-personal-phone>'` returns `0`, and `grep -rc 'tel:' /tmp/home.html` returns `0`.",
      "`git diff --name-only origin/main...HEAD` lists exactly `app/layout.tsx`, `app/opengraph-image.tsx`, `app/kevinweaver.1/route.ts`, `app/resume.txt/route.ts` and `public/og.png`.",
      "`git diff origin/main...HEAD -- app/layout.tsx` touches only the `metadata` export and adds exactly one `<noscript>` element; the font loader, the `viewport` export, the `<html>` `className` and every other JSX node are unchanged."
     ],

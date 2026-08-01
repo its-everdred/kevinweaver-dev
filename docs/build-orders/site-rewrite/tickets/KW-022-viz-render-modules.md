@@ -602,7 +602,7 @@ None; KW-032 owns feature-level operator evidence.
 - No secrets, no network, no filesystem: this directory has no I/O of any kind.
 - The private-repo cluster is synthesised from a **count** (`restrictedContributionsCount`), never from obscured real data — a 67-month sweep requesting `repository{nameWithOwner isPrivate}` on all four contribution connections leaked **zero** private repository names even as owner with a repo-scoped token. There is nothing to de-blur.
 - `RenderMeta.fileLabel` and `RepoMeta.short` must already be masked for private repositories (`••••••/•••••••`). This directory must not receive a real private path and must not mask one itself — masking here would mean the real string had already reached the client bundle.
-- DEC-015: the phone number `856-723-2521` must not appear in this directory, in code, in a comment, or in a sprite palette.
+- DEC-015: the phone number `<redacted-personal-phone>` must not appear in this directory, in code, in a comment, or in a sprite palette.
 
 **Migration.** None: `lib/viz/render/` does not exist at the researched commit, so nothing is replaced and no data moves.
 

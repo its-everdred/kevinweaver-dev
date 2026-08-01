@@ -434,7 +434,7 @@ None; KW-032 owns feature-level operator evidence.
 
 **Failure.** The shell renders no data and performs no I/O, so it has no runtime failure mode of its own. The two build-time failure modes are both structural: a surviving `pages/` route colliding with `app/page.tsx`, and a stub importing a module that a sibling ticket has not merged yet. Both are covered by the agent gate. `BootOverlay` returning `null` is deliberate — a stub that painted the comp's fixed full-cover layer would black out every screenshot taken by every parallel agent in waves 3–5.
 
-**Security.** No user input, no secrets, no network calls, no `dangerouslySetInnerHTML` anywhere in the shell — and none is ever permitted in it. Under DEC-015 the phone number `856-723-2521` must not appear in the repository or the build output; this ticket ships no personal data at all, so the constraint is satisfied trivially and must stay that way when the `<h1>` is later swapped for `content/identity.ts`.
+**Security.** No user input, no secrets, no network calls, no `dangerouslySetInnerHTML` anywhere in the shell — and none is ever permitted in it. Under DEC-015 the phone number `<redacted-personal-phone>` must not appear in the repository or the build output; this ticket ships no personal data at all, so the constraint is satisfied trivially and must stay that way when the `<h1>` is later swapped for `content/identity.ts`.
 
 **Migration.** This is the Pages-Router-to-App-Router cutover's second half. KW-001 deletes `pages/**`; this ticket assumes that deletion has landed and asserts it. There is no data migration, no persisted state and no URL change: the site has exactly one route, `/`, before and after.
 
