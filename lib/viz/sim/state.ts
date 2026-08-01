@@ -67,7 +67,6 @@ export function createSimState(input: SimInput, seed: number): SimState {
   resetSimState(state, seed);
   return state;
 }
-
 /**
  * @description Restores mutable simulation channels to their seeded initial values.
  * @param state Simulation state to reset without reallocating typed arrays.
@@ -128,7 +127,6 @@ export function digestSimState(state: SimState): SimStateDigest {
     ghostRepos,
   };
 }
-
 function buildDeaths(input: SimInput): Int32Array {
   const death = new Int32Array(input.entityCount);
   const lastDay = input.dayCount - 1;
@@ -185,7 +183,9 @@ function validateEntity(input: SimInput, id: number): void {
   const kind = valueAt(input.kind, id);
   const birth = valueAt(input.birthDay, id);
   const lastTouch = valueAt(input.lastTouchDay, id);
-  if (kind !== ENTITY_REPO && kind !== ENTITY_FILE) throw new RangeError(`invalid entity kind at ${id}`);
+  const repoOf = valueAt(input.repoOf, id);
+  if (id < input.repoCount && (kind !== ENTITY_REPO || repoOf !== -1)) throw new RangeError(`invalid repo at ${id}`);
+  if (id >= input.repoCount && (kind !== ENTITY_FILE || repoOf < 0 || repoOf >= input.repoCount)) throw new RangeError(`invalid file at ${id}`);
   if (!Number.isInteger(birth) || birth < 0 || birth >= input.dayCount) {
     throw new RangeError(`invalid birth day at ${id}`);
   }

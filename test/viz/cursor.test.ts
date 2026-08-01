@@ -166,5 +166,9 @@ describe('simulation lifespan cursor', () => {
       ...TINY,
       lastTouchDay: Int32Array.from([1, DAY_ALIVE, 1, 1, 4]),
     }, 1)).toThrow('3');
+    expect(() => createSimState({
+      ...TINY,
+      repoOf: Int32Array.from([0, -1, 0, 0, 1]),
+    }, 1)).toThrow('invalid repo at 0');
   });
 });
