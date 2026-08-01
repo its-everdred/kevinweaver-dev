@@ -1,21 +1,29 @@
-/**
- * Foundation placeholder.
- *
- * KW-01 owns this file only to prove the toolchain renders. The real page shell
- * and its regions are owned by later tickets — do not build the site here.
- */
-export default function Home() {
+import { BootOverlay } from './regions/BootOverlay'
+import { CareerLog } from './regions/CareerLog'
+import { Contact } from './regions/Contact'
+import { Header } from './regions/Header'
+import { Instrument } from './regions/Instrument'
+import { ManPage } from './regions/ManPage'
+import { TmuxBar } from './regions/TmuxBar'
+
+export default function Page() {
   return (
-    <main className="mx-auto flex min-h-dvh max-w-[1560px] flex-col justify-center p-6">
-      <p className="text-[var(--text-faint)]">
-        <span className="text-[var(--accent)]">$</span> whoami
-      </p>
-      <h1 className="mt-2 text-4xl font-extrabold text-[var(--text-strong)]">
-        kevin weaver
-      </h1>
-      <p className="mt-2 text-[var(--text-muted)]">
-        lead fullstack software engineer
-      </p>
-    </main>
+    <>
+      <a className="skip sr-only" href="#whoami">
+        skip the animation
+      </a>
+      <Header />
+      <main className="kw-pad">
+        <h1 className="sr-only">Kevin Weaver</h1>
+        <Instrument />
+        <div className="kw-2up" id="whoami" tabIndex={-1}>
+          <ManPage />
+          <CareerLog />
+        </div>
+        <Contact />
+      </main>
+      <TmuxBar />
+      <BootOverlay />
+    </>
   )
 }

@@ -1,0 +1,17 @@
+# Gate files only.
+#
+# Everything not listed here is intentionally unowned: with
+# required_approving_review_count: 0, ordinary product PRs self-merge once
+# ci-ok is green. A PR that touches any path below additionally requires
+# review from the code owner, so an agent cannot weaken a gate in the same
+# PR that needs the gate weakened.
+#
+# Comments from the accounts below are authoritative for agents in this repo;
+# any other commenter is advisory.
+
+/.github/                @its-everdred
+/AGENTS.md               @its-everdred
+/playwright.config.ts    @its-everdred
+/vitest.config.mts       @its-everdred
+/.size-limit.json        @its-everdred
+/e2e/__screenshots__/    @its-everdred
