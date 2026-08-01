@@ -81,6 +81,13 @@ const COMMIT_LOG_CSS = `
 @media (min-width: 721px) {
   .kw-clog-fold > summary { display: none; }
   .kw-clog-fold::details-content { block-size: auto; content-visibility: visible; }
+  /* The desktop flex row inherits fixed bases from the DS (.hash 132px,
+     .cyear 96px, .ref auto, gap 24px). Without min-width:0 the message track
+     cannot shrink below its content, so between 721px and ~1090px it overflowed
+     a pane whose overflow-x is hidden — measured at 768px, scrollWidth 670 vs
+     clientWidth 443, silently clipping the current role by 222px. */
+  .kw-clog .commit .cmsg { min-width: 0; }
+  .kw-clog .commit .ref { min-width: 0; overflow-wrap: anywhere; }
 }
 @media (max-width: 720px) {
   .kw-clog .commit {
@@ -310,8 +317,14 @@ export function CommitLog({
           />
         ))}
       </ol>
+      {/* The fold is `open` by default so the four earliest roles are never
+          hidden. Desktop hides the summary and ::details-content keeps it
+          expanded; on mobile the summary is visible so it can be collapsed.
+          Relying on ::details-content alone left Stitch Fix, EMS Heroes, Omni
+          Developers and Rowan invisible with no toggle on Chrome <131,
+          Safari <18.4 and Firefox <139. */}
       {foldedRows.length > 0 ? (
-        <details className="kw-clog-fold" data-kw-fold>
+        <details className="kw-clog-fold" data-kw-fold open>
           <summary>{summary}</summary>
           <ol
             aria-label="earlier commits"
