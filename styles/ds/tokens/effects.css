@@ -1,0 +1,17 @@
+/* Texture, glow, shadows, motion. The scanline is always on and always subtle. */
+:root{
+  --shadow-focus:0 0 0 1px var(--accent),0 24px 60px -20px rgba(0,0,0,.6);
+  --shadow-inset-track:inset 0 0 0 1px rgba(0,0,0,.25);
+  --scanline:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px); /* @kind other */
+  --scanline-opacity:.35; /* @kind other */
+  --glow-blur:110px; /* @kind other */
+  --glow-opacity:.16; /* @kind other */
+  --ease-out:cubic-bezier(.2,.7,.2,1); /* @kind other */
+  --dur-reveal:.9s; /* @kind other */
+  --dur-meter:1.1s; /* @kind other */
+  --dur-rainbow:18s; /* @kind other */
+  --dur-blink:1.1s; /* @kind other */
+  --stagger:.06s; /* @kind other */
+  /* powerline separator width — read by .tmux segments */
+  --pl-w:26px; /* @kind spacing */
+}

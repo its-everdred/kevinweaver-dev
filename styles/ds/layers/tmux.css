@@ -1,0 +1,28 @@
+/* ============ tmux status bar · powerline chrome ============
+   Powerline-style angled separators are drawn with CSS clip-path triangles,
+   not U+E0B0 glyphs — Google-hosted JetBrains Mono ships no Nerd Font PUA
+   range, so a glyph separator would render as tofu. Each segment paints its
+   own arrow into the segment that follows it. */
+.tmux{flex:0 0 auto;height:var(--tmux-h);display:flex;align-items:stretch;font-size:var(--fs-micro);font-weight:var(--fw-semibold);letter-spacing:.02em;background:var(--surface-bar);color:var(--text-dim);z-index:30;border-top:var(--bw-hard) solid var(--border-hard);}
+.tmux .seg{position:relative;display:flex;align-items:center;padding:0 18px;white-space:nowrap;}
+.tmux .spacer{flex:1 1 auto;}
+
+/* arrow helpers — --pl-w (tokens/effects.css) is the separator width */
+.tmux .seg::after,.tmux .seg::before{content:none;position:absolute;top:0;bottom:0;width:var(--pl-w);z-index:2;}
+/* Arrows take `background:inherit`, so each one paints in its own segment's
+   colour with no extra custom property to keep in sync. */
+/* left-to-right chain: arrow points right */
+.tmux .seg.pl::after{content:"";left:100%;background:inherit;clip-path:polygon(0 0,100% 50%,0 100%);}
+/* right-to-left chain: arrow points left */
+.tmux .seg.plr::before{content:"";right:100%;background:inherit;clip-path:polygon(100% 0,0 50%,100% 100%);}
+
+/* session — accent block, the head of the chain */
+.tmux .session{background:var(--accent);color:var(--bg-h);font-weight:var(--fw-black);padding-left:22px;}
+/* window list — one raised block, arrow-fed from the session */
+.tmux .wins{background:var(--surface-raised);gap:0;padding-left:calc(var(--pl-w) + 14px);padding-right:0;}
+.tmux .win{color:var(--text-dim);padding:0 16px;align-self:stretch;display:flex;align-items:center;}
+.tmux .win.active{background:var(--bg3);color:var(--text-strong);font-weight:var(--fw-black);}
+/* right side — host then clock, arrows pointing back up the bar */
+.tmux .host{background:var(--surface-raised);color:var(--text-dim);padding-left:calc(var(--pl-w) + 8px);}
+.tmux .clock{background:var(--accent);color:var(--bg-h);font-weight:var(--fw-black);padding-left:calc(var(--pl-w) + 8px);padding-right:22px;}
+.tmux .chev{color:var(--accent);opacity:.5;padding:0 4px;}

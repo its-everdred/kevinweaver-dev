@@ -1,0 +1,12 @@
+/* Spacing, slide padding, pane geometry, radii, border widths. */
+:root{
+  --sp-1:6px; --sp-2:14px; --sp-3:18px; --sp-4:26px; --sp-5:34px;
+  --sp-6:46px; --sp-7:64px; --sp-8:88px; --sp-9:104px;
+  --slide-pad:88px 104px 40px;      /* text-led slides */
+  --slide-pad-image:64px 64px 28px; /* pane-grid / image-led slides */
+  --pane-gap:18px;                  /* tmux split gutter — never wider */
+  --pane-pad:28px 34px;
+  --bar-h:46px; --tmux-h:48px;
+  --r-pane:8px; --r-chip:4px; --r-ph:6px;
+  --bw-pane:2px; --bw-hard:2px;
+}
