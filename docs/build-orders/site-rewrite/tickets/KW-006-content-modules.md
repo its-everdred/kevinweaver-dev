@@ -43,7 +43,7 @@ The design comp is the only copy the project has, and its copy is wrong. Measure
 
 **DEC-008 (D-08).** No contribution figure is a literal anywhere in copy. Every number reads from the `generatedAt`-stamped payload. This ticket implements the copy half of that rule: `content/boot.ts` ships templates with `{token}` placeholders and a substitution function, never integers. C-20 makes the same point for the repo count — GT-7 gives five defensible values (77 / 77 / 50 / 85 / 22) and none of them is `content-ia` §9's "58", so the boot line reads the count and its definition from the payload.
 
-**DEC-015 (D-15).** The phone number `856-723-2521` must never enter the repository or the build output. `content-ia` §11.1: it is a live personal number tied to a South Jersey area code on a resume that states California, i.e. almost certainly a legacy account-recovery factor for someone who publicly works on crypto infrastructure. Obfuscation, image rendering and JS assembly all fail against standard scraping pipelines. Omit entirely.
+**DEC-015 (D-15).** The phone number `<redacted-personal-phone>` must never enter the repository or the build output. `content-ia` §11.1: it is a live personal number tied to a South Jersey area code on a resume that states California, i.e. almost certainly a legacy account-recovery factor for someone who publicly works on crypto infrastructure. Obfuscation, image rendering and JS assembly all fail against standard scraping pipelines. Omit entirely.
 
 **DEC-004 (D-04).** Control glyphs become inline SVG icons owned by KW-004. The relevant consequence here is negative: content modules carry **semantic markers, not glyph literals**, so a codepoint the shipping font lacks is a renderer problem, not a data problem. `content-ia` §14 flags `⏸ ▶ ⏮ ⏭ ✉ ☰ ⠿ ◉ ◆ ★` as unverified against Google-hosted JetBrains Mono.
 
@@ -71,7 +71,7 @@ All links pinned to the approved planning commit `e664d73a195facd64db58ba1095217
 - Create `content/identity.ts`: person-level facts — name, title, location, timezone, the two actors, the contact link set with visible accessible labels, and the `whoami` / `id` / `finger` block.
 - Create `content/boot.ts`: the sixteen cold-start log lines as `{token}` templates, the token vocabulary, and a pure `fill()` substitution function that throws on an unresolved token.
 - Enforce DEC-008 inside `content/`: no contribution, repo-count, day-count or streak figure exists as an integer literal.
-- Enforce DEC-015 inside `content/` and the build output: the string `856-723-2521` appears nowhere.
+- Enforce DEC-015 inside `content/` and the build output: the string `<redacted-personal-phone>` appears nowhere.
 - Restrict every string in `content/` to ASCII plus the sixteen non-ASCII codepoints GT-12 measured in the comp.
 
 ## Non-goals
@@ -513,7 +513,7 @@ Permitted integers in `content/`: years (`2010`), month numbers, ISO date string
 
 ### Agent gate
 
-- `grep -rn '856-723-2521' . --exclude-dir=node_modules --exclude-dir=.git` returns nothing, and after `npm run build` the same grep over `.next/` and `public/` also returns nothing.
+- `grep -rn '<redacted-personal-phone>' . --exclude-dir=node_modules --exclude-dir=.git` returns nothing, and after `npm run build` the same grep over `.next/` and `public/` also returns nothing.
 - No contribution integer literal exists in `content/`: every numeric literal in the five files is a year, a month, an ISO date, a roff column width, or an array index — verified by reading the output of `grep -rnE '[0-9][0-9,]{2,}' content/` line by line and confirming each hit against the permitted list.
 - Every employer from the authoritative resume is present in `content/resume.ts`: Optimism, Metropolis, ConsenSys, Stitch Fix, EMS Heroes, Omni Developers and Rowan University, newest first, with the start/end months in the table above; and `grep -ric 'ethereum foundation' content/` returns 0.
 - Every `hash` in `content/career-log.ts` matches `^[0-9a-f]{7}$`, all are unique, and no two share a two-character prefix; each equals `sha1(<org>:<startMonth>).slice(0,7)` for its entity, re-checked with `printf '%s' "Optimism:2025-05" | sha1sum | cut -c1-7`.
@@ -525,7 +525,7 @@ Permitted integers in `content/`: years (`2010`), month numbers, ISO date string
 ### At-merge gate
 
 - `ci-ok` is green on the exact PR head, i.e. `npm ci && npm run typegen && npm run typecheck && npm run lint && npm run build` passes on Node 24 in the KW-001 workflow.
-- The CI build artifact contains no occurrence of `856-723-2521` and no occurrence of the personal address `kevinweaver2@gmail.com` unless GATE-005 (b) explicitly selected it.
+- The CI build artifact contains no occurrence of `<redacted-personal-phone>` and no occurrence of the personal address `kevinweaver2@gmail.com` unless GATE-005 (b) explicitly selected it.
 - No change to `package.json` or `package-lock.json` (DEC-003 freezes both after KW-001).
 
 ### Human/manual evidence
@@ -536,7 +536,7 @@ None; KW-032 owns feature-level operator evidence. GATE-005's six answers are re
 
 **Security and privacy — the dominant concern for this ticket.**
 
-- **DEC-015.** `856-723-2521` never enters the repository or the build output. No obfuscation is acceptable: OCR and headless execution are standard in scraping pipelines, and each obfuscation also breaks the number for the one human who legitimately wanted it. The number is a probable account-recovery factor for someone who publicly works on crypto infrastructure; the downstream is SIM-swap targeting, not ordinary spam.
+- **DEC-015.** `<redacted-personal-phone>` never enters the repository or the build output. No obfuscation is acceptable: OCR and headless execution are standard in scraping pipelines, and each obfuscation also breaks the number for the one human who legitimately wanted it. The number is a probable account-recovery factor for someone who publicly works on crypto infrastructure; the downstream is SIM-swap targeting, not ordinary spam.
 - **Email.** `kevinweaver2@gmail.com` is the operator's personal address and a likely recovery address for other accounts. It must not ship unless GATE-005 (b) says so explicitly. The resume's `notkevinweaver@gmail` has no TLD and is not a deliverable `mailto:`; appending `.com` is an inference, not a fact, and is exactly what GATE-005 (b) exists to settle.
 - **Location.** `California, USA` stays coarse. Do not narrow to a locality anywhere in `content/`.
 - **Private-repository disclosure.** Restricted contribution counts are publishable because they name nothing, but the copy labels the cluster `private repos` and **never** an employer (`content-ia` §11.5). No template in `content/boot.ts` may associate a private volume with an org name.

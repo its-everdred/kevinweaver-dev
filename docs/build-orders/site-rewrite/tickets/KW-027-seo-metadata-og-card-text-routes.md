@@ -138,7 +138,7 @@ All links pinned to the approved planning commit `e664d73a195facd64db58ba1095217
 - Add `app/resume.txt/route.ts`: the man page, the eight-row career log and the identity block rendered as 80-column plain text generated from `content/`, served as `text/plain; charset=utf-8`.
 - Add `app/kevinweaver.1/route.ts`: the same man page emitted as real roff `man(7)` source, served as `text/troff; charset=utf-8`, so `curl -sL kevinweaver.dev/kevinweaver.1 | man -l -` renders.
 - Add one `<noscript>` element to `app/layout.tsx` that names the two text URLs and the scripting requirement of the instrument pane, and duplicates no career or man-page text.
-- Prove, over the built output, that the phone number `856-723-2521` appears in none of the three new routes and in no metadata value.
+- Prove, over the built output, that the phone number `<redacted-personal-phone>` appears in none of the three new routes and in no metadata value.
 
 ## Non-goals
 
@@ -327,7 +327,7 @@ Invariants:
 3. **`abridged` is ignored.** The abridged section set exists for the sub-1080px pane (KW-016). `/resume.txt` is the full page, always.
 4. **Header and footer are padded to exactly 80 columns** — `left` flush left, `center` centred, `right` flush right — from `MAN_HEADER` and `MAN_FOOTER`, with `MAN_FOOTER.center`'s `{date}` resolved through `fill()`.
 5. **No line exceeds 82 columns.** That is the measured widest line in the source copy (`content-ia` §4's `SYNOPSIS` at indent 7, re-measured this session at 82), and it is the same ceiling KW-016 renders to.
-6. **Privacy (DEC-015).** The string `856-723-2521` must not appear. Neither must any `tel:` URI. The email that appears is exactly `IDENTITY.email` — whatever GATE-005 (b) settles on — and nothing else.
+6. **Privacy (DEC-015).** The string `<redacted-personal-phone>` must not appear. Neither must any `tel:` URI. The email that appears is exactly `IDENTITY.email` — whatever GATE-005 (b) settles on — and nothing else.
 7. **Static.** `export const dynamic = 'force-static'`. The route is prerendered at build; it reads no header, no cookie and no search parameter.
 
 ### Produced contract 2 — `GET /kevinweaver.1`
@@ -806,7 +806,7 @@ kill %1
 - The served head is complete: `curl -s http://localhost:3000/ > /tmp/home.html`, then each of `grep -c '<html lang="en"'`, `grep -c 'rel="canonical"'`, `grep -c 'property="og:image"'`, `grep -c 'name="twitter:card" content="summary_large_image"'`, `grep -c 'rel="alternate" type="text/plain"'` and `grep -c 'rel="icon"'` returns exactly `1`.
 - `grep -c 'property="og:image"' /tmp/home.html` returns `1` and not `2` — the file-convention tag is not duplicated by a hand-written `openGraph.images`.
 - The `<noscript>` contains no career text: `grep -A5 '<noscript>' /tmp/home.html | grep -cE 'Optimism|Metropolis|ConsenSys|Stitch Fix'` returns `0`.
-- Privacy (DEC-015): `curl -s http://localhost:3000/resume.txt http://localhost:3000/kevinweaver.1 http://localhost:3000/ | grep -c '856-723-2521'` returns `0`, and `grep -rc 'tel:' /tmp/home.html` returns `0`.
+- Privacy (DEC-015): `curl -s http://localhost:3000/resume.txt http://localhost:3000/kevinweaver.1 http://localhost:3000/ | grep -c '<redacted-personal-phone>'` returns `0`, and `grep -rc 'tel:' /tmp/home.html` returns `0`.
 - `git diff --name-only origin/main...HEAD` lists exactly `app/layout.tsx`, `app/opengraph-image.tsx`, `app/kevinweaver.1/route.ts`, `app/resume.txt/route.ts` and `public/og.png`.
 - `git diff origin/main...HEAD -- app/layout.tsx` touches only the `metadata` export and adds exactly one `<noscript>` element; the font loader, the `viewport` export, the `<html>` `className` and every other JSX node are unchanged.
 
@@ -826,7 +826,7 @@ kill %1
 
 ## Failure, security, migration, and accessibility cases
 
-**Privacy — the highest-severity concern on this ticket.** `/resume.txt` and `/kevinweaver.1` are plain-text, unauthenticated, CDN-cached and trivially scraped; they are the easiest surface on the whole site to harvest. DEC-015 is absolute: `856-723-2521` never enters the repository or the build output, and no obfuscation counts as compliance (`content-ia` §11.1 measured that OCR and headless execution are standard in scraping pipelines, and that the number is a South Jersey area code on a California resume — i.e. very likely a legacy account-recovery factor for someone who publicly works on crypto infrastructure). The same rule covers `kevinweaver2@gmail.com`, which `content-ia` §11.2 flags as a personal recovery address that must not be published without an explicit spoken "yes". Both routes emit exactly `IDENTITY.email` and never construct an address. `IDENTITY.location` is `California, USA` and must not be narrowed; the timezone must not be printed at finer granularity than `America/Los_Angeles`.
+**Privacy — the highest-severity concern on this ticket.** `/resume.txt` and `/kevinweaver.1` are plain-text, unauthenticated, CDN-cached and trivially scraped; they are the easiest surface on the whole site to harvest. DEC-015 is absolute: `<redacted-personal-phone>` never enters the repository or the build output, and no obfuscation counts as compliance (`content-ia` §11.1 measured that OCR and headless execution are standard in scraping pipelines, and that the number is a South Jersey area code on a California resume — i.e. very likely a legacy account-recovery factor for someone who publicly works on crypto infrastructure). The same rule covers `kevinweaver2@gmail.com`, which `content-ia` §11.2 flags as a personal recovery address that must not be published without an explicit spoken "yes". Both routes emit exactly `IDENTITY.email` and never construct an address. `IDENTITY.location` is `California, USA` and must not be narrowed; the timezone must not be printed at finer granularity than `America/Los_Angeles`.
 
 **Silent failure is the design risk.** A social card that errors renders as *no card*, with no error visible to anyone, on every platform that matters. Three mitigations are structural rather than defensive: the route is statically generated so a render failure is a red build rather than a silent 500; the payload is optional so an absent pipeline degrades instead of throwing; and the committed `public/og.png` is a byte-exact last resort whose path is exercised by `KW_OG_FALLBACK=1` in the agent gate.
 

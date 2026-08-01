@@ -541,7 +541,7 @@ Run `npm run format` (KW-001 declares it) before committing rather than hand-fig
 - `ci-ok` is green on the exact PR head, i.e. KW-001's `.github/workflows/ci.yml` ran `typegen`, `typecheck`, `lint` and `build` on Node 24.
 - The PR diff touches no file owned by a sibling: none of `app/globals.css`, `styles/**`, `content/**`, `components/ds/**`, `app/page.tsx`, `app/layout.tsx`, `app/regions/_contract.ts`, any other `app/regions/*.tsx`, `package.json` or `package-lock.json` (DEC-003, DEC-005).
 - `git diff --stat origin/main...HEAD -- package.json package-lock.json` is empty — no dependency was added for a media query, a pager or an icon.
-- After a production build, the privacy scrub still holds: `grep -rn '856-723-2521' .next public` returns nothing (DEC-015).
+- After a production build, the privacy scrub still holds: `grep -rn '<redacted-personal-phone>' .next public` returns nothing (DEC-015).
 - Rebasing onto current `main` produces no conflict outside `app/regions/ManPage.tsx`.
 
 ### Human/manual evidence
@@ -552,7 +552,7 @@ None; KW-032 owns feature-level operator evidence.
 
 **Failure.** The region performs no I/O and has no runtime failure mode. Three build-time failure modes exist and all are intended to be loud: `fill()` throws if `content/manpage.ts` introduces a token this file does not resolve, so a copy-schema drift fails `next build` instead of shipping `{date}` to a visitor; a missing `content/` module means an upstream dependency has not merged and the correct response is to stop, not to author a local substitute; and a `Pane` that has lost `bodyStyle` or `titleAs` means KW-005's contract changed under this ticket, which is a plan revision, not a local patch. The one silent failure worth naming is the React 19 `<style>` hoist: if it does not emit, the abridged variant simply never activates and nothing else breaks — hence the explicit `grep` for `kw-man-full` in the agent gate.
 
-**Security.** No user input, no secrets, no network calls, no `dangerouslySetInnerHTML` — and none is ever permitted in a region that renders `content/` verbatim. **DEC-015** stands: the phone number `856-723-2521` must never reach the repository or the build output. This file introduces no personal data of its own; every string it prints comes from `content/`, which KW-006 greps clean, and the at-merge gate re-greps the built output. The AUTHOR and REPORTING BUGS sections carry an email address chosen under GATE-005 (b) — render it as text, never as a `mailto:` link, because link ownership belongs to KW-019 and an unresolved gate must not leak a personal recovery address into an `href`.
+**Security.** No user input, no secrets, no network calls, no `dangerouslySetInnerHTML` — and none is ever permitted in a region that renders `content/` verbatim. **DEC-015** stands: the phone number `<redacted-personal-phone>` must never reach the repository or the build output. This file introduces no personal data of its own; every string it prints comes from `content/`, which KW-006 greps clean, and the at-merge gate re-greps the built output. The AUTHOR and REPORTING BUGS sections carry an email address chosen under GATE-005 (b) — render it as text, never as a `mailto:` link, because link ownership belongs to KW-019 and an unresolved gate must not leak a personal recovery address into an `href`.
 
 **Migration.** None. The site has exactly one route, `/`, before and after. This ticket replaces a placeholder region body created in the same plan; there is no persisted state, no URL change and no data format to migrate.
 
