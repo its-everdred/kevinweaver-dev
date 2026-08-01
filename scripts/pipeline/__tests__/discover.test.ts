@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import recordedFixture from './fixtures/discovery-response.json'
 import type { GraphQlClient } from '../discover'
 import { DISCOVERY_QUERY, REPO_COUNT_QUERY, discoverRepos } from '../discover'
 
@@ -64,6 +65,37 @@ function stubClient(
 }
 
 describe('repository discovery', () => {
+  it('consumes the recorded two-window, two-actor fixture', async () => {
+    const client: GraphQlClient = async <T>(
+      query: string,
+      variables: Record<string, unknown>
+    ) => {
+      if (query === REPO_COUNT_QUERY) {
+        const response = recordedFixture.repoCountResponses.find(
+          ({ login }) => login === variables.login
+        )?.response
+        return response as T
+      }
+      const response = recordedFixture.requests.find(
+        (request) =>
+          request.login === variables.login && request.from === variables.from
+      )?.response
+      return response as T
+    }
+    const result = await discoverRepos(client, {
+      logins: ['its-everdred', 'its-applekid'],
+      fromYear: 2021,
+      toYear: 2022,
+    })
+
+    expect(result.repos.map(({ nameWithOwner }) => nameWithOwner)).toEqual([
+      'fixture/applekid',
+      'fixture/everdred',
+    ])
+    expect(result.repoCountDefinition.count).toBe(5)
+    expect(result.queryCost).toBe(6)
+  })
+
   it('unions categories, filters private repos, sorts, and is deterministic', async () => {
     const calls: Array<{ query: string; variables: Record<string, unknown> }> =
       []
@@ -134,7 +166,14 @@ describe('repository discovery', () => {
   it('stops before partial output when rate-limit headroom is low', async () => {
     const client: GraphQlClient = async <T>() =>
       ({
-        user: { contributionsCollection: {} },
+        user: {
+          contributionsCollection: {
+            commitContributionsByRepository: [],
+            pullRequestContributionsByRepository: [],
+            issueContributionsByRepository: [],
+            pullRequestReviewContributionsByRepository: [],
+          },
+        },
         rateLimit: { cost: 1, remaining: 49 },
       }) as T
     await expect(
@@ -144,6 +183,21 @@ describe('repository discovery', () => {
         toYear: 2026,
       })
     ).rejects.toThrow('49')
+  })
+
+  it('rejects a response with a missing connection', async () => {
+    const client: GraphQlClient = async <T>() =>
+      ({
+        user: { contributionsCollection: {} },
+        rateLimit: { cost: 1, remaining: 999 },
+      }) as T
+    await expect(
+      discoverRepos(client, {
+        logins: ['its-everdred'],
+        fromYear: 2026,
+        toYear: 2026,
+      })
+    ).rejects.toThrow('malformed or incomplete')
   })
 
   it('exports the injected query documents without importing a transport', () => {

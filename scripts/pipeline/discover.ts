@@ -1,4 +1,5 @@
 import type { ActorLogin } from './identity.ts'
+import { z } from 'zod'
 
 const MAX_API_REPOSITORIES = 100
 const MIN_RATE_LIMIT_REMAINING = 50
@@ -64,28 +65,50 @@ export const REPO_COUNT_QUERY = `query RepoCount($login: String!) {
   rateLimit { cost remaining }
 }`
 
-interface ApiRepository {
-  nameWithOwner: string
-  isPrivate: boolean
-  isFork: boolean
-  isArchived: boolean
-  stargazerCount: number
-  createdAt: string
+const RepositorySchema = z.object({
+  nameWithOwner: z.string(),
+  isPrivate: z.boolean(),
+  isFork: z.boolean(),
+  isArchived: z.boolean(),
+  stargazerCount: z.number(),
+  createdAt: z.string(),
+})
+const ContributionSchema = z.object({
+  repository: RepositorySchema,
+  contributions: z.object({ totalCount: z.number() }),
+})
+const RateLimitSchema = z.object({ cost: z.number(), remaining: z.number() })
+const DiscoveryPayloadSchema = z.object({
+  user: z.object({
+    contributionsCollection: z.object({
+      commitContributionsByRepository: z.array(ContributionSchema),
+      pullRequestContributionsByRepository: z.array(ContributionSchema),
+      issueContributionsByRepository: z.array(ContributionSchema),
+      pullRequestReviewContributionsByRepository: z.array(ContributionSchema),
+    }),
+  }),
+  rateLimit: RateLimitSchema,
+})
+const RepoCountPayloadSchema = z.object({
+  user: z.object({ repositories: z.object({ totalCount: z.number() }) }),
+  rateLimit: RateLimitSchema,
+})
+type ApiContribution = z.infer<typeof ContributionSchema>
+type DiscoveryPayload = z.infer<typeof DiscoveryPayloadSchema>
+type RepoCountPayload = z.infer<typeof RepoCountPayloadSchema>
+type ConnectionKey = keyof DiscoveryPayload['user']['contributionsCollection']
+const CONNECTIONS: Readonly<Record<ContributionCategory, ConnectionKey>> = {
+  commit: 'commitContributionsByRepository',
+  pullRequest: 'pullRequestContributionsByRepository',
+  issue: 'issueContributionsByRepository',
+  pullRequestReview: 'pullRequestReviewContributionsByRepository',
 }
 
-interface ApiContribution {
-  repository: ApiRepository
-  contributions: { totalCount: number }
-}
-
-interface DiscoveryPayload {
-  user: { contributionsCollection: Record<string, ApiContribution[]> } | null
-  rateLimit: { cost: number; remaining: number }
-}
-
-interface RepoCountPayload {
-  user: { repositories: { totalCount: number } } | null
-  rateLimit: { cost: number; remaining: number }
+class DiscoveryResponseError extends Error {
+  constructor() {
+    super('GitHub discovery response was malformed or incomplete')
+    this.name = 'DiscoveryResponseError'
+  }
 }
 
 interface QueryRequest {
@@ -147,12 +170,15 @@ async function discoverWindow(
   request: QueryRequest,
   maxRepositories: number
 ): Promise<DiscoveryPayload> {
-  const response = await client<DiscoveryPayload>(DISCOVERY_QUERY, {
+  const rawResponse = await client<unknown>(DISCOVERY_QUERY, {
     login: request.login,
     from: request.from,
     to: request.to,
     max: maxRepositories,
   })
+  const parsed = DiscoveryPayloadSchema.safeParse(rawResponse)
+  if (!parsed.success) throw new DiscoveryResponseError()
+  const response = parsed.data
   checkRateLimit(response.rateLimit.remaining)
   return response
 }
@@ -161,7 +187,10 @@ async function countRepos(
   client: GraphQlClient,
   login: ActorLogin
 ): Promise<RepoCountPayload> {
-  const response = await client<RepoCountPayload>(REPO_COUNT_QUERY, { login })
+  const rawResponse = await client<unknown>(REPO_COUNT_QUERY, { login })
+  const parsed = RepoCountPayloadSchema.safeParse(rawResponse)
+  if (!parsed.success) throw new DiscoveryResponseError()
+  const response = parsed.data
   checkRateLimit(response.rateLimit.remaining)
   return response
 }
@@ -174,7 +203,7 @@ function collectWindow(
   const connections = response.user?.contributionsCollection
   if (!connections) return
   CATEGORIES.forEach((category) => {
-    const entries = connections[`${category}ContributionsByRepository`] ?? []
+    const entries = connections[CONNECTIONS[category]]
     if (entries.length === maxRepositories)
       throw new Error('GitHub contribution connection was truncated')
     entries.forEach((entry) => mergeContribution(repos, entry, category))

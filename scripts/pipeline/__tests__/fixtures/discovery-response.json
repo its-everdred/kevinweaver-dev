@@ -7,7 +7,19 @@
       "response": {
         "user": {
           "contributionsCollection": {
-            "commitContributionsByRepository": [],
+            "commitContributionsByRepository": [
+              {
+                "repository": {
+                  "nameWithOwner": "fixture/everdred",
+                  "isPrivate": false,
+                  "isFork": false,
+                  "isArchived": false,
+                  "stargazerCount": 2,
+                  "createdAt": "2021-01-01T00:00:00Z"
+                },
+                "contributions": { "totalCount": 3 }
+              }
+            ],
             "pullRequestContributionsByRepository": [],
             "issueContributionsByRepository": [],
             "pullRequestReviewContributionsByRepository": []
@@ -20,6 +32,50 @@
       "login": "its-applekid",
       "from": "2021-01-01T00:00:00Z",
       "to": "2021-12-31T23:59:59Z",
+      "response": {
+        "user": {
+          "contributionsCollection": {
+            "commitContributionsByRepository": [
+              {
+                "repository": {
+                  "nameWithOwner": "fixture/applekid",
+                  "isPrivate": false,
+                  "isFork": false,
+                  "isArchived": false,
+                  "stargazerCount": 1,
+                  "createdAt": "2021-01-02T00:00:00Z"
+                },
+                "contributions": { "totalCount": 2 }
+              }
+            ],
+            "pullRequestContributionsByRepository": [],
+            "issueContributionsByRepository": [],
+            "pullRequestReviewContributionsByRepository": []
+          }
+        },
+        "rateLimit": { "cost": 1, "remaining": 999 }
+      }
+    },
+    {
+      "login": "its-everdred",
+      "from": "2022-01-01T00:00:00Z",
+      "to": "2022-12-31T23:59:59Z",
+      "response": {
+        "user": {
+          "contributionsCollection": {
+            "commitContributionsByRepository": [],
+            "pullRequestContributionsByRepository": [],
+            "issueContributionsByRepository": [],
+            "pullRequestReviewContributionsByRepository": []
+          }
+        },
+        "rateLimit": { "cost": 1, "remaining": 999 }
+      }
+    },
+    {
+      "login": "its-applekid",
+      "from": "2022-01-01T00:00:00Z",
+      "to": "2022-12-31T23:59:59Z",
       "response": {
         "user": {
           "contributionsCollection": {
@@ -37,14 +93,14 @@
     {
       "login": "its-everdred",
       "response": {
-        "user": { "repositories": { "totalCount": 50 } },
+        "user": { "repositories": { "totalCount": 2 } },
         "rateLimit": { "cost": 1, "remaining": 999 }
       }
     },
     {
       "login": "its-applekid",
       "response": {
-        "user": { "repositories": { "totalCount": 4 } },
+        "user": { "repositories": { "totalCount": 3 } },
         "rateLimit": { "cost": 1, "remaining": 999 }
       }
     }
