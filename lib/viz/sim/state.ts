@@ -79,6 +79,7 @@ export function resetSimState(state: SimState, seed: number): void {
   state.speedIndex = 0;
   state.rngState = seedRng(seed);
   state.rngDraws = 0;
+  state.cursorDay = state.dayCount - 1;
   state.alpha.fill(0);
   state.heat.fill(0);
   state.px.fill(0);
@@ -109,7 +110,6 @@ export function resetSimState(state: SimState, seed: number): void {
 export function digestSimState(state: SimState): SimStateDigest {
   let liveHash = 2166136261;
   let ghostRepos = 0;
-
   for (let id = state.repoCount; id < state.entityCount; id++) {
     if (valueAt(state.slot, id) !== -1) liveHash = Math.imul(liveHash ^ id, 16777619);
   }

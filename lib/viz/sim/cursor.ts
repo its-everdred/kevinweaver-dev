@@ -20,7 +20,6 @@ export function seedCursor(state: SimState, day: number): void {
     }
   }
   state.cursorDayInt = day;
-  state.cursorDay = day;
 }
 
 /**
@@ -49,7 +48,6 @@ export function advanceCursor(state: SimState, day: number): void {
   }
 
   state.cursorDayInt = day;
-  state.cursorDay = day;
 }
 
 /**
@@ -71,7 +69,6 @@ export function seekCursor(state: SimState, day: number): void {
     }
   }
   state.cursorDayInt = day;
-  state.cursorDay = day;
 }
 
 /**

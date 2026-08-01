@@ -112,6 +112,16 @@ describe('simulation lifespan cursor', () => {
     expect(idsAt(descending)).toEqual([2, 3, 4]);
   });
 
+  it('preserves the fractional cursor owned by the fixed-step reducer', () => {
+    const state = createSimState(TINY, 12345);
+
+    state.cursorDay = 4.75;
+    advanceCursor(state, 4);
+    expect(state.cursorDay).toBe(4.75);
+    seekCursor(state, 2);
+    expect(state.cursorDay).toBe(4.75);
+  });
+
   it('remains deterministic after cloning and reset', () => {
     const state = createSimState(TINY, 12345);
     const replay = createSimState(TINY, 12345);
@@ -143,7 +153,8 @@ describe('simulation lifespan cursor', () => {
     expect(globalThis.document).toBeUndefined();
     expect(globalThis.window).toBeUndefined();
     for (let iteration = 0; iteration < 10000; iteration++) {
-      seekCursor(state, iteration % state.dayCount);
+      if (iteration > 0 && iteration % state.dayCount === 0) resetSimState(state, 11);
+      advanceCursor(state, state.dayCount - 1 - (iteration % state.dayCount));
     }
     seekCursor(direct, state.cursorDayInt);
     expect(digestSimState(state)).toEqual(digestSimState(direct));
