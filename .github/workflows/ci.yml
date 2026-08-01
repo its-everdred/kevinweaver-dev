@@ -36,6 +36,14 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # The `canvas` vitest project launches real Chromium. playwright@1.62.1 ships
+      # no npm install script, so `npm ci` downloads no browsers and the project
+      # cannot launch. Installed here rather than narrowing CI to
+      # `--project=node --project=dom`: a test project that never runs in CI reads
+      # as coverage while proving nothing — the exact failure #75 fixed.
+      - name: Install Chromium for canvas tests
+        run: npx playwright install --with-deps chromium
+
       - name: Unit tests
         run: npm run test:unit
 
