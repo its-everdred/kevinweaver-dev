@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { JetBrains_Mono } from 'next/font/google'
+import { Scanline } from '@/components/ds/Scanline'
 import './globals.css'
 
 // The design system is single-typeface. Loading the variable roman range plus the
@@ -29,7 +30,10 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={jetbrainsMono.variable}>
-      <body>{children}</body>
+      <body className="kw-root">
+        <Scanline />
+        {children}
+      </body>
     </html>
   )
 }
