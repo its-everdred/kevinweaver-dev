@@ -1,9 +1,9 @@
 # Build Order: kevinweaver.dev site rewrite
 
-> Approved planning authority: [`<APPROVED_SHA>`](https://github.com/its-everdred/kevinweaver-dev/commit/<APPROVED_SHA>)
+> Approved planning authority: [`9693c3d7d5b08fba2c31330a33f3338e79ee883d`](https://github.com/its-everdred/kevinweaver-dev/commit/9693c3d7d5b08fba2c31330a33f3338e79ee883d)
 
 <!-- aiur-planning-issue
-{"schema":2,"logical_id":"its-everdred/kevinweaver-dev:site-rewrite","plan_version":1,"approved_planning_commit":"<APPROVED_SHA>"}
+{"schema":2,"logical_id":"its-everdred/kevinweaver-dev:site-rewrite","plan_version":1,"approved_planning_commit":"9693c3d7d5b08fba2c31330a33f3338e79ee883d"}
 -->
 
 ## Scope
