@@ -58,6 +58,10 @@ agent:
   # Codex families (luna/terra/sol) rather than pinned versions, so each level
   # keeps resolving to the newest model in that family. Claude credits are low
   # (operator, 2026-07-31), so every level routes to codex.
+  # Defaults to "claude" (config/schema/agent.ex:118), which would silently route
+  # rate-limited codex agents onto Claude. Claude credits are low, so the fallback
+  # is disabled — "" is the documented off value (config.ex:107).
+  rate_limit_fallback: ""
   routing:
     1: "codex:luna:low"
     2: "codex:luna:medium"
