@@ -22,6 +22,14 @@ export interface ValidationResult {
   eventCount: number
 }
 
+interface ChunkColumns {
+  b: number
+  d: readonly number[]
+  r: readonly number[]
+  p: readonly number[]
+  a: readonly number[]
+}
+
 /** Validates a fully encoded Scheme D bundle before it can be promoted. */
 export function validateBundle(
   bundle: EncodedBundle,
@@ -56,6 +64,7 @@ export function validateBundle(
     0,
     ...slices.map((slice) => gzipSync(slice).byteLength)
   )
+  validateJsonFiles(fileMap, findings)
   if (
     repos.length < 40 ||
     manifest.events < 40_000 ||
@@ -88,7 +97,7 @@ export function validateBundle(
   let dictionaryLength = 0
   let previousLast = -1
   chunks.forEach((text, index) => {
-    const chunk = decodeSafely(text, decodeChunk)
+    const chunk = readChunkColumns(text)
     const slice = decodeSafely(slices[index] ?? '', decodeDictSlice)
     if (!chunk || !slice) {
       add(findings, 'E_JSON', `Invalid JSON resource at chunk ${index}.`)
@@ -103,14 +112,14 @@ export function validateBundle(
       add(findings, 'E_COLUMNS', `Chunk ${index} columns differ in length.`)
     if (chunk.d.some((delta) => delta < 0))
       add(findings, 'E_DELTA', `Chunk ${index} has a negative day delta.`)
-    if (chunk.p.some((path) => path >= dictionaryLength))
+    if (chunk.p.some((path) => path < 0 || path >= dictionaryLength))
       add(
         findings,
         'E_PATH_RANGE',
         `Chunk ${index} references an unavailable path.`
       )
     if (
-      chunk.r.some((repo) => repo >= repos.length) ||
+      chunk.r.some((repo) => repo < 0 || repo >= repos.length) ||
       chunk.a.some((actor) => actor !== 0 && actor !== 1)
     )
       add(
@@ -155,6 +164,15 @@ export function validateBundle(
     )
   )
     add(findings, 'E_REPO_STATUS', 'A repository has an invalid status.')
+  if (
+    prev &&
+    repos.some(
+      (repo) =>
+        repo.status === 'stale' &&
+        repo.vol < (prev.repos[repo.name]?.events ?? 0)
+    )
+  )
+    add(findings, 'E_REPO_STATUS', 'A stale repository lost event history.')
   if (!bundle.samlCanary.ok || manifest.degraded.includes('calendar'))
     add(findings, 'E_SAML', 'SAML canary or calendar availability failed.')
   return {
@@ -196,6 +214,51 @@ function decodeSafely<T>(
   } catch {
     return undefined
   }
+}
+function validateJsonFiles(
+  files: ReadonlyMap<string, string>,
+  findings: Finding[]
+): void {
+  if ([...files.values()].some((text) => !isJson(text)))
+    add(findings, 'E_JSON', 'A bundle resource is not valid JSON.')
+}
+function isJson(text: string): boolean {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
+}
+function readChunkColumns(text: string): ChunkColumns | undefined {
+  const value = parseJsonRecord(text)
+  if (!value) return undefined
+  const b = number(value.b)
+  const d = numberArray(value.d)
+  const r = numberArray(value.r)
+  const p = numberArray(value.p)
+  const a = numberArray(value.a)
+  if (b === undefined || !d || !r || !p || !a) return undefined
+  return { b, d, r, p, a }
+}
+function parseJsonRecord(text: string): Record<string, unknown> | undefined {
+  try {
+    const value: unknown = JSON.parse(text)
+    return isRecord(value) ? value : undefined
+  } catch {
+    return undefined
+  }
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+function number(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+function numberArray(value: unknown): number[] | undefined {
+  if (!Array.isArray(value) || value.some((item) => number(item) === undefined))
+    return undefined
+  return value
 }
 function firstByteFiles(map: ReadonlyMap<string, string>): Buffer {
   return Buffer.from(
