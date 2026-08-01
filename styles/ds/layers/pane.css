@@ -1,0 +1,19 @@
+/* ============ tmux panes ============
+   Every block of content lives in a hard-bordered pane. Focused pane takes the
+   accent border + focus shadow; at most one per slide. */
+.pane{border:var(--bw-pane) solid var(--border-pane);border-radius:var(--r-pane);overflow:hidden;background:var(--surface-pane);display:flex;flex-direction:column;}
+.pane.focus{border-color:var(--accent);box-shadow:var(--shadow-focus);}
+.pane-bar{flex:0 0 auto;height:var(--bar-h);display:flex;align-items:center;gap:14px;padding:0 18px;background:var(--surface-bar);border-bottom:var(--bw-hard) solid var(--border-hard);font-size:var(--fs-micro);color:var(--text-faint);white-space:nowrap;overflow:hidden;}
+.dots{display:flex;gap:9px;}
+.dots i{width:14px;height:14px;border-radius:50%;display:block;}
+.dots i:nth-child(1){background:var(--red);}
+.dots i:nth-child(2){background:var(--yellow);}
+.dots i:nth-child(3){background:var(--green);}
+.pane-title{color:var(--text-dim);font-weight:var(--fw-semibold);}
+.pane-body{flex:1 1 auto;min-height:0;padding:var(--pane-pad);overflow:hidden;}
+.pane-body.bleed{padding:0;}
+/* image placeholder (striped) */
+.ph{position:relative;background:var(--surface-pane);background-image:repeating-linear-gradient(135deg,rgba(146,131,116,.14) 0 2px,transparent 2px 16px);border:var(--bw-pane) dashed var(--border-dashed);border-radius:var(--r-ph);display:flex;align-items:center;justify-content:center;}
+.ph span{font-size:var(--fs-mono);color:var(--text-comment);font-weight:var(--fw-semibold);background:var(--bg0);padding:8px 16px;border-radius:var(--r-chip);}
+/* framed tile for opaque-background logos / screenshots */
+.logo-tile{object-fit:contain;border:var(--bw-pane) solid var(--border-pane);border-radius:var(--r-pane);background:var(--surface-pane);}
