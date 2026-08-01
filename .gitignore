@@ -43,3 +43,6 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# aiur daemon runtime state — rewritten continuously by the live daemon
+.aiur/model-usage.json
