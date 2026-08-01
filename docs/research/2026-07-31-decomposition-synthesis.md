@@ -375,12 +375,12 @@ Every ticket below writes a **disjoint** surface. `package.json` is frozen (D-03
 *Write surface:* `scripts/pipeline/{discover.ts,identity.ts}`, `scripts/pipeline/__tests__/**`.
 *Implementation pointers:*
 - Scope is the union of the four `*ContributionsByRepository` connections across 6 years × 2 users — **not** `repositoriesContributedTo`, which returns only 22 (GT-7). data-pipeline measured 67 distinct public repos this way, spanning orgs the token cannot list.
-- **Author email only.** Never committer (17.9% are rewritten to `GitHub <noreply@github.com>` by web-UI squash merges — 649 of 3,628 aiur commits, including 343 authored by its-applekid). Never display name (13 other Kevins and a second Weaver; `Kevin Bluer <kevin@bluer.com>` alone has 427 commits — a `/kevin|weaver/i` matcher misattributes 500+).
+- **Author email only.** Never committer (17.9% are rewritten to `GitHub <noreply@github.com>` by web-UI squash merges — 649 of 3,628 aiur commits, including 343 authored by its-applekid). Never display name (13 other Kevins and a second Weaver; `Kevin A <kevin@example.com>` alone has 427 commits — a `/kevin|weaver/i` matcher misattributes 500+).
 - Allowlist: its-everdred `kevinw@oplabs.co, its.everdred@gmail.com, kevinweaver2@gmail.com, its-everdred@users.noreply.github.com`; its-applekid `its.applekid@gmail.com, its-applekid@users.noreply.github.com, applekid.mail@proton.me`. **Both** noreply forms must match — the bare `<login>@` and the `<id>+<login>@` (`1020682+its-everdred@`) forms both appear.
 - The allowlist is a strict superset of GitHub's own attribution (zero false negatives): `api\local = 0` for both actors; `local\api = 91`, of which **89 are bare-noreply and 2 are `kevinw@oplabs.co`** (not "all bare-noreply" as originally stated).
 - Repo count definitions differ wildly (GT-7). Emit `repoCountDefinition` in the payload (D-08); recommend `ownerPublicNonFork` = 50 + 8.
 - **Do not prune zero-commit repos** (C-8): pruning takes 145 MB → ~124 MB, not → 50 MB, and cold clone is 40–45 s anyway.
-*Acceptance:* `classify(email)` returns the right actor for all 7 allowlist emails and both noreply forms; returns `null` for `kevin@bluer.com` and all 13 other Kevins; discovery output is deterministic under `sort(nameWithOwner)`.
+*Acceptance:* `classify(email)` returns the right actor for all 7 allowlist emails and both noreply forms; returns `null` for `kevin@example.com` and all 13 other Kevins; discovery output is deterministic under `sort(nameWithOwner)`.
 
 **KW-10 — Pipeline B: contribution calendar + private aggregate (SSO PAT)** · complexity **2** · deps: KW-01 · **HG-3**
 *Outcome:* the 5-year per-actor day series and the monthly private aggregate, fetched through an SSO-authorized token, with a hard assertion that the token can actually see SAML orgs.

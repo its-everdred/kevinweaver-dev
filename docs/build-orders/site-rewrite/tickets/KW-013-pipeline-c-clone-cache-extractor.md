@@ -238,7 +238,7 @@ Concretely, from the live probe: commit `7fe937ca1d8e7a4508f4de0f16752440234ea10
 2. **Total order.** `compareRawEvents` is a total order over the emitted set: `day` descending, then `repo`, `sha`, `path` ascending. All comparisons use `<` / `>` on raw strings, never `localeCompare`, which is locale-dependent and therefore non-deterministic across machines. `(repo, sha, path)` is unique per event, so the order is total without any timestamp comparison.
 3. **Byte-determinism.** Two runs over the same cache produce identical `ExtractResult.events` in identical order. Nothing time-varying enters event data; `lastOk` is the only clock read and it is per-repository state.
 4. **No repository ever disappears.** `ExtractResult.repos.length === repos.length` on every call. Failure downgrades a repository to `stale`; it never removes it. History that already happened did happen — a repository vanishing between runs would make the animation rewrite the past between page loads.
-5. **Attribution is delegated.** An event is emitted iff `classify(authorEmail) !== null`. Never the committer e-mail: 649 of 3,628 aiur commits (17.9%) are rewritten to `GitHub <noreply@github.com>` by web-UI squash merges. Never the display name: `Kevin Bluer <kevin@bluer.com>` alone has 427 commits and a `/kevin|weaver/i` matcher misattributes about 555.
+5. **Attribution is delegated.** An event is emitted iff `classify(authorEmail) !== null`. Never the committer e-mail: 649 of 3,628 aiur commits (17.9%) are rewritten to `GitHub <noreply@github.com>` by web-UI squash merges. Never the display name: `Kevin A <kevin@example.com>` alone has 427 commits and a `/kevin|weaver/i` matcher misattributes about 555.
 6. **Empty is a failure, not a result.** A repository that clones cleanly but yields zero attributable events is legitimate — VC-6 measured 15 of them. A *whole run* yielding zero events or zero repositories is the "GitHub returned an empty 200" class of failure: throw, so KW-014's validator hard-aborts rather than blanking the site.
 7. **Sequential.** One repository at a time. VC-1 refuted the cost model that motivated parallelism.
 8. **Erasable syntax only.** Both modules must load under Node 24's built-in type stripping: no `enum`, no `namespace`, no parameter properties, no non-`type` re-export of a type. Verified on v24.18.0 — a plain typed module imports cleanly, while an `enum` fails with `TypeScript enum is not supported in strip-only mode`.
@@ -385,7 +385,7 @@ A cache directory that exists but has no `remote.origin.url`, or whose `git for-
 `scripts/pipeline/extract.test.ts` builds its corpus in `fs.mkdtempSync(path.join(os.tmpdir(), 'kw13-'))` and cleans up in `afterAll`:
 
 1. `git init -q -b main <work>`; author each commit with explicit `-c user.email=… -c user.name=…` so no ambient identity is needed.
-2. Three commits: one authored `kevinweaver2@gmail.com` (expect `actor: 0`), one `its.applekid@gmail.com` (expect `actor: 1`), one `kevin@bluer.com` (expect: dropped entirely).
+2. Three commits: one authored `kevinweaver2@gmail.com` (expect `actor: 0`), one `its.applekid@gmail.com` (expect `actor: 1`), one `kevin@example.com` (expect: dropped entirely).
 3. Pin one commit's author date with `GIT_AUTHOR_DATE='2026-01-02T20:00:00-08:00'` and assert the emitted `day` is **`2026-01-02`**, not `2026-01-03`. That single assertion is the regression test for the UTC-versus-author-local contradiction resolved above.
 4. `git clone --filter=blob:none --bare <work> <dir>` — a local path clone, no network, no credentials.
 5. Run `extractAll` twice and assert `JSON.stringify(a.events) === JSON.stringify(b.events)`.
@@ -405,7 +405,7 @@ If `vitest.config.mts` (KW-011) is not on the base yet, `npx vitest run scripts/
 - `npx vitest run scripts/pipeline/clone.test.ts scripts/pipeline/extract.test.ts` is green.
 - The determinism test runs `extractAll` twice over the temp-directory fixture clone and asserts the two `events` arrays serialize byte-identically.
 - The calendar-day test asserts a commit authored at `2026-01-02T20:00:00-08:00` emits `day === '2026-01-02'`, proving the author-local rule from KW-012's codec invariant 2 rather than a UTC re-projection.
-- The attribution test asserts the `kevin@bluer.com` commit produces zero events while the two allowlisted commits produce their file touches with `actor` 0 and 1 respectively, and that `classify`/`actorId` are the only attribution path.
+- The attribution test asserts the `kevin@example.com` commit produces zero events while the two allowlisted commits produce their file touches with `actor` 0 and 1 respectively, and that `classify`/`actorId` are the only attribution path.
 - The stale test injects a `GitExec` failure for one repository and asserts that repository is still present in `ExtractResult.repos` with `status === 'stale'`, `consecutiveFailures` incremented by one, prior `events` preserved, and `error` non-null.
 - `grep -REn 'api\.github\.com|@octokit|graphql|GITHUB_TOKEN|GH_TOKEN|CONTRIB_TOKEN|fetch\(' scripts/pipeline/clone.ts scripts/pipeline/extract.ts` returns no matches.
 - `node -e "import('./scripts/pipeline/extract.ts').then(m => console.log(Object.keys(m).sort().join(',')))"` prints the exported symbols and includes `extractAll`, proving erasable-only syntax under Node 24 type stripping and no module-scope side effects.

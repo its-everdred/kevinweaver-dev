@@ -1436,7 +1436,7 @@
     "agent_gate": [
      "`npx vitest run scripts/pipeline` is green, and `npm run typecheck` and `npm run lint` are green with both new modules and their tests present.",
      "`classify()` returns `its-everdred` for `kevinw@oplabs.co`, `its.everdred@gmail.com`, `kevinweaver2@gmail.com` and `its-everdred@users.noreply.github.com`; returns `its-applekid` for `its.applekid@gmail.com`, `its-applekid@users.noreply.github.com` and `applekid.mail@proton.me`; and returns the right actor for both `<numericId>+<login>@users.noreply.github.com` forms.",
-     "`classify()` returns `null` for every entry in `scripts/pipeline/__tests__/fixtures/third-party-identities.json`, including `kevin@bluer.com` and `kevinweaver@kevins-work-mbp.local`, and for `null`, `undefined` and the empty string.",
+     "`classify()` returns `null` for every entry in `scripts/pipeline/__tests__/fixtures/third-party-identities.json`, including `kevin@example.com` and `kevinweaver@kevins-work-mbp.local`, and for `null`, `undefined` and the empty string.",
      "`discoverRepos()` run twice over the same recorded fixture produces byte-identical `JSON.stringify` output, with `repos` ordered by `nameWithOwner` ascending under a raw string comparator.",
      "`discoverRepos()` throws when any single connection in the fixture returns exactly `maxRepositories` entries, and omits every `isPrivate: true` repository from `repos`.",
      "`repoCountDefinition` is computed from the `RepoCount` query result and carries `definition: \"ownerPublicNonFork\"`; no repository count literal appears anywhere in `scripts/pipeline/discover.ts`.",
@@ -1870,7 +1870,7 @@
      "`npx vitest run scripts/pipeline/clone.test.ts scripts/pipeline/extract.test.ts` is green.",
      "The determinism test runs `extractAll` twice over the temp-directory fixture clone and asserts the two `events` arrays serialize byte-identically.",
      "The calendar-day test asserts a commit authored at `2026-01-02T20:00:00-08:00` emits `day === '2026-01-02'`, proving the author-local rule from KW-012's codec invariant 2 rather than a UTC re-projection.",
-     "The attribution test asserts the `kevin@bluer.com` commit produces zero events while the two allowlisted commits produce their file touches with `actor` 0 and 1 respectively, and that `classify`/`actorId` are the only attribution path.",
+     "The attribution test asserts the `kevin@example.com` commit produces zero events while the two allowlisted commits produce their file touches with `actor` 0 and 1 respectively, and that `classify`/`actorId` are the only attribution path.",
      "The stale test injects a `GitExec` failure for one repository and asserts that repository is still present in `ExtractResult.repos` with `status === 'stale'`, `consecutiveFailures` incremented by one, prior `events` preserved, and `error` non-null.",
      "`grep -REn 'api\\.github\\.com|@octokit|graphql|GITHUB_TOKEN|GH_TOKEN|CONTRIB_TOKEN|fetch\\(' scripts/pipeline/clone.ts scripts/pipeline/extract.ts` returns no matches.",
      "`node -e \"import('./scripts/pipeline/extract.ts').then(m => console.log(Object.keys(m).sort().join(',')))\"` prints the exported symbols and includes `extractAll`, proving erasable-only syntax under Node 24 type stripping and no module-scope side effects.",
