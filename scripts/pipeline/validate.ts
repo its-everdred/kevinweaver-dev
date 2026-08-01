@@ -49,6 +49,8 @@ export function validateBundle(
   const grid = decoded?.grid
   const chunks = chunkTexts(fileMap, manifest.chunks, 'events', chunkFileName)
   const slices = chunkTexts(fileMap, manifest.chunks, 'paths', dictFileName)
+  const eventFileCount = countFiles(fileMap, /^events\/ee-\d+\.json$/)
+  const pathFileCount = countFiles(fileMap, /^paths\/pd-\d+\.json$/)
   const firstByteBrotliBytes = brotliSize(firstByteFiles(fileMap))
   const maxDictSliceGzipBytes = Math.max(
     0,
@@ -74,6 +76,8 @@ export function validateBundle(
   )
     add(findings, 'E_GRID_MONTHS', 'Private aggregate month count is invalid.')
   if (
+    eventFileCount !== manifest.chunks ||
+    pathFileCount !== manifest.chunks ||
     chunks.length !== manifest.chunks ||
     chunks.some((text) => {
       const chunk = decodeSafely(text, decodeChunk)
@@ -179,6 +183,9 @@ function chunkTexts(
     { length: count },
     (_, index) => map.get(name(index)) ?? `{ "missing": "${folder}" }`
   )
+}
+function countFiles(map: ReadonlyMap<string, string>, pattern: RegExp): number {
+  return [...map.keys()].filter((path) => pattern.test(path)).length
 }
 function decodeSafely<T>(
   text: string,
