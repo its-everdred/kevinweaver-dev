@@ -34,14 +34,29 @@ const eslintConfig = [
   },
   ...nextCoreWebVitals,
   ...nextTypescript,
+  // Clock and randomness are banned in BOTH sim and render. Rendering must be a
+  // pure function of (state, ctx) or KW-031's screenshot baselines are impossible.
+  // The KW-022 review verified by hand that all 6 Math.random and 5 performance.now
+  // leaks from the design-comp prototype were removed — this makes that a gate
+  // rather than a one-off audit.
+  {
+    files: ['lib/viz/{sim,render}/**/*.{ts,mts,js,mjs}'],
+    rules: {
+      'no-restricted-properties': ['error',
+        { object: 'Math', property: 'random', message: 'lib/viz is deterministic: use randomHash/nextRng from lib/viz/sim/rng.ts, seeded from state.' },
+        { object: 'Date', property: 'now', message: 'lib/viz is deterministic: time is SimState.tick, not the wall clock.' },
+        { object: 'performance', property: 'now', message: 'lib/viz is deterministic: time is SimState.tick, not the wall clock.' },
+      ],
+      'no-restricted-syntax': ['error',
+        { selector: "NewExpression[callee.name='Date']", message: 'lib/viz must not construct Date; day-index to ISO conversion is arithmetic (see budget.ts calendarMarkers).' },
+      ],
+    },
+  },
+  // DOM and timers stay banned in sim only. render legitimately creates offscreen
+  // canvases and must keep that capability.
   {
     files: ['lib/viz/sim/**/*.{ts,mts,js,mjs}'],
     rules: {
-      'no-restricted-properties': ['error',
-        { object: 'Math', property: 'random', message: 'lib/viz/sim is deterministic: use nextRng/rngValue from lib/viz/sim/rng.ts.' },
-        { object: 'Date', property: 'now', message: 'lib/viz/sim is deterministic: time is SimState.tick, not the wall clock.' },
-        { object: 'performance', property: 'now', message: 'lib/viz/sim is deterministic: time is SimState.tick, not the wall clock.' },
-      ],
       'no-restricted-globals': ['error', {
         checkGlobalObject: true,
         globals: [

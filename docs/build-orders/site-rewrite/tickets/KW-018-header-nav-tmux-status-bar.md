@@ -575,7 +575,7 @@ None; KW-032 owns feature-level operator evidence.
 
 **Security.** No secrets, no network calls, no user input, no `dangerouslySetInnerHTML`, no `eval`, no `localStorage`. The only outbound link is `href="/"`. There is no attack surface here.
 
-**Privacy.** The phone number `856-723-2521` must not appear in the repo or the build output — that is a standing constraint on every file in this repository, owned and gated by KW-006 — and no email address or social handle enters this region at all — the contact tiles are KW-019's and their content is gated on GATE-005. The header brand and the tmux `host` segment carry only the site's own domain name, which is public by definition.
+**Privacy.** The phone number `<redacted-personal-phone>` must not appear in the repo or the build output — that is a standing constraint on every file in this repository, owned and gated by KW-006 — and no email address or social handle enters this region at all — the contact tiles are KW-019's and their content is gated on GATE-005. The header brand and the tmux `host` segment carry only the site's own domain name, which is public by definition.
 
 **Migration.** This replaces two KW-005 stub bodies; there is no persisted state, no cookie, no URL contract and no data format to migrate. Two behaviours from the comp are deliberately **not** carried forward and their removal is the migration: the inline `height:24px` that made `--tmux-h` dead, and the inline `border:none` that made nav links colour-only. Both must be absent from the diff.
 
