@@ -1,15 +1,77 @@
+import react from '@vitejs/plugin-react'
+import { playwright } from '@vitest/browser-playwright'
 import { defineConfig } from 'vitest/config'
 
+// Three projects, one runner. Filename routes the file:
+//   *.test.ts  -> node    (pure logic, no DOM)
+//   *.test.tsx -> dom     (jsdom + Testing Library, synchronous components only)
+//   *.browser.test.ts -> canvas (real Chromium, real CanvasRenderingContext2D)
+// End-to-end specs are *.spec.ts under e2e/ and belong to Playwright, not Vitest.
+const IGNORED = ['**/node_modules/**', '**/.git/**', '**/.next/**', 'e2e/**']
+
 export default defineConfig({
+  plugins: [react()],
+  resolve: { tsconfigPaths: true },
   test: {
-    // Pure logic only. Anything needing a DOM or a canvas belongs in Playwright —
-    // the sim/ and data/ modules are written DOM-free precisely so they can be
-    // tested here without a browser.
-    environment: 'node',
-    // `test/` is included deliberately. KW-012 put its roundtrip suite at
-    // test/bundle/roundtrip.test.ts, which the original glob silently skipped —
-    // 9.7 KB of assertions that read as coverage while never executing.
-    include: ['{lib,sim,scripts,test}/**/*.{test,spec}.{ts,mts}'],
-    exclude: ['node_modules/**', '.next/**', 'e2e/**', 'docs/**'],
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'node',
+          environment: 'node',
+          include: ['**/*.test.ts'],
+          exclude: [...IGNORED, '**/*.browser.test.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'dom',
+          environment: 'jsdom',
+          setupFiles: ['./test/setup.dom.ts'],
+          include: ['**/*.test.tsx'],
+          exclude: IGNORED,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'canvas',
+          include: ['**/*.browser.test.ts'],
+          exclude: IGNORED,
+          browser: {
+            enabled: true,
+            headless: true,
+            // Browser mode writes PNGs into __screenshots__ on failure. Image
+            // bytes only ever come from the pinned visual-regression container.
+            screenshotFailures: false,
+            provider: playwright(),
+            instances: [{ browser: 'chromium' }],
+          },
+        },
+      },
+    ],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text-summary', 'lcov'],
+      // Explicit include so an untested module in a gated directory scores 0%
+      // rather than being omitted from the report entirely.
+      include: ['lib/viz/sim/**/*.ts', 'lib/bundle/*.ts'],
+      exclude: ['**/*.test.ts'],
+      thresholds: {
+        'lib/viz/sim/**': {
+          statements: 95,
+          branches: 90,
+          functions: 95,
+          lines: 95,
+        },
+        'lib/bundle/{schema,codec,frontcode}.ts': {
+          statements: 100,
+          branches: 95,
+          functions: 100,
+          lines: 100,
+        },
+      },
+    },
   },
 })
