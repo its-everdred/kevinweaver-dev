@@ -45,6 +45,10 @@ export function Meter({
     .filter(Boolean)
     .join(' ')
   const progressDisplay = display ?? `${clampedValue}%`
+  const accessibleValueText =
+    typeof progressDisplay === 'string' || typeof progressDisplay === 'number'
+      ? String(progressDisplay)
+      : undefined
 
   return (
     <div className={metricClassName}>
@@ -57,7 +61,7 @@ export function Meter({
         aria-valuemax={100}
         aria-valuemin={0}
         aria-valuenow={clampedValue}
-        aria-valuetext={String(progressDisplay)}
+        aria-valuetext={accessibleValueText}
         className="meter"
         role="progressbar"
         style={meterStyle}
