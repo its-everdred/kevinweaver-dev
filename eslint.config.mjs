@@ -27,6 +27,30 @@ const eslintConfig = [
   },
   ...nextCoreWebVitals,
   ...nextTypescript,
+  {
+    files: ['lib/viz/sim/**/*.{ts,mts,js,mjs}'],
+    rules: {
+      'no-restricted-properties': ['error',
+        { object: 'Math', property: 'random', message: 'lib/viz/sim is deterministic: use nextRng/rngValue from lib/viz/sim/rng.ts.' },
+        { object: 'Date', property: 'now', message: 'lib/viz/sim is deterministic: time is SimState.tick, not the wall clock.' },
+        { object: 'performance', property: 'now', message: 'lib/viz/sim is deterministic: time is SimState.tick, not the wall clock.' },
+      ],
+      'no-restricted-globals': ['error', {
+        checkGlobalObject: true,
+        globals: [
+          { name: 'requestAnimationFrame', message: 'rAF belongs to lib/viz/driver.ts.' },
+          { name: 'cancelAnimationFrame', message: 'rAF belongs to lib/viz/driver.ts.' },
+          { name: 'setTimeout', message: 'Timers belong to lib/viz/driver.ts.' },
+          { name: 'setInterval', message: 'Timers belong to lib/viz/driver.ts.' },
+          { name: 'window', message: 'lib/viz/sim must import cleanly in plain Node: no DOM.' },
+          { name: 'document', message: 'lib/viz/sim must import cleanly in plain Node: no DOM.' },
+        ],
+      }],
+      'no-restricted-syntax': ['error',
+        { selector: "NewExpression[callee.name='Date']", message: 'lib/viz/sim must not construct Date; day-index to ISO conversion belongs to lib/viz/driver.ts.' },
+      ],
+    },
+  },
 ]
 
 export default eslintConfig
