@@ -1015,7 +1015,7 @@ that block it has **zero indexable text**, which is a real and permanent SEO out
 
 ## 11. Do-not-publish flags
 
-### 11.1 Phone number `856-723-2521` — **DO NOT PUBLISH. No obfuscation is sufficient.**
+### 11.1 Phone number `<redacted-personal-phone>` — **DO NOT PUBLISH. No obfuscation is sufficient.**
 
 - It is a live personal number. Scrapers harvest `tel:` and bare NANP patterns within hours
   of first crawl; the downstream is SMS spam, voice phishing, and — because the number is

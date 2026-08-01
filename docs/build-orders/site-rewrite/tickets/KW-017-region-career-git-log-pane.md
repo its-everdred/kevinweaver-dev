@@ -554,7 +554,7 @@ None; KW-032 owns feature-level operator evidence.
 
 **Failure.** The region performs no I/O, reads no network, holds no state and has no runtime failure mode. Its two failure modes are both at build time and both are intentional hard stops: `buildGraph` throws when the last commit is not `root`, and when the `preWeb3` rows are not a contiguous suffix. Both indicate that `content/career-log.ts` was edited into an inconsistent state, and a red build is strictly better than a career log rendered in the wrong order. A third, softer failure — GATE-005 cutting the side lane — is handled by deriving every count from `CAREER_LOG.length` rather than from a literal.
 
-**Security.** No user input, no secrets, no network calls, and **no `dangerouslySetInnerHTML` anywhere** — commit bodies are rendered as text children of `<pre>`, never as HTML. Under DEC-015 the phone number `856-723-2521` must never reach the repository or the build output; this ticket originates no personal data at all, and `grep -r '856-723-2521' .` including `.next/` must stay empty.
+**Security.** No user input, no secrets, no network calls, and **no `dangerouslySetInnerHTML` anywhere** — commit bodies are rendered as text children of `<pre>`, never as HTML. Under DEC-015 the phone number `<redacted-personal-phone>` must never reach the repository or the build output; this ticket originates no personal data at all, and `grep -r '<redacted-personal-phone>' .` including `.next/` must stay empty.
 
 **Migration.** None. There is one route, `/`, before and after; this ticket replaces a stub component's body. No persisted state, no URL change, no data format.
 

@@ -43,3 +43,6 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# agent worktrees are created inside the repo
+.claude/worktrees/
