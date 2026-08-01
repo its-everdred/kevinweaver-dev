@@ -1,17 +1,7 @@
 import type { Metadata, Viewport } from 'next'
-import { JetBrains_Mono } from 'next/font/google'
 import { Scanline } from '@/components/ds/Scanline'
+import { jetbrainsMono } from './fonts'
 import './globals.css'
-
-// The design system is single-typeface. Loading the variable roman range plus the
-// 400 italic here means no CLS and no self-hosted binaries to keep in sync.
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600', '700', '800'],
-  style: ['normal', 'italic'],
-  variable: '--font-jetbrains-mono',
-  display: 'swap',
-})
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.kevinweaver.dev'),
