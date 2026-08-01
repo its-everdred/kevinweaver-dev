@@ -119,10 +119,23 @@ fix real defects, and for anything you consciously reject, record the reason in
 the Agent Workpad. The Executor reviews *after* you have, so arriving unreviewed
 wastes a review cycle. Do not move to `agent:ci-wait` until this has run.
 
-Once the draft PR is open, self-reviewed, and no code work remains, move to
-`agent:ci-wait` and end the turn. Do not loop on `gh pr checks`; the daemon
-delivers CI pass/fail context. On pass, mark the draft ready and move to
-`agent:human-review`; on failure, use the delivered checks and begin rework.
+### There is no CI. You are the gate.
+
+**This repository has no GitHub Actions workflow and cannot have one yet** — the
+push credential lacks `workflow` scope, so GitHub rejects any push touching
+`.github/workflows/**`. The operator will grant it after the rewrite is merged.
+
+Consequences you must respect:
+
+- **Never move to `agent:ci-wait`.** No check will ever report, and you will hang
+  there until the dispatch cap kills the ticket. Go straight from a green local
+  gate to `agent:human-review`.
+- **Do not run `gh pr checks`** and do not wait on statuses. There are none.
+- The full gate below is not a formality that CI will re-run for you. It is the
+  *only* verification that will ever happen before your code reaches production.
+  Run all five commands, on the exact head you pushed, and paste the results into
+  the PR body. A reviewer cannot re-derive what you did not record.
+- If any command fails, fix it. Do not open the PR and hope. There is no safety net.
 
 For test-only tickets that explicitly say not to change code, do not create
 commits or PRs.
