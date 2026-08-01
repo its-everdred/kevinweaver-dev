@@ -1,0 +1,9 @@
+{
+  "trusted_repository_ref": "refs/heads/main",
+  "root_document": "docs/build-orders/site-rewrite/root-issue.md",
+  "mutation_repositories": [
+    "its-everdred/kevinweaver-dev"
+  ],
+  "reference_only_issue_urls": [],
+  "tracker_lifecycle_label_prefix": "agent"
+}
