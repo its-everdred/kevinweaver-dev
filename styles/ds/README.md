@@ -28,8 +28,9 @@ integration work. All web adaptations are in `web.css`.
    fluid 360px to 1560px ladder. It adds `--fs-prose`, `--lh-prose`, and `--lh-chrome`.
 2. **D2, `tokens/spacing.css`:** replaces slide-scale geometry with rem-based responsive
    values, adds pane padding variants and traffic-light dimensions.
-3. **D3, `layers/pane.css` and `layers/data.css`:** re-derives pane bars, commit columns,
-   rails, dots, and tmux height for web density and text-spacing resilience.
+3. **D3, `layers/pane.css`, `layers/data.css`, and `layers/tmux.css`:** re-derives pane
+   bars, commit columns, rails, dots, and tmux height for web density and text-spacing
+   resilience.
 4. **D4, `layers/tmux.css`:** closes powerline seams for every `--pl-w` value and derives
    post-arrow padding from that token.
 5. **D5, `tokens/colors.css`, `layers/pane.css`, and region-owned chrome:** maps shared
