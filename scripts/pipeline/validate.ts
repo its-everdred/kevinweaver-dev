@@ -29,7 +29,6 @@ interface ChunkColumns {
   p: readonly number[]
   a: readonly number[]
 }
-
 /** Validates a fully encoded Scheme D bundle before it can be promoted. */
 export function validateBundle(
   bundle: EncodedBundle,
