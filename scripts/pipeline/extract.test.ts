@@ -5,7 +5,8 @@ import { join } from 'node:path'
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
-import { extractAll } from './extract'
+import { compareRawEvents, extractAll } from './extract'
+import type { RawEvent } from './extract'
 
 let fixtureRoot = ''
 let cloneRoot = ''
@@ -88,5 +89,21 @@ describe('extractAll', () => {
     const second = await extractAll(['fixture/repo'], [], { cloneRoot })
 
     expect(JSON.stringify(first.events)).toBe(JSON.stringify(second.events))
+  })
+
+  it('uses the documented total order for same-day file touches', () => {
+    const events: RawEvent[] = [
+      { day: '2026-01-02', repo: 'z/repo', sha: 'a', path: 'a', actor: 0 },
+      { day: '2026-01-02', repo: 'a/repo', sha: 'b', path: 'z', actor: 0 },
+      { day: '2026-01-02', repo: 'a/repo', sha: 'b', path: 'a', actor: 0 },
+      { day: '2026-01-03', repo: 'a/repo', sha: 'c', path: 'a', actor: 0 },
+    ]
+
+    expect(events.sort(compareRawEvents).map((event) => event.path)).toEqual([
+      'a',
+      'a',
+      'z',
+      'a',
+    ])
   })
 })

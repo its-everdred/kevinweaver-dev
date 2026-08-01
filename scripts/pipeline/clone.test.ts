@@ -4,7 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { syncRepo } from './clone'
+import { syncAll, syncRepo } from './clone'
 import { extractAll } from './extract'
 import type { GitExec } from './clone'
 import type { RepoExtract } from './extract'
@@ -46,6 +46,34 @@ describe('clone cache failure handling', () => {
       heads: {},
     })
     expect(outcome.error).toContain('Connection timed out')
+  })
+
+  it('processes repositories sequentially and snapshots sorted heads', async () => {
+    const calls: string[] = []
+    const exec: GitExec = async (args) => {
+      calls.push(args.join(' '))
+      if (args.includes('for-each-ref')) {
+        return {
+          code: 0,
+          stdout:
+            'refs/heads/zebra bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nrefs/heads/main aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n',
+          stderr: '',
+        }
+      }
+      return { code: 0, stdout: '', stderr: '' }
+    }
+
+    const outcomes = await syncAll(['example/one', 'example/two'], {
+      cloneRoot: root(),
+      exec,
+    })
+
+    expect(calls[0]).toContain('https://github.com/example/one.git')
+    expect(calls[2]).toContain('https://github.com/example/two.git')
+    expect(Object.keys(outcomes[0]?.heads ?? {})).toEqual([
+      'refs/heads/main',
+      'refs/heads/zebra',
+    ])
   })
 
   it('preserves prior events when a clone becomes stale', async () => {
