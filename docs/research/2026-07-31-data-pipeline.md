@@ -416,11 +416,11 @@ Scanning all 66 clones for identities matching `/kevin|weaver|everdred|applekid/
 and a second Weaver**:
 
 ```
-427  Kevin Bluer      <kevin@bluer.com>          <-- 427 commits, not Kevin Weaver
- 80  Kevin Schwindt   <schwindt.kevin@gmail.com>
-  6  Skylar Weaver    <weaver.skylar@gmail.com>
-  6  Kevin Smith      <kevin.smith@circle.com>
-  4  Kevin Ziechmann  3  Kevin Wang  2  Kevin Sullivan  2  Kevin Leffew  …
+427  Kevin A      <kevin@example.com>          <-- 427 commits, not Kevin Weaver
+ 80  Kevin B   <surname.kevin@example.com>
+  6  Other Weaver    <weaver.other@example.com>
+  6  Kevin C      <kevin.surname@example.org>
+  4  Kevin Ziechmann  3  Kevin D  2  Kevin Sullivan  2  Kevin Leffew  …
 ```
 A name-based matcher misattributes **500+ commits**. Never match on name.
 
@@ -463,7 +463,7 @@ Both noreply forms must be matched: the bare `<login>@users.noreply.github.com` 
    show ~9% more activity than the grid implies unless you drop them. Recommendation: **keep them
    in the animation, note the divergence**, because they are genuine file touches.
 3. **Third-party commits reachable through the allowlist: none.** `neither`-class authors in aiur
-   are `frantic@openai.com`, `sapsaldog@gmail.com`, `mstrautmann@openai.com`, `kevin.kx.wang@gmail.com`,
+   are `frantic@openai.com`, `unrelated-handle@example.com`, `mstrautmann@openai.com`, `kevin.mid.surname@example.net`,
    `hintz@openai.com`, `copilot-swe-agent[bot]` — 39–40 commits, all correctly excluded **(M)**.
 
 ### Co-author trailers — the double-attribution problem
@@ -918,8 +918,8 @@ Re-ran `attrib.py` against `/home/everdred/github/everdred/aiur` and re-implemen
 **Exact reproduction** of: 3,628 commits all refs; **649** committer `== noreply@github.com` (17.9%);
 **665** author≠committer; **344** `its.applekid@gmail.com → noreply@github.com`; **285**
 `its.everdred@gmail.com → noreply@github.com`; **everdred-only 3,096 / applekid-only 186 / BOTH 307 /
-neither 39**. `identscan.py` reproduces exactly: **3,865** distinct identities, Kevin Bluer 427,
-Kevin Schwindt 80, Skylar Weaver 6, Kevin Smith 6, `applekid.mail@proton.me` 3,
+neither 39**. `identscan.py` reproduces exactly: **3,865** distinct identities, Kevin A 427,
+Kevin B 80, Other Weaver 6, Kevin C 6, `applekid.mail@proton.me` 3,
 `kevinweaver@kevins-work-mbp.local` 2; ~555 commits misattributable by name-matching.
 `authcheck.py` reproduces exactly: everdred api=820 / local=902 / gap 82; applekid api=326 /
 local=335 / gap 9. **Use author email. Never committer, never name. Claim 4 is upheld.**
