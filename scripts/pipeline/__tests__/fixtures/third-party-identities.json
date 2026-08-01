@@ -1,0 +1,13 @@
+[
+  { "email": "kevin@example.com", "name": "Kevin A", "commits": 427 },
+  { "email": "surname.kevin@example.com", "name": "Kevin B", "commits": 80 },
+  { "email": "weaver.other@example.com", "name": "Other Weaver", "commits": 6 },
+  { "email": "kevin.surname@example.org", "name": "Kevin C", "commits": 6 },
+  { "email": "kevin.mid.surname@example.net", "name": "Kevin D", "commits": 3 },
+  { "email": "unrelated-handle@example.com", "name": "third party", "commits": 1 },
+  {
+    "email": "kevinweaver@some-host.local",
+    "name": "Kevin Weaver",
+    "commits": 2
+  }
+]

@@ -37,7 +37,7 @@ The site's two data halves both start here. Everything downstream — the animat
 - **GT-7 — repo scope.** Counting definitions disagree wildly: for `its-everdred` the REST `public_repos` field is 77, owner-public-non-fork is 50, including member affiliations is 85, and `repositoriesContributedTo` returns only **22**. `repositoriesContributedTo` is therefore the wrong source. The right scope is the union of the four `*ContributionsByRepository` connections on `contributionsCollection`, over 6 years x 2 logins, which measured **67 distinct public repos, 0 private** — a set that reaches orgs the token has no membership in (`0xmetropolis`, `ConsenSys-archive`, `ethereum`, `alchemyplatform`, `Uniswap`, `base`, `wevm`, `farcasterxyz`, `INFURA`, `sapsaldog`).
 - **GT-3 / C-10 / DEC-006 — the pipeline splits by auth surface.** The clone half needs no token at all; the GraphQL half does. Discovery sits on the GraphQL side, so its result is only as complete as the token it was handed. Re-verified at planning time: a `repository(owner:"ethereum-optimism", name:"actions")` query under the current token returns `FORBIDDEN` with `extensions.saml_failure: true`, and a 2026 discovery sweep for `its-everdred` returns eight commit-contribution repos with **no `ethereum-optimism` entry at all**. This ticket does not fix that — KW-010 owns the SAML canary and GATE-003 owns the credential — but the module must not paper over it.
 - **DEC-008 — no contribution figure is a literal anywhere in copy.** The payload carries `generatedAt`, `windowStart`, `windowEnd`, `dayCount` and `repoCountDefinition`. Discovery owns the `repoCountDefinition` half: it emits both the definition name and the number it computed, so a reader can always tell which of GT-7's five counts is on screen. The synthesis recommends `ownerPublicNonFork` and writes it as "50 + 8"; measured live at planning time, `its-everdred` is 50 owner-public-non-fork (27 forks, 77 public total) and `its-applekid` is **4** owner-public-non-fork (4 forks, 8 public total). The "8" in the synthesis is `its-applekid`'s public total, not its non-fork subset. The module must compute the number rather than carry either literal.
-- **Attribution, measured on the real 3,628-commit `aiur-team/aiur` history.** Committer email is useless: **649 of 3,628 (17.9%)** commits have their committer rewritten to `GitHub <noreply@github.com>` by web-UI squash merges, which alone would lose 344 of `its-applekid`'s commits. Display name is catastrophic: a scan of 3,865 distinct identities across the corpus found **13 other Kevins and a second Weaver**, with `Kevin Bluer <kevin@bluer.com>` at 427 commits on his own; a `/kevin|weaver/i` matcher misattributes roughly 555 commits. **Author email only.**
+- **Attribution, measured on the real 3,628-commit `aiur-team/aiur` history.** Committer email is useless: **649 of 3,628 (17.9%)** commits have their committer rewritten to `GitHub <noreply@github.com>` by web-UI squash merges, which alone would lose 344 of `its-applekid`'s commits. Display name is catastrophic: a scan of 3,865 distinct identities across the corpus found **13 other Kevins and a second Weaver**, with `Kevin A <kevin@example.com>` at 427 commits on his own; a `/kevin|weaver/i` matcher misattributes roughly 555 commits. **Author email only.**
 - **The allowlist is a strict superset of GitHub's own attribution.** Cross-checking the GitHub commits API against the local allowlist: `api \ local = 0` for both actors (zero false negatives), `local \ api = 91`, of which **89 are the bare `<login>@users.noreply.github.com` form and 2 are `kevinw@oplabs.co`**. The verification pass corrected the earlier claim that all 91 were bare-noreply.
 - **C-8 — do not prune zero-commit repos.** The original recommendation (gate the clone on `commitContributionsByRepository[].contributions.totalCount > 0`) was refuted: its own headline example, `ethereum/ethereum-org-website`, does yield an attributable commit, so the gate would not prune the 82 MB it was introduced to save. Actual zero-event repos are 15 totalling 21.3 MB; pruning takes 145 MB to ~124 MB, not to 50 MB, and cold clone is 40-45 s regardless. Discovery therefore returns everything it found and performs no pruning.
 
@@ -311,12 +311,12 @@ Live sanity check performed at planning time (2026 window, `its-everdred`): the 
 
 ```json
 [
-  { "email": "kevin@bluer.com",                    "name": "Kevin Bluer",     "commits": 427 },
-  { "email": "schwindt.kevin@gmail.com",           "name": "Kevin Schwindt",  "commits": 80 },
-  { "email": "weaver.skylar@gmail.com",            "name": "Skylar Weaver",   "commits": 6 },
-  { "email": "kevin.smith@circle.com",             "name": "Kevin Smith",     "commits": 6 },
-  { "email": "kevin.kx.wang@gmail.com",            "name": "Kevin Wang",      "commits": 3 },
-  { "email": "sapsaldog@gmail.com",                "name": "third party",     "commits": 1 },
+  { "email": "kevin@example.com",                    "name": "Kevin A",     "commits": 427 },
+  { "email": "surname.kevin@example.com",           "name": "Kevin B",  "commits": 80 },
+  { "email": "weaver.other@example.com",            "name": "Other Weaver",   "commits": 6 },
+  { "email": "kevin.surname@example.org",             "name": "Kevin C",     "commits": 6 },
+  { "email": "kevin.mid.surname@example.net",            "name": "Kevin D",      "commits": 3 },
+  { "email": "unrelated-handle@example.com",                "name": "third party",     "commits": 1 },
   { "email": "kevinweaver@kevins-work-mbp.local",  "name": "Kevin Weaver",    "commits": 2 }
 ]
 ```
@@ -372,7 +372,7 @@ Assert `calls.length === 14` for a 6-year, 2-login run, and assert that no test 
 
 - `npx vitest run scripts/pipeline` is green, and `npm run typecheck` and `npm run lint` are green with both new modules and their tests present.
 - `classify()` returns `its-everdred` for `kevinw@oplabs.co`, `its.everdred@gmail.com`, `kevinweaver2@gmail.com` and `its-everdred@users.noreply.github.com`; returns `its-applekid` for `its.applekid@gmail.com`, `its-applekid@users.noreply.github.com` and `applekid.mail@proton.me`; and returns the right actor for both `<numericId>+<login>@users.noreply.github.com` forms.
-- `classify()` returns `null` for every entry in `scripts/pipeline/__tests__/fixtures/third-party-identities.json`, including `kevin@bluer.com` and `kevinweaver@kevins-work-mbp.local`, and for `null`, `undefined` and the empty string.
+- `classify()` returns `null` for every entry in `scripts/pipeline/__tests__/fixtures/third-party-identities.json`, including `kevin@example.com` and `kevinweaver@kevins-work-mbp.local`, and for `null`, `undefined` and the empty string.
 - `discoverRepos()` run twice over the same recorded fixture produces byte-identical `JSON.stringify` output, with `repos` ordered by `nameWithOwner` ascending under a raw string comparator.
 - `discoverRepos()` throws when any single connection in the fixture returns exactly `maxRepositories` entries, and omits every `isPrivate: true` repository from `repos`.
 - `repoCountDefinition` is computed from the `RepoCount` query result and carries `definition: "ownerPublicNonFork"`; no repository count literal appears anywhere in `scripts/pipeline/discover.ts`.
