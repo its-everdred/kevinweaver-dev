@@ -85,7 +85,8 @@ interface SplitResult {
   sizes: number[]
 }
 
-class BundleCodecError extends Error {
+/** Error raised when bundle input or wire data violates the v1 contract. */
+export class BundleCodecError extends Error {
   constructor(message: string, cause?: unknown) {
     super(message, { cause })
     this.name = 'BundleCodecError'
@@ -361,6 +362,11 @@ function validateRepos(repos: readonly RepoRecord[]): void {
   repos.forEach((repo, index) => {
     assert(repo.id === index, 'Repository ids must be dense.')
     assert(
+      Number.isInteger(repo.ghId) && repo.ghId >= 0,
+      'Repository GitHub id is invalid.'
+    )
+    assert(repo.name.includes('/'), 'Repository name must include its owner.')
+    assert(
       repo.private === false,
       'Private repositories cannot enter the bundle.'
     )
@@ -368,8 +374,23 @@ function validateRepos(repos: readonly RepoRecord[]): void {
       repo.short === shortName(repo.name),
       'Repository short name must be derived.'
     )
+    assert(repo.short.length > 0, 'Repository short name must be non-empty.')
     assert(
-      repo.ext.length <= 8 && isSorted(repo.ext),
+      Number.isInteger(repo.vol) && repo.vol >= 0,
+      'Repository volume is invalid.'
+    )
+    assert(
+      Number.isInteger(repo.stars) && repo.stars >= 0,
+      'Repository star count is invalid.'
+    )
+    assert(
+      isoDayMs(repo.from) <= isoDayMs(repo.to),
+      'Repository date range is invalid.'
+    )
+    assert(
+      repo.ext.length <= 8 &&
+        repo.ext.every((extension) => extension.length > 0) &&
+        isSorted(repo.ext),
       'Repository extensions are invalid.'
     )
     assert(
@@ -617,7 +638,7 @@ function recordFromValue(value: unknown): Record<string, unknown> {
     typeof value === 'object' && value !== null && !Array.isArray(value),
     'Expected an object.'
   )
-  const record: Record<string, unknown> = {}
+  const record: Record<string, unknown> = Object.create(null)
   for (const [key, entry] of Object.entries(value)) record[key] = entry
   return record
 }

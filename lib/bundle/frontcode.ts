@@ -1,7 +1,8 @@
 export const FRONTCODE_BASE = 35
 export const FRONTCODE_MAX_PREFIX = 90
 
-class FrontCodeError extends Error {
+/** Error raised when a path slice cannot be front-coded or decoded safely. */
+export class FrontCodeError extends Error {
   constructor(message: string) {
     super(message)
     this.name = 'FrontCodeError'

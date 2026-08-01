@@ -7,9 +7,14 @@ import {
   dayFromIndex,
   dayIndex,
   decodeBundle,
+  decodeManifest,
   encodeBundle,
 } from '../../lib/bundle/codec'
-import { frontCode, frontDecode } from '../../lib/bundle/frontcode'
+import {
+  FrontCodeError,
+  frontCode,
+  frontDecode,
+} from '../../lib/bundle/frontcode'
 import type { BundleInput, EncodedBundle } from '../../lib/bundle/codec'
 import type { RepoRecord, SortableEvent } from '../../lib/bundle/schema'
 
@@ -103,12 +108,24 @@ describe('bundle codec', () => {
     expect(() =>
       encodeBundle({ ...input, grid: { ...input.grid, bands: [0] } })
     ).toThrow()
+    expect(() =>
+      encodeBundle({
+        ...input,
+        repos: [{ ...input.repos[0]!, ghId: -1 }, input.repos[1]!],
+      })
+    ).toThrow()
     expect(() => encodeExternal(withPrivateRepository(input))).toThrow()
   })
 
   it('uses one calendar implementation for newest-first day identity', () => {
     expect(dayIndex('2026-07-28', '2026-07-31')).toBe(3)
     expect(dayFromIndex(3, '2026-07-31')).toBe('2026-07-28')
+  })
+
+  it('does not treat prototype properties as decoded wire fields', () => {
+    const encoded = encodeBundle(workedFixture(), { chunkSize: 3 })
+    const manifest = encoded.files.get('manifest.json')!
+    expect(() => decodeManifest(`{"__proto__":${manifest}}`)).toThrow()
   })
 })
 
@@ -125,8 +142,8 @@ describe('front coding', () => {
   })
 
   it('rejects paths that cannot be represented as newline-joined entries', () => {
-    expect(() => frontCode([''])).toThrow()
-    expect(() => frontCode(['src/one\ntwo.ts'])).toThrow()
+    expect(() => frontCode([''])).toThrow(FrontCodeError)
+    expect(() => frontCode(['src/one\ntwo.ts'])).toThrow(FrontCodeError)
   })
 })
 
