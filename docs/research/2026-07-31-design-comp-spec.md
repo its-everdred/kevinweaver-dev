@@ -360,7 +360,7 @@ align-items:center;gap:12px;padding:16px 18px`.
 **(M) Two wrong facts vs the authoritative resume:** email is `notkevinweaver@gmail`, not
 `kevin@kevinweaver.dev`; Twitter is `@kevin_weaver`, not `@its_everdred`. Both `href`s are
 placeholders pointing at `#contact`. Missing entirely: LinkedIn `kevinweaver`, web
-`kevinmweaver.com`, phone `856-723-2521`.
+`kevinmweaver.com`, phone `<redacted-personal-phone>`.
 
 ### 2.7 `.tmux` status bar — comp:173-181
 `position:sticky;bottom:0;z-index:70;height:24px;font-size:11px;font-weight:600;
@@ -1220,7 +1220,7 @@ Mapping rules:
 - **SEE ALSO** = the contact block minus email/phone (those live in §2.6). `git-log(1)` is a
   cross-reference to the pane sitting immediately to its right — a nice touch that makes the
   two-up layout self-documenting.
-- **Not rendered:** phone `856-723-2521`. **Flag for the user:** publishing a personal mobile
+- **Not rendered:** phone `<redacted-personal-phone>`. **Flag for the user:** publishing a personal mobile
   number on a public site invites SIM-swap and spam. Recommend omitting, or gating behind the
   `✉` tile. (**I**)
 - Keep the comp's `SEE ALSO` technology list too? No — it duplicates OPTIONS. Drop it.
