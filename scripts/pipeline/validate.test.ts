@@ -39,4 +39,39 @@ describe('pipeline validator', () => {
       expect.arrayContaining(['E_EMPTY', 'E_SAML'])
     )
   })
+
+  it('reports a missing numbered resource as a chunk-count failure', () => {
+    const bundle = encodeBundle({
+      ...input,
+      repoCount: 1,
+      samlCanary: { ...input.samlCanary, ok: true },
+      repos: [
+        {
+          n: 'owner/repo',
+          first: '2026-07-31',
+          last: '2026-07-31',
+          private: false,
+          status: 'ok',
+        },
+      ],
+      events: [
+        {
+          day: '2026-07-31',
+          repo: 'owner/repo',
+          sha: 'a'.repeat(40),
+          path: 'src/index.ts',
+          actor: 0,
+        },
+      ],
+    })
+    const incomplete = {
+      ...bundle,
+      files: bundle.files.filter((file) => file.path !== 'events/ee-00.json'),
+    }
+    expect(validateBundle(incomplete, null).findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'E_CHUNK_COUNT' }),
+      ])
+    )
+  })
 })
