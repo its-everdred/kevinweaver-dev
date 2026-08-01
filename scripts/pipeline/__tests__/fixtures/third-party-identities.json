@@ -1,0 +1,17 @@
+[
+  { "email": "kevin@bluer.com", "name": "Kevin Bluer", "commits": 427 },
+  {
+    "email": "schwindt.kevin@gmail.com",
+    "name": "Kevin Schwindt",
+    "commits": 80
+  },
+  { "email": "weaver.skylar@gmail.com", "name": "Skylar Weaver", "commits": 6 },
+  { "email": "kevin.smith@circle.com", "name": "Kevin Smith", "commits": 6 },
+  { "email": "kevin.kx.wang@gmail.com", "name": "Kevin Wang", "commits": 3 },
+  { "email": "sapsaldog@gmail.com", "name": "third party", "commits": 1 },
+  {
+    "email": "kevinweaver@kevins-work-mbp.local",
+    "name": "Kevin Weaver",
+    "commits": 2
+  }
+]

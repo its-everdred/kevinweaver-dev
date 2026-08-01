@@ -1,0 +1,52 @@
+{
+  "requests": [
+    {
+      "login": "its-everdred",
+      "from": "2021-01-01T00:00:00Z",
+      "to": "2021-12-31T23:59:59Z",
+      "response": {
+        "user": {
+          "contributionsCollection": {
+            "commitContributionsByRepository": [],
+            "pullRequestContributionsByRepository": [],
+            "issueContributionsByRepository": [],
+            "pullRequestReviewContributionsByRepository": []
+          }
+        },
+        "rateLimit": { "cost": 1, "remaining": 999 }
+      }
+    },
+    {
+      "login": "its-applekid",
+      "from": "2021-01-01T00:00:00Z",
+      "to": "2021-12-31T23:59:59Z",
+      "response": {
+        "user": {
+          "contributionsCollection": {
+            "commitContributionsByRepository": [],
+            "pullRequestContributionsByRepository": [],
+            "issueContributionsByRepository": [],
+            "pullRequestReviewContributionsByRepository": []
+          }
+        },
+        "rateLimit": { "cost": 1, "remaining": 999 }
+      }
+    }
+  ],
+  "repoCountResponses": [
+    {
+      "login": "its-everdred",
+      "response": {
+        "user": { "repositories": { "totalCount": 50 } },
+        "rateLimit": { "cost": 1, "remaining": 999 }
+      }
+    },
+    {
+      "login": "its-applekid",
+      "response": {
+        "user": { "repositories": { "totalCount": 4 } },
+        "rateLimit": { "cost": 1, "remaining": 999 }
+      }
+    }
+  ]
+}
