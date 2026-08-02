@@ -1,0 +1,173 @@
+name: e2e
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  PW_IMAGE: mcr.microsoft.com/playwright:v1.62.1-noble
+
+jobs:
+  pin:
+    name: pin
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.pin.outputs.image }}
+      version: ${{ steps.pin.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Assert hermetic workflow triggers
+        shell: bash
+        run: |
+          node - <<'EOF'
+          const fs = require('fs')
+          const lines = fs.readFileSync('.github/workflows/e2e.yml', 'utf8').split('\n')
+          const start = lines.findIndex(line => /^on:\s*$/.test(line))
+          if (start < 0) {
+            console.error('::error::e2e.yml has no top-level on block')
+            process.exit(1)
+          }
+          let end = lines.length
+          for (let index = start + 1; index < lines.length; index += 1) {
+            if (/^\S/.test(lines[index])) {
+              end = index
+              break
+            }
+          }
+          const triggers = lines.slice(start + 1, end)
+            .filter(line => /^ {2}\S/.test(line))
+            .map(line => line.trim().replace(/:.*$/, ''))
+          const expected = ['pull_request', 'push', 'workflow_dispatch']
+          if (JSON.stringify(triggers) !== JSON.stringify(expected)) {
+            console.error(`::error::e2e triggers must be exactly ${expected.join(', ')}`)
+            process.exit(1)
+          }
+          console.log(`e2e triggers: ${triggers.join(', ')}`)
+          EOF
+
+      - name: Assert image tag matches package version
+        id: pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          want=$(node -p "require('./package.json').devDependencies['@playwright/test'].replace(/^[^0-9]*/,'')")
+          tag=${PW_IMAGE##*:}
+          tag=${tag#v}
+          tag=${tag%-noble}
+          echo "package.json=$want image=$PW_IMAGE tag=$tag"
+          if [ "$want" != "$tag" ]; then
+            echo "::error::@playwright/test is $want but the pinned container is $PW_IMAGE"
+            exit 1
+          fi
+          echo "image=$PW_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "version=$want" >> "$GITHUB_OUTPUT"
+
+  e2e:
+    name: e2e (shard ${{ matrix.shard }}/2)
+    needs: [pin]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    container:
+      image: ${{ needs.pin.outputs.image }}
+      options: --user root --ipc=host
+    env:
+      HOME: /root
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_TEST_HOOKS: '1'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      - name: Assert CLI and browser builds match the pinned image
+        shell: bash
+        run: |
+          set -euo pipefail
+          want='${{ needs.pin.outputs.version }}'
+          have=$(npx playwright --version | sed 's/^Version //')
+          echo "pinned=$want cli=$have browsers=${PLAYWRIGHT_BROWSERS_PATH:-<unset>}"
+          if [ "$have" != "$want" ]; then
+            echo "::error::playwright CLI is $have but the container is pinned to $want"
+            exit 1
+          fi
+          if ! dry_run=$(npx playwright install --dry-run); then
+            echo "::error::could not determine the browser builds required by $want"
+            exit 1
+          fi
+          browser_dirs=()
+          while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*Install[[:space:]]location:[[:space:]]*(.+)$ ]]; then
+              browser_dirs+=("${BASH_REMATCH[1]}")
+            fi
+          done <<< "$dry_run"
+          if [ "${#browser_dirs[@]}" -ne 5 ]; then
+            echo "::error::expected five browser build locations, found ${#browser_dirs[@]}"
+            exit 1
+          fi
+          declare -A seen_dirs=()
+          missing=0
+          for directory in "${browser_dirs[@]}"; do
+            if [[ -n "${seen_dirs[$directory]+present}" ]]; then
+              echo "::error::duplicate browser build location $directory"
+              missing=1
+            fi
+            seen_dirs["$directory"]=1
+            if [ ! -d "$directory" ]; then
+              echo "::error::container is missing browser build $directory"
+              missing=1
+            else
+              echo "ok $directory"
+            fi
+          done
+          [ "$missing" = 0 ]
+
+      - run: npm run build
+
+      - run: npx playwright test --shard=${{ matrix.shard }}/2
+
+      - uses: actions/upload-artifact@v7.0.1
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-blob-${{ matrix.shard }}
+          path: |
+            blob-report/
+            test-results/
+          retention-days: 14
+
+  e2e-ok:
+    name: e2e-ok
+    needs: [pin, e2e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert no upstream failure
+        shell: bash
+        run: |
+          echo "pin=${{ needs.pin.result }} e2e=${{ needs.e2e.result }}"
+          for result in "${{ needs.pin.result }}" "${{ needs.e2e.result }}"; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::upstream job resolved to $result"; exit 1 ;;
+            esac
+          done
