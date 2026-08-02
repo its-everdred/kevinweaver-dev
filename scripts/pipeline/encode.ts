@@ -89,7 +89,7 @@ const inputSchema = z.object({
   repos: z.array(
     z.object({
       n: z.string(),
-      databaseId: z.number().int().nonnegative(),
+      databaseId: z.number().int().positive(),
       stargazerCount: z.number().int().nonnegative(),
       first: z.string(),
       last: z.string(),

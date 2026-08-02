@@ -80,6 +80,18 @@ describe('pipeline validator', () => {
     ).toContain('E_ROUNDTRIP')
   })
 
+  it('rejects a parseable manifest that differs from the encoded value', () => {
+    expect(
+      codes(
+        withFile(
+          validBundle(),
+          'manifest.json',
+          JSON.stringify({ ...validBundle().manifest, refs: 'head' })
+        )
+      )
+    ).toContain('E_ROUNDTRIP')
+  })
+
   it('detects a regression against saved pipeline state', () => {
     const previous: PipelineState = {
       schema: 1,

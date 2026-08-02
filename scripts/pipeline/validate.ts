@@ -55,6 +55,7 @@ export function validateBundle(
     ...slices.map((slice) => gzipSync(slice).byteLength)
   )
   validateJson(files, findings)
+  validateManifestBytes(bundle.manifest, files, findings)
   validateIntegrity(bundle.manifest.integrity, files, findings)
   validateBundleShape(bundle, files, decoded, chunks, slices, findings)
   validateRegression(bundle, prev, decoded?.repos ?? [], findings)
@@ -281,6 +282,19 @@ function validateIntegrity(
     if (actual !== expected)
       add(findings, 'E_ROUNDTRIP', `Integrity mismatch for ${path}.`)
   })
+}
+
+function validateManifestBytes(
+  manifest: EncodedBundle['manifest'],
+  files: ReadonlyMap<string, string>,
+  findings: Finding[]
+): void {
+  if (files.get('manifest.json') !== `${JSON.stringify(manifest)}\n`)
+    add(
+      findings,
+      'E_ROUNDTRIP',
+      'Manifest bytes differ from the encoded value.'
+    )
 }
 function recordOrArray(text: string): boolean {
   try {
