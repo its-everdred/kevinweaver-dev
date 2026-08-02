@@ -47,6 +47,18 @@ describe('bundle promotion', () => {
 
     expect(disk.paths()).toEqual(['target', 'target.previous'])
   })
+
+  it('restores previous when the promoted target cannot be hashed', async () => {
+    const disk = fakeDisk(['target', 'target.previous'])
+    const hash = async (path: string): Promise<string> => {
+      if (path === 'target') throw new Error('damaged target')
+      return 'old'
+    }
+
+    await recoverWith(disk.operations, hash, 'target', 'old')
+
+    expect(disk.paths()).toEqual(['target'])
+  })
 })
 
 function hashFor(target: string, previous: string) {

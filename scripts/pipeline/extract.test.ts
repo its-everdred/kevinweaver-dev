@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { compareRawEvents, extractAll } from './extract'
+import type { GitExec } from './clone'
 import type { RawEvent } from './extract'
 
 let fixtureRoot = ''
@@ -91,6 +92,17 @@ describe('extractAll', () => {
     expect(JSON.stringify(first.events)).toBe(JSON.stringify(second.events))
   })
 
+  it('reuses the preserved bare clone after a fetch failure', async () => {
+    const result = await extractAll(['fixture/repo'], [], {
+      cloneRoot,
+      retries: 1,
+      exec: staleFetch(),
+    })
+
+    expect(result.repos[0]).toMatchObject({ status: 'stale' })
+    expect(result.events).toHaveLength(2)
+  })
+
   it('uses the documented total order for same-day file touches', () => {
     const events: RawEvent[] = [
       { day: '2026-01-02', repo: 'z/repo', sha: 'a', path: 'a', actor: 0 },
@@ -107,3 +119,21 @@ describe('extractAll', () => {
     ])
   })
 })
+
+function staleFetch(): GitExec {
+  return async (args) => {
+    if (args.includes('config'))
+      return {
+        code: 0,
+        stdout: 'https://example.test/fixture.git\n',
+        stderr: '',
+      }
+    if (args.includes('for-each-ref'))
+      return {
+        code: 0,
+        stdout: `refs/heads/main ${'a'.repeat(40)}\n`,
+        stderr: '',
+      }
+    return { code: 128, stdout: '', stderr: 'fetch unavailable' }
+  }
+}

@@ -20,6 +20,9 @@ import { finalizePromotion, promote, rollbackPromotion } from './encode-promote.
 import { recoverPromotion } from './encode-promote.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { persistWith } from './encode-transaction.ts'
+// prettier-ignore
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { PipelineAvailabilityError, UpstreamUnavailableError } from './encode-stage-runtime.ts'
 export async function writeBundle(
   bundle: EncodedBundle,
   dir: string
@@ -70,8 +73,14 @@ export async function main(
     return 0
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'Pipeline failed')
-    return error instanceof PipelineStateError ? 1 : 3
+    return exitCode(error)
   }
+}
+
+function exitCode(error: unknown): number {
+  if (error instanceof UpstreamUnavailableError) return 3
+  if (error instanceof PipelineAvailabilityError) return 2
+  return 1
 }
 
 type PreparedRun = {

@@ -26,14 +26,16 @@ export interface PipelineState {
   [key: string]: unknown
 }
 
-const repoStateSchema = z.object({
-  heads: z.record(z.string(), z.string()),
-  events: z.number().int().nonnegative(),
-  lastEventDay: z.string().optional(),
-  status: z.enum(['ok', 'stale', 'gone']),
-  lastOk: z.string().nullable(),
-  consecutiveFailures: z.number().int().nonnegative(),
-})
+const repoStateSchema = z
+  .object({
+    heads: z.record(z.string(), z.string()),
+    events: z.number().int().nonnegative(),
+    lastEventDay: z.string().optional(),
+    status: z.enum(['ok', 'stale', 'gone']),
+    lastOk: z.string().nullable(),
+    consecutiveFailures: z.number().int().nonnegative(),
+  })
+  .passthrough()
 
 const stateSchema = z
   .object({

@@ -7,7 +7,6 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { syncAll, syncRepo } from './clone'
 import { extractAll } from './extract'
 import type { GitExec } from './clone'
-import type { RepoExtract } from './extract'
 
 const roots: string[] = []
 
@@ -76,42 +75,14 @@ describe('clone cache failure handling', () => {
     ])
   })
 
-  it('preserves prior events when a clone becomes stale', async () => {
-    const previous: RepoExtract = {
-      n: 'example/failing',
-      first: '2026-01-02',
-      last: '2026-01-02',
-      private: false,
-      status: 'ok',
-      consecutiveFailures: 2,
-      lastOk: '2026-01-02T00:00:00Z',
-      heads: { 'refs/heads/main': 'a'.repeat(40) },
-      events: [
-        {
-          day: '2026-01-02',
-          repo: 'example/failing',
-          sha: 'a'.repeat(40),
-          path: 'keep.ts',
-          actor: 0,
-          authorDate: '2026-01-02T20:00:00-08:00',
-        },
-      ],
-      error: null,
-    }
-
-    const result = await extractAll(['example/failing'], [previous], {
-      cloneRoot: root(),
-      retries: 3,
-      backoffMs: 0,
-      exec: failedExec(),
-    })
-
-    expect(result.repos).toHaveLength(1)
-    expect(result.repos[0]).toMatchObject({
-      status: 'stale',
-      consecutiveFailures: 3,
-    })
-    expect(result.repos[0]?.events).toEqual(previous.events)
-    expect(result.repos[0]?.error).toContain('Connection timed out')
+  it('fails closed when a stale clone has no preserved cache', async () => {
+    await expect(
+      extractAll(['example/failing'], [], {
+        cloneRoot: root(),
+        retries: 1,
+        backoffMs: 0,
+        exec: failedExec(),
+      })
+    ).rejects.toThrow('preserved bare clone is unavailable')
   })
 })

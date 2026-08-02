@@ -141,7 +141,7 @@ describe('pipeline encoder', () => {
       JSON.stringify(MINI_INPUT).replace('"databaseId":1,', '')
     )
 
-    await expect(main(['--input', input, '--dry-run'])).resolves.toBe(3)
+    await expect(main(['--input', input, '--dry-run'])).resolves.toBe(1)
   })
 
   it('rejects a non-positive discovery database ID', async () => {
@@ -152,9 +152,93 @@ describe('pipeline encoder', () => {
       JSON.stringify(MINI_INPUT).replace('"databaseId":1,', '"databaseId":0,')
     )
 
-    await expect(main(['--input', input, '--dry-run'])).resolves.toBe(3)
+    await expect(main(['--input', input, '--dry-run'])).resolves.toBe(1)
+  })
+
+  it('preserves validated heads supplied through the input boundary', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'kw014-encode-'))
+    const input = join(directory, 'input.json')
+    const heads = { 'refs/heads/main': 'a'.repeat(40) }
+    await writeFile(
+      input,
+      JSON.stringify({
+        ...MINI_INPUT,
+        repos: [{ ...MINI_INPUT.repos[0], heads }, MINI_INPUT.repos[1]],
+      })
+    )
+
+    await expect(main(['--input', input, '--dry-run'])).resolves.toBe(1)
+  })
+
+  it('promotes a valid bundle and advances its state', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'kw014-encode-'))
+    const input = join(directory, 'input.json')
+    const output = join(directory, 'bundle')
+    const state = join(directory, 'state.json')
+    await writeFile(input, JSON.stringify(validInput()))
+
+    await expect(
+      main([
+        '--input',
+        input,
+        '--out',
+        output,
+        '--state',
+        state,
+        '--generated-at',
+        '2026-07-31T00:00:00Z',
+      ])
+    ).resolves.toBe(0)
+
+    await expect(
+      readFile(join(output, 'manifest.json'), 'utf8')
+    ).resolves.toContain('generatedAt')
+    await expect(readFile(state, 'utf8')).resolves.toContain('bundleHash')
   })
 })
+
+function validInput(): EncodeInput {
+  const repos = Array.from({ length: 40 }, (_, index) => repository(index))
+  return {
+    ...MINI_INPUT,
+    events: repos.flatMap((repo, index) => eventsFor(repo.n, index)),
+    repos,
+    grid: {
+      ...MINI_INPUT.grid,
+      start: '2026-07-31',
+      e: [40_000],
+      a: [0],
+      p: [0],
+    },
+    combinedTotal: 40_000,
+    repoCount: 40,
+  }
+}
+
+function repository(index: number): EncodeInput['repos'][number] {
+  return {
+    n: `owner/repo-${String(index).padStart(2, '0')}`,
+    databaseId: index + 1,
+    stargazerCount: index,
+    first: '2026-07-31',
+    last: '2026-07-31',
+    private: false,
+    status: 'ok',
+  }
+}
+
+function eventsFor(
+  repo: string,
+  index: number
+): EncodeInput['events'][number][] {
+  return Array.from({ length: 1000 }, (_, event) => ({
+    day: '2026-07-31',
+    repo,
+    sha: `${index.toString(16)}${event.toString(16)}`.padStart(40, '0'),
+    path: `src/${index}.ts`,
+    actor: 0,
+  }))
+}
 
 function text(bundle: ReturnType<typeof encodeBundle>, path: string): string {
   const file = bundle.files.find((entry) => entry.path === path)

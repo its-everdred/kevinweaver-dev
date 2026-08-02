@@ -8,6 +8,14 @@ import { describe, expect, it } from 'vitest'
 import { PipelineStateError, bootstrapState, mergeRepoState, readState, writeState } from './state.ts'
 
 describe('pipeline state', () => {
+  it('treats the committed bootstrap as no prior run', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'kw014-state-'))
+    const path = join(directory, 'state.json')
+    await writeFile(path, '{"schema":1,"repos":{}}\n')
+
+    await expect(readState(path)).resolves.toBeNull()
+  })
+
   it('bootstraps missing state and retains stale repository history', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'kw014-state-'))
     const path = join(directory, 'state.json')
