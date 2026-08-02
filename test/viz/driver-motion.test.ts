@@ -47,6 +47,7 @@ test('publishes reduced-motion removal without starting animation', () => {
   let requests = 0
   vi.stubGlobal('window', { matchMedia: () => media })
   vi.stubGlobal('requestAnimationFrame', () => ++requests)
+  vi.stubGlobal('cancelAnimationFrame', () => undefined)
   const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
   const unbind = bindVizTransport(driver, { dayCount: INPUT.dayCount })
   const cursor = driver.inspect().cursorDayInt
@@ -58,6 +59,23 @@ test('publishes reduced-motion removal without starting animation', () => {
   expect(requests).toBe(0)
 
   unbind()
+  driver.destroy()
+  vi.unstubAllGlobals()
+})
+
+test('suppresses automatic start but permits explicit reduced-motion play', () => {
+  const media = new FakeMediaQuery()
+  let requests = 0
+  vi.stubGlobal('window', { matchMedia: () => media })
+  vi.stubGlobal('requestAnimationFrame', () => ++requests)
+  vi.stubGlobal('cancelAnimationFrame', () => undefined)
+  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+
+  driver.start()
+  expect(requests).toBe(0)
+  driver.play()
+  expect(requests).toBe(1)
+
   driver.destroy()
   vi.unstubAllGlobals()
 })
@@ -77,10 +95,17 @@ test('replaces a pending invalidation with one resumed animation frame', () => {
 
   driver.invalidate('ribbon')
   driver.play()
+  const unbind = bindVizTransport(driver, { dayCount: INPUT.dayCount })
   media.setMatches(true)
   media.setMatches(false)
 
   expect(active).toEqual(new Set([nextId]))
+  expect(driver.inspect()).toMatchObject({ playing: true, reducedMotion: false })
+  expect(getVizTransport().getSnapshot()).toMatchObject({
+    playing: true,
+    reducedMotion: false,
+  })
+  unbind()
   driver.destroy()
   expect(active).toEqual(new Set())
   vi.unstubAllGlobals()

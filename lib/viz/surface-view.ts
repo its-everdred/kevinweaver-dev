@@ -86,7 +86,7 @@ class SurfaceViews implements VizSurfaceViews {
     const viewport = geometry ?? this.#viewports.get(id) ?? FALLBACK_VIEWPORT
     return {
       viewport: renderViewport(viewport, geometry),
-      theme: surfaceTheme(geometry),
+      theme: surfaceTheme(geometry, viewport),
       quality,
       meta,
       budget,
@@ -122,13 +122,27 @@ function renderViewport(
   }
 }
 
-function surfaceTheme(geometry: VizSurfaceGeometry | undefined): RenderTheme {
+function surfaceTheme(
+  geometry: VizSurfaceGeometry | undefined,
+  viewport: VizViewport
+): RenderTheme {
   return {
     lv: LV,
     ag: AG,
     paneSurface: PANE_SURFACE,
     token: SURFACE_TOKEN,
-    fontPx: geometry?.font ?? FALLBACK_FONT,
+    fontPx: scaleFont(geometry?.font ?? FALLBACK_FONT, viewport.dpr),
     fontFamily: FALLBACK_FONT_FAMILY,
+  }
+}
+
+function scaleFont(
+  font: VizSurfaceGeometry['font'] | typeof FALLBACK_FONT,
+  dpr: number
+): typeof FALLBACK_FONT {
+  return {
+    micro: font.micro * dpr,
+    small: font.small * dpr,
+    mono: font.mono * dpr,
   }
 }
