@@ -73,6 +73,7 @@ test('normalizes a resized downstream DPR transform at paint time', async () => 
     .at(-1)
   expect(transform).toEqual(['setTransform', 1, 0, 0, 1, 0, 0])
   expect(recorded.calls).toContainEqual(['clearRect', 0, 0, 1080, 300])
+  expect(recorded.calls).toContainEqual(['set:font', '600 14px monospace'])
   expect(recorded.ctx.getImageData(1055, 116, 1, 1).data[3]).toBeGreaterThan(0)
   expect(driver.inspect().highlightCell?.week).toBe(52)
 

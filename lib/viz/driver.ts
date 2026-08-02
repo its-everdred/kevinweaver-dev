@@ -19,22 +19,18 @@ import {
   type SimInput,
   type SimState,
 } from './sim/types'
-import { createGraphLayer } from './render/graph'
-import { createOverviewLayer } from './render/overview'
-import { createRibbonLayer } from './render/ribbon'
-import {
-  createFrameBudget,
-  type GridSeries,
-  type Quality,
-  type RenderMeta,
-  type RenderView,
-} from './render/budget'
+import type { RenderView } from './render/budget'
 import { syncVizRibbonWindow } from './surface-pointer'
 import { createVizSurfaceController } from './surface-controller'
 import { paintVizSurfaces } from './surface-painter'
 import { createVizDriverSurfaceApi } from './driver-surface-api'
 import { createVizDriverLifecycle } from './driver-lifecycle'
 import { createVizDriverRibbon } from './driver-ribbon'
+import {
+  createVizDriverRenderLayers,
+  createVizRenderMeta,
+  renderVizQuality,
+} from './driver-render'
 import type {
   VizPointer,
   VizSurfaceAttachment,
@@ -279,7 +275,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   const mapping = tickMapping(options.input)
   const listeners = new Set<(info: VizFrameInfo) => void>()
   const destroyListeners = new Set<() => void>()
-  const layers = createLayers(options.input)
+  const layers = createVizDriverRenderLayers(options.input)
   const surfaceController = createVizSurfaceController(layers.budget)
   let quality = qualityForTier(0)
   let qualityMode: 'high' | 'low' | 'auto' = 'auto'
@@ -324,6 +320,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     } else if (action === 'resume') {
       accumulator = 0
       cancelInvalidatedPaint()
+      publishFrameInfo()
       scheduleFrame()
     } else paint(settled)
   }
@@ -580,6 +577,9 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       surfacePaintOptions(winStart, targets)
     )
     if (targets === undefined) surfaceController.clearDirty()
+    publishFrameInfo(winStart, total)
+  }
+  function publishFrameInfo(winStart = syncRibbonWindow(), total = 0): void {
     lastInfo = buildInfo(winStart, total)
     listeners.forEach((listener) => listener(lastInfo))
   }
@@ -590,8 +590,8 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     return {
       state,
       layers,
-      quality: renderQuality(quality),
-      meta: renderMeta(options.repoNames),
+      quality: renderVizQuality(quality),
+      meta: createVizRenderMeta(options.repoNames),
       focusedDay: state.cursorDayInt,
       winStart,
       targets,
@@ -640,8 +640,8 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   function buildRenderView(surface: VizCanvasId = 'graph'): RenderView {
     return surfaceController.buildView(
       surface,
-      renderQuality(quality),
-      renderMeta(options.repoNames),
+      renderVizQuality(quality),
+      createVizRenderMeta(options.repoNames),
       state.cursorDayInt
     )
   }
@@ -705,62 +705,6 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
 function assertTick(tick: number): void {
   if (!Number.isInteger(tick) || !Number.isFinite(tick))
     throw new RangeError(`tick ${tick} must be a finite integer`)
-}
-function createLayers(input: SimInput): {
-  readonly budget: ReturnType<typeof createFrameBudget>
-  readonly graph: ReturnType<typeof createGraphLayer>
-  readonly ribbon: ReturnType<typeof createRibbonLayer>
-  readonly overview: ReturnType<typeof createOverviewLayer>
-} {
-  const grid: GridSeries = {
-    dayCount: input.dayCount,
-    windowStartISO: input.windowStartISO,
-    total: new Uint16Array(input.dayCount),
-    agent: new Uint16Array(input.dayCount),
-    level: new Uint8Array(input.dayCount),
-    agentBirthDay: -1,
-  }
-  return {
-    budget: createFrameBudget(false),
-    graph: createGraphLayer(input.entityCount),
-    ribbon: createRibbonLayer(grid),
-    overview: createOverviewLayer(grid),
-  }
-}
-function renderQuality(value: VizQuality): Quality {
-  return {
-    name:
-      value.tier === 0
-        ? 'full'
-        : value.tier === 1
-          ? 'no-file-labels'
-          : value.tier === 2
-            ? 'no-spokes'
-            : value.tier === 3
-              ? 'no-shadows'
-              : value.tier === 4
-                ? 'dpr1'
-                : 'half-files',
-    dpr: value.dprCap,
-    fileLabels: value.fileLabels,
-    spokes: value.spokes,
-    shadows: value.glow,
-    maxFiles: value.fileCap,
-    clusterMode: value.tier < 4 ? 'blur' : 'hatch',
-  }
-}
-function renderMeta(repoNames: readonly string[]): RenderMeta {
-  return {
-    repos: repoNames.map((short) => ({
-      short,
-      actor: 0,
-      stars: 0,
-      isPrivate: false,
-    })),
-    fileLabel: (id) => String(id),
-    agentBirthLabel: null,
-    agentBirthSubLabel: null,
-  }
 }
 function dateParts(iso: string): [number, number, number] {
   const parts = iso.split('-').map(Number)
