@@ -42,10 +42,17 @@ class FakeMediaQuery extends EventTarget {
   }
 }
 
+function stubWindow(media: FakeMediaQuery): void {
+  vi.stubGlobal('window', {
+    location: { search: '' },
+    matchMedia: () => media,
+  })
+}
+
 test('publishes reduced-motion removal without starting animation', () => {
   const media = new FakeMediaQuery()
   let requests = 0
-  vi.stubGlobal('window', { matchMedia: () => media })
+  stubWindow(media)
   vi.stubGlobal('requestAnimationFrame', () => ++requests)
   vi.stubGlobal('cancelAnimationFrame', () => undefined)
   const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
@@ -66,7 +73,7 @@ test('publishes reduced-motion removal without starting animation', () => {
 test('suppresses automatic start but permits explicit reduced-motion play', () => {
   const media = new FakeMediaQuery()
   let requests = 0
-  vi.stubGlobal('window', { matchMedia: () => media })
+  stubWindow(media)
   vi.stubGlobal('requestAnimationFrame', () => ++requests)
   vi.stubGlobal('cancelAnimationFrame', () => undefined)
   const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
@@ -84,7 +91,7 @@ test('replaces a pending invalidation with one resumed animation frame', () => {
   const media = new FakeMediaQuery(false)
   const active = new Set<number>()
   let nextId = 0
-  vi.stubGlobal('window', { matchMedia: () => media })
+  stubWindow(media)
   vi.stubGlobal('requestAnimationFrame', () => {
     const id = ++nextId
     active.add(id)
@@ -110,3 +117,26 @@ test('replaces a pending invalidation with one resumed animation frame', () => {
   expect(active).toEqual(new Set())
   vi.unstubAllGlobals()
 })
+
+test.each(['pause', 'destroy'] as const)(
+  'does not resume after a subscriber calls %s',
+  (action) => {
+    const media = new FakeMediaQuery(false)
+    let requests = 0
+    stubWindow(media)
+    vi.stubGlobal('requestAnimationFrame', () => ++requests)
+    vi.stubGlobal('cancelAnimationFrame', () => undefined)
+    const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+    driver.subscribe((info) => {
+      if (!info.reducedMotion) driver[action]()
+    })
+
+    driver.play()
+    media.setMatches(true)
+    media.setMatches(false)
+
+    expect(requests).toBe(1)
+    driver.destroy()
+    vi.unstubAllGlobals()
+  }
+)

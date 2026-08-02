@@ -321,7 +321,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       accumulator = 0
       cancelInvalidatedPaint()
       publishFrameInfo()
-      scheduleFrame()
+      if (lifecycle.running) scheduleFrame()
     } else paint(settled)
   }
   media?.addEventListener('change', onMediaChange)
