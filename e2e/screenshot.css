@@ -1,0 +1,17 @@
+/* Injected through Playwright's screenshot stylePath when visual tests run. */
+*,
+*::before,
+*::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* The terminal caret must render solid, not mid-blink. */
+.cursor {
+  opacity: 1 !important;
+}
+
+/* The tmux clock is time-dependent content rather than an animation. */
+.tmux .seg.clock {
+  visibility: hidden !important;
+}
