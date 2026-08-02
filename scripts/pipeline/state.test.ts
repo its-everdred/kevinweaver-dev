@@ -82,4 +82,26 @@ describe('pipeline state', () => {
       repos: { 'owner/repo': { future: 'retained' } },
     })
   })
+
+  it('preserves an unknown repository field after a successful refresh', () => {
+    const merged = mergeRepoState(
+      {
+        heads: {},
+        events: 1,
+        status: 'stale',
+        lastOk: null,
+        consecutiveFailures: 1,
+        future: 'keep',
+      },
+      {
+        heads: { main: 'a' },
+        events: 2,
+        status: 'ok',
+        lastOk: '2026-08-02T00:00:00Z',
+        consecutiveFailures: 0,
+      }
+    )
+
+    expect(merged).toMatchObject({ future: 'keep', events: 2, status: 'ok' })
+  })
 })

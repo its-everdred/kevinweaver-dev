@@ -11,6 +11,7 @@ export interface RepoPipelineState {
   status: 'ok' | 'stale' | 'gone'
   lastOk: string | null
   consecutiveFailures: number
+  [key: string]: unknown
 }
 
 export interface PipelineState {
@@ -103,7 +104,8 @@ export function mergeRepoState(
   previous: RepoPipelineState | undefined,
   next: RepoPipelineState
 ): RepoPipelineState {
-  if (next.status === 'ok' || previous === undefined) return next
+  if (previous === undefined) return next
+  if (next.status === 'ok') return { ...previous, ...next }
   return {
     ...previous,
     ...next,

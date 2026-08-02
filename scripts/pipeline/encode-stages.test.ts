@@ -23,6 +23,8 @@ import { resolveStages } from './encode-stages.ts'
 import { main } from './encode.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { SamlCanaryError } from './calendar.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { calendar, discovery, extraction } from './encode-stages-fixture.ts'
 
 const prior = {
   schema: 1 as const,
@@ -82,115 +84,27 @@ describe('live stage assembly', () => {
     expect(stages.extraction).toHaveBeenCalledOnce()
   })
 
-  it('maps an unavailable live stage to exit 3', async () => {
-    stages.discovery.mockRejectedValueOnce(new Error('offline'))
-    await expect(main(['--dry-run'])).resolves.toBe(3)
-  })
-
-  it('maps the concrete SAML refusal to exit 2', async () => {
-    stages.calendar.mockRejectedValueOnce(
-      new SamlCanaryError(calendar().canary)
-    )
-    await expect(main(['--dry-run'])).resolves.toBe(2)
+  it.each([
+    [
+      'unavailable stage',
+      () => stages.discovery.mockRejectedValueOnce(new Error('offline')),
+      3,
+    ],
+    [
+      'local binding violation',
+      () => stages.calendar.mockResolvedValueOnce({}),
+      1,
+    ],
+    [
+      'concrete SAML refusal',
+      () =>
+        stages.calendar.mockRejectedValueOnce(
+          new SamlCanaryError(calendar().canary)
+        ),
+      2,
+    ],
+  ])('maps %s to exit %i', async (_, arrange, code) => {
+    arrange()
+    await expect(main(['--dry-run'])).resolves.toBe(code)
   })
 })
-
-function calendar() {
-  return {
-    source: 'github-graphql',
-    generatedAt: '2026-07-31T00:00:00Z',
-    windowStart: '2026-07-31',
-    windowEnd: '2026-07-31',
-    dayCount: 1,
-    canary: {
-      ok: true,
-      probeRepository: 'ethereum-optimism/actions',
-      sawRepository: true,
-      sawOrgContribution: true,
-      window: '2026',
-      checkedAt: '2026-07-31T00:00:00Z',
-      detail: 'ok',
-    },
-    actors: [],
-    combined: [{ date: '2026-07-31', e: 1, a: 0 }],
-    combinedTotalNaive: 1,
-    combinedTotalDeduplicated: null,
-    degraded: [],
-  }
-}
-
-function discovery() {
-  return {
-    windowStart: '2026-07-31',
-    windowEnd: '2026-07-31',
-    actors: ['its-everdred', 'its-applekid'],
-    repos: [
-      {
-        nameWithOwner: 'owner/current',
-        databaseId: 1,
-        isPrivate: false,
-        isFork: false,
-        isArchived: false,
-        stargazerCount: 3,
-        createdAt: '2020-01-01T00:00:00Z',
-        contributions: {
-          commit: 1,
-          pullRequest: 0,
-          issue: 0,
-          pullRequestReview: 0,
-        },
-      },
-    ],
-    repoCountDefinition: {
-      definition: 'ownerPublicNonFork',
-      count: 2,
-      byActor: { 'its-everdred': 1, 'its-applekid': 1 },
-    },
-    queryCost: 1,
-  }
-}
-
-function extraction() {
-  const event = (repo: string, day: string) => ({
-    day,
-    repo,
-    sha: repo[6]!.repeat(40),
-    path: 'src/run.ts',
-    actor: 0,
-    authorDate: `${day}T00:00:00Z`,
-  })
-  return {
-    events: [
-      event('owner/current', '2026-07-31'),
-      event('owner/prior', '2026-07-30'),
-    ],
-    repos: [
-      {
-        n: 'owner/current',
-        first: '2026-07-31',
-        last: '2026-07-31',
-        private: false,
-        status: 'ok',
-        consecutiveFailures: 0,
-        lastOk: '2026-07-31T00:00:00Z',
-        heads: {},
-        events: [],
-        error: null,
-      },
-      {
-        n: 'owner/prior',
-        first: '2026-07-30',
-        last: '2026-07-30',
-        private: false,
-        status: 'stale',
-        consecutiveFailures: 7,
-        lastOk: '2026-07-30T00:00:00Z',
-        heads: {},
-        events: [],
-        error: 'fetch failed',
-      },
-    ],
-    commitScope: '--all',
-    cloneRoot: '/tmp/clones',
-  }
-}
