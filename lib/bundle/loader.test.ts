@@ -155,6 +155,8 @@ function fixture(): BundleInput {
       v: 1,
       generatedAt: '2026-07-31T16:39:00Z',
       commit: 'e664d73',
+      days: ['2026-07-31', '2026-07-28'],
+      refs: 'all',
       windowStart: '2026-07-28',
       windowEnd: '2026-07-31',
       dayCount: 4,
