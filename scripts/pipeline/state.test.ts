@@ -57,4 +57,29 @@ describe('pipeline state', () => {
 
     await expect(readState(path)).rejects.toBeInstanceOf(PipelineStateError)
   })
+
+  it('round-trips unknown future state fields without treating them as data', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'kw014-state-'))
+    const path = join(directory, 'state.json')
+    const state = {
+      ...bootstrapState(),
+      future: { publicOnly: true },
+      repos: {
+        'owner/repo': {
+          heads: {},
+          events: 1,
+          status: 'ok' as const,
+          lastOk: null,
+          consecutiveFailures: 0,
+          future: 'retained',
+        },
+      },
+    }
+
+    await writeState(path, state)
+    await expect(readState(path)).resolves.toMatchObject({
+      future: { publicOnly: true },
+      repos: { 'owner/repo': { future: 'retained' } },
+    })
+  })
 })
