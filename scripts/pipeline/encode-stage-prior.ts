@@ -58,6 +58,14 @@ export function calendarFromGrid(grid: PriorGrid): CalendarBundle {
   }
 }
 
+/** Reuses only the measured public private aggregate after a transient failure. */
+export function privateFromGrid(grid: PriorGrid): {
+  p: number[]
+  degraded: string[]
+} {
+  return { p: [...grid.p], degraded: ['private'] }
+}
+
 /** Creates cache-recovery metadata without inventing events or dates. */
 export function extractionPriors(
   state: PipelineState | null
