@@ -16,6 +16,10 @@ import { validateBundle } from './validate.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { finalizePromotion, promote, rollbackPromotion } from './encode-promote.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { recoverPromotion } from './encode-promote.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { persistWith } from './encode-transaction.ts'
 export async function writeBundle(
   bundle: EncodedBundle,
   dir: string
@@ -78,10 +82,12 @@ type PreparedRun = {
 }
 
 async function prepareRun(options: Options): Promise<PreparedRun> {
+  const statePath = options.state ?? 'data/.pipeline-state.json'
+  const previous = await readState(statePath)
+  await recoverPromotion(options.out ?? 'public/data/v1', previous)
   const input = await resolveInput(options.input)
   const bundle = encodeBundle(withGeneratedAt(input, options.generatedAt))
-  const statePath = options.state ?? 'data/.pipeline-state.json'
-  return { bundle, input, previous: await readState(statePath), statePath }
+  return { bundle, input, previous, statePath }
 }
 
 function withGeneratedAt(
@@ -114,16 +120,16 @@ async function publish(
 }
 
 async function persistState(run: PreparedRun, target: string): Promise<void> {
-  try {
-    await writeState(
-      run.statePath,
-      nextState(run.previous, run.bundle, run.input)
-    )
-    await finalizePromotion(target)
-  } catch (error) {
-    await rollbackPromotion(target)
-    throw error
-  }
+  await persistWith(
+    {
+      write: writeState,
+      rollback: rollbackPromotion,
+      finalize: finalizePromotion,
+    },
+    run.statePath,
+    nextState(run.previous, run.bundle, run.input),
+    target
+  )
 }
 class BundleWriteError extends Error {
   constructor(message: string) {

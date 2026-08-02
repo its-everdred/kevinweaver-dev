@@ -12,6 +12,8 @@ import { add } from './validate-types.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { firstByte, numbered, validateIntegrity, validateJson, validateManifestBytes } from './validate-format.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { validateCanonicalBytes } from './validate-canonical.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { validateRegression, validateShape } from './validate-shape.ts'
 export type { Finding, Severity, ValidationResult } from './validate-types.ts'
 import type {
@@ -78,6 +80,7 @@ function validateResources(
   validateJson(resources.files, findings)
   validateManifestBytes(bundle.manifest, resources.files, findings)
   validateIntegrity(bundle.manifest.integrity, resources.files, findings)
+  validateCanonicalBytes(resources, findings)
   validateShape(bundle, resources, findings)
   validateRegression(bundle, prev, resources.decoded?.repos ?? [], findings)
 }

@@ -1,4 +1,7 @@
 import { rename, rm, stat } from 'node:fs/promises'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { readBundleHash } from './encode-hash.ts'
+import type { PipelineState } from './state.ts'
 
 export interface FileOperations {
   exists(path: string): Promise<boolean>
@@ -48,6 +51,27 @@ export async function rollbackPromotion(targetDir: string): Promise<void> {
   if (await files.exists(previous)) await files.rename(previous, targetDir)
 }
 
+/** Resolves an interrupted promotion using the persisted generation digest. */
+export async function recoverPromotion(
+  targetDir: string,
+  state: PipelineState | null
+): Promise<void> {
+  await recoverWith(files, readBundleHash, targetDir, state?.bundleHash)
+}
+
+export async function recoverWith(
+  operations: FileOperations,
+  hashFor: (directory: string) => Promise<string>,
+  target: string,
+  expectedHash: string | undefined
+): Promise<void> {
+  const previous = previousPath(target)
+  if (!(await operations.exists(previous))) return
+  if (!(await operations.exists(target)))
+    return operations.rename(previous, target)
+  await settleGenerations(operations, hashFor, target, previous, expectedHash)
+}
+
 function previousPath(targetDir: string): string {
   return `${targetDir}.previous`
 }
@@ -57,8 +81,32 @@ async function recoverPrevious(
   previous: string,
   target: string
 ): Promise<void> {
-  if ((await operations.exists(target)) || !(await operations.exists(previous)))
-    return
+  const hasTarget = await operations.exists(target)
+  const hasPrevious = await operations.exists(previous)
+  if (hasTarget && hasPrevious)
+    throw new PromotionRecoveryError(
+      'Bundle recovery must run before promotion.'
+    )
+  if (hasTarget || !hasPrevious) return
+  await operations.rename(previous, target)
+}
+
+async function settleGenerations(
+  operations: FileOperations,
+  hashFor: (directory: string) => Promise<string>,
+  target: string,
+  previous: string,
+  expectedHash: string | undefined
+): Promise<void> {
+  if (!expectedHash)
+    throw new PromotionRecoveryError('Cannot identify prior bundle generation.')
+  if ((await hashFor(target)) === expectedHash)
+    return operations.remove(previous)
+  if ((await hashFor(previous)) !== expectedHash)
+    throw new PromotionRecoveryError(
+      'No bundle generation matches pipeline state.'
+    )
+  await operations.remove(target)
   await operations.rename(previous, target)
 }
 
@@ -94,4 +142,11 @@ function isMissing(error: unknown): boolean {
     'code' in error &&
     error.code === 'ENOENT'
   )
+}
+
+export class PromotionRecoveryError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'PromotionRecoveryError'
+  }
 }

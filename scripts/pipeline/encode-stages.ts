@@ -4,6 +4,8 @@ import { BAND_LOWER_BOUNDS } from '../../lib/viz/tokens/level.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { currentSecond, loadStage, requiredCommit, requiredToken } from './encode-stage-runtime.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { sortedHeads } from './encode-heads.ts'
 
 type Client = <T>(
   query: string,
@@ -37,6 +39,7 @@ type Extraction = {
     last: string
     private: false
     status: RepoInput['status']
+    heads: Readonly<Record<string, string>>
   }[]
 }
 
@@ -113,7 +116,7 @@ function assembleInput(
   const extracted = new Map(extraction.repos.map((repo) => [repo.n, repo]))
   const grid = calendar.combined
   return {
-    events: extraction.events.map(event),
+    events: extraction.events,
     repos: discovery.repos.map((repo) =>
       repoInput(repo, extracted.get(repo.nameWithOwner))
     ),
@@ -145,16 +148,6 @@ function assembleInput(
   }
 }
 
-function event(event: RawEvent & { authorDate: string }): RawEvent {
-  return {
-    day: event.day,
-    repo: event.repo,
-    sha: event.sha,
-    path: event.path,
-    actor: event.actor,
-  }
-}
-
 function repoInput(
   repo: Discovery['repos'][number],
   extracted: Extraction['repos'][number] | undefined
@@ -165,6 +158,7 @@ function repoInput(
     n: repo.nameWithOwner,
     databaseId: repo.databaseId,
     stargazerCount: repo.stargazerCount,
+    heads: sortedHeads(extracted.heads),
     first: extracted.first || undefined,
     last: extracted.last || undefined,
     private: repo.isPrivate,
