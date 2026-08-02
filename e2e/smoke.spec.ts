@@ -22,7 +22,7 @@ function isCheckedSubresource(request: Request) {
   const isExpectedFallback =
     request.resourceType() === 'fetch' &&
     isExpectedDataFallback(new URL(request.url()))
-  return request.resourceType() !== 'document' && !isExpectedFallback
+  return !isExpectedFallback
 }
 
 async function loadFirstVisit(page: Page) {
@@ -32,6 +32,7 @@ async function loadFirstVisit(page: Page) {
   await page.route(isExpectedDataFallback, (route) => route.fulfill({ status: 404 }))
   await page.goto('/', { waitUntil: 'load' })
   await Promise.all(fallbackResponses)
+  await page.waitForLoadState('networkidle')
   await page.evaluate(() => document.fonts.ready)
   await expect(page.locator('main')).toBeVisible()
 }
