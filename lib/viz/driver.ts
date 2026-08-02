@@ -223,6 +223,32 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   const state = createSimState(options.input, seed)
   state.speedIndex = DEFAULT_SPEED_INDEX
   packOnce(state)
+  // `packOnce` is guarded by a module-level WeakSet keyed on the state object, so
+  // it can never run twice for this state. But `resetSimState` zeroes the very
+  // arrays it fills (px, py, pr, repoR, repoX, repoY, repoAngle), and `step`
+  // never rewrites them — repoX/repoY are recomputed from repoAngle, which is
+  // also zeroed. Without this snapshot, every seek-driven frame renders repos at
+  // radius 0 stacked at one ring point: the reduced-motion static frame and every
+  // screenshot baseline would capture collapsed geometry while CI stayed green.
+  const packedLayout = {
+    px: state.px.slice(),
+    py: state.py.slice(),
+    pr: state.pr.slice(),
+    repoR: state.repoR.slice(),
+    repoX: state.repoX.slice(),
+    repoY: state.repoY.slice(),
+    repoAngle: state.repoAngle.slice(),
+  } as const
+  /** Restores the packed layout after a reset that zeroed it. */
+  function restorePackedLayout(): void {
+    state.px.set(packedLayout.px)
+    state.py.set(packedLayout.py)
+    state.pr.set(packedLayout.pr)
+    state.repoR.set(packedLayout.repoR)
+    state.repoX.set(packedLayout.repoX)
+    state.repoY.set(packedLayout.repoY)
+    state.repoAngle.set(packedLayout.repoAngle)
+  }
   const mapping = tickMapping(options.input)
   const contexts = new Map<VizCanvasId, Ctx2D>()
   const viewports = new Map<VizCanvasId, VizViewport>()
@@ -369,6 +395,12 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   async function seekTick(tick: number): Promise<VizFrameInfo> {
     assertTick(tick)
     resetSimState(state, seed)
+    restorePackedLayout()
+    // I-D3: two seekTick(t) calls must be identical regardless of what happened
+    // between them. seekDay/seekDate latch a ribbon window that paint() resolves
+    // through, so without clearing it the same tick renders differently after a
+    // prior seekDay — exactly the path-dependence this ticket exists to prevent.
+    latchedWindow = null
     state.speedIndex = DEFAULT_SPEED_INDEX
     state.playing = false
     anchorTick(tick)
@@ -412,6 +444,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   function reset(nextSeed = seed): void {
     seed = nextSeed
     resetSimState(state, seed)
+    restorePackedLayout()
     state.speedIndex = DEFAULT_SPEED_INDEX
     state.playing = false
     latchedWindow = null
