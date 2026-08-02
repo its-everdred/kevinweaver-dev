@@ -17,61 +17,60 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      T: ${{ secrets.CONTRIB_TOKEN }}
     steps:
       - name: Scope must be exactly read:user
-        env:
-          T: ${{ secrets.CONTRIB_TOKEN }}
         run: |
-          if [ -z "$T" ]; then echo "::error::CONTRIB_TOKEN is not set"; exit 1; fi
+          if [ -z "$T" ]; then
+            echo "::error::CONTRIB_TOKEN is empty or not set"
+            exit 1
+          fi
           SCOPES=$(curl -sI -H "Authorization: token $T" https://api.github.com/user \
-                   | tr -d '\r' | grep -i '^x-oauth-scopes:' | cut -d' ' -f2- || true)
-          echo "scopes: [${SCOPES}]"
+                   | tr -d '\r' | grep -i '^x-oauth-scopes:' | sed 's/^[^:]*: *//')
+          echo "scopes: [$SCOPES]"
           if [ "$SCOPES" != "read:user" ]; then
-            echo "::error::over-scoped — expected exactly 'read:user', got '${SCOPES}'"
+            echo "::error::expected exactly 'read:user', got '$SCOPES'"
             exit 1
           fi
           echo "OK: scope is exactly read:user"
 
       - name: Can read contribution counts
-        env:
-          T: ${{ secrets.CONTRIB_TOKEN }}
         run: |
-          BODY='{"query":"{viewer{login contributionsCollection(from:\"2026-01-01T00:00:00Z\",to:\"2026-07-31T00:00:00Z\"){restrictedContributionsCount totalCommitContributions contributionCalendar{totalContributions}}}}"}'
-          OUT=$(curl -s -H "Authorization: bearer $T" -d "$BODY" https://api.github.com/graphql)
-          echo "$OUT" | python3 -c '
-import json,sys
-d=json.load(sys.stdin)
-if "errors" in d:
-    print("::error::GraphQL errors:", json.dumps(d["errors"])[:300]); sys.exit(1)
-c=d["data"]["viewer"]["contributionsCollection"]
-r=c["restrictedContributionsCount"]
-print(f"login                       : {d[\"data\"][\"viewer\"][\"login\"]}")
-print(f"restrictedContributionsCount: {r}")
-print(f"totalCommitContributions    : {c[\"totalCommitContributions\"]}")
-print(f"calendar total              : {c[\"contributionCalendar\"][\"totalContributions\"]}")
-print()
-print("Blinded baseline (no SSO) was 488.")
-print("SSO AUTHORIZED — private volume now visible." if r > 600 else
-      "::warning::restricted count is not materially above the blinded baseline; SSO authorization may not have applied to ethereum-optimism.")
-'
+          Q='{"query":"{viewer{login contributionsCollection(from:\"2026-01-01T00:00:00Z\",to:\"2026-07-31T00:00:00Z\"){restrictedContributionsCount totalCommitContributions}}}"}'
+          curl -s -H "Authorization: bearer $T" -d "$Q" https://api.github.com/graphql > resp.json
+          if jq -e '.errors' resp.json >/dev/null 2>&1; then
+            echo "::error::GraphQL errors: $(jq -c '.errors' resp.json | head -c 300)"
+            exit 1
+          fi
+          R=$(jq -r '.data.viewer.contributionsCollection.restrictedContributionsCount' resp.json)
+          C=$(jq -r '.data.viewer.contributionsCollection.totalCommitContributions' resp.json)
+          L=$(jq -r '.data.viewer.login' resp.json)
+          echo "login                       : $L"
+          echo "restrictedContributionsCount: $R"
+          echo "totalCommitContributions    : $C"
+          echo ""
+          echo "Blinded baseline (no SSO) was 488 for this window."
+          if [ "$R" -gt 600 ]; then
+            echo "SSO AUTHORIZED: private volume is now visible."
+          else
+            echo "::warning::restricted count ($R) is not materially above the blinded baseline (488) — SSO authorization may not have applied to ethereum-optimism."
+          fi
 
       - name: Cannot read private repository content
-        env:
-          T: ${{ secrets.CONTRIB_TOKEN }}
         run: |
           fail=0
-          check() {
+          check () {
             code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: token $T" "$2")
             case "$code" in
               401|403|404) echo "BLOCKED ($code): $1" ;;
-              *) echo "::error::LEAK ($code): $1"; fail=1 ;;
+              *)           echo "::error::LEAK ($code): $1"; fail=1 ;;
             esac
           }
-          check "list private repos"     "https://api.github.com/user/repos?visibility=private&per_page=1"
-          check "read OP Labs content"   "https://api.github.com/repos/ethereum-optimism/optimism/contents/README.md"
-          check "list org repos"         "https://api.github.com/orgs/ethereum-optimism/repos?type=private&per_page=1"
-          check "read own private repo"  "https://api.github.com/user/repos?affiliation=owner&visibility=private"
+          check "list private repos"    "https://api.github.com/user/repos?visibility=private&per_page=1"
+          check "read OP Labs content"  "https://api.github.com/repos/ethereum-optimism/optimism/contents/README.md"
+          check "list org private repos" "https://api.github.com/orgs/ethereum-optimism/repos?type=private&per_page=1"
           exit $fail
 
       - name: Result
-        run: echo "CONTRIB_TOKEN verified: counts readable, content unreachable."
+        run: echo "CONTRIB_TOKEN verified - counts readable, content unreachable."
