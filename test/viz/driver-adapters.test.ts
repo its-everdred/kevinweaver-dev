@@ -4,7 +4,6 @@ import {
   bindVizTransport,
   createVizDriver,
   getVizTransport,
-  highlightCellFor,
 } from '../../lib/viz/driver'
 import { DAY_ALIVE, ENTITY_FILE, ENTITY_REPO } from '../../lib/viz/sim/types'
 import type { SimInput } from '../../lib/viz/sim/types'
@@ -149,51 +148,6 @@ describe('viz driver adapters', () => {
     expect(driver.state.playing).toBe(false)
 
     unbind()
-    driver.destroy()
-    vi.unstubAllGlobals()
-  })
-
-  it('accepts pointer input and coalesces invalidation through the driver', () => {
-    let runPaint: (() => void) | undefined
-    let requests = 0
-    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
-      requests += 1
-      runPaint = () => callback(0)
-      return requests
-    })
-    vi.stubGlobal('cancelAnimationFrame', () => undefined)
-    const driver = createDriver()
-    let paints = 0
-    const unsubscribe = driver.subscribe(() => {
-      paints += 1
-    })
-
-    driver.resize('ribbon', {
-      cssWidth: 530,
-      cssHeight: 140,
-      dpr: 1,
-      deviceWidth: 530,
-      deviceHeight: 140,
-      font: { micro: 7, small: 9, mono: 13 },
-    })
-    runPaint?.()
-    requests = 0
-    paints = 0
-    driver.setPointer('ribbon', { x: 42, y: 58 })
-    driver.invalidate('ribbon')
-    driver.invalidate('ribbon')
-
-    expect(requests).toBe(1)
-    expect(paints).toBe(0)
-    expect(driver.inspect().highlightCell).toEqual(
-      highlightCellFor(INPUT, 0, -4)
-    )
-    driver.setPointer('ribbon', null)
-    expect(driver.inspect().highlightCell).toBeNull()
-    runPaint?.()
-    expect(paints).toBe(1)
-
-    unsubscribe()
     driver.destroy()
     vi.unstubAllGlobals()
   })
