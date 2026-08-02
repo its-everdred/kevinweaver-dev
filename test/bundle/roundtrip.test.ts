@@ -1,5 +1,7 @@
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { gzipSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import {
@@ -58,6 +60,8 @@ describe('bundle codec', () => {
     expect(decoded.repos).toEqual(input.repos)
     expect(decoded.grid).toEqual(input.grid)
     expect(decoded.manifest).toMatchObject(input.meta)
+    expect(decoded.manifest.days).toEqual(['2026-07-31', '2026-07-28'])
+    expect(decoded.manifest.refs).toBe('all')
     expect(decoded.manifest.integrity).toEqual({
       'repos.json': expect.any(String),
       'grid.json': expect.any(String),
@@ -127,6 +131,34 @@ describe('bundle codec', () => {
     const manifest = encoded.files.get('manifest.json')!
     expect(() => decodeManifest(`{"__proto__":${manifest}}`)).toThrow()
   })
+
+  it('validates the event span and refs mode', () => {
+    const manifest = JSON.parse(
+      encodeBundle(workedFixture()).files.get('manifest.json')!
+    ) as Record<string, unknown>
+    manifest.days = ['2026-07-28']
+    expect(() => decodeManifest(JSON.stringify(manifest))).toThrow()
+    manifest.days = ['2026-07-28', '2026-07-31']
+    expect(() => decodeManifest(JSON.stringify(manifest))).toThrow()
+    manifest.days = ['2026-07-31', '2026-07-28']
+    manifest.refs = 'tags'
+    expect(() => decodeManifest(JSON.stringify(manifest))).toThrow()
+  })
+
+  it('imports the codec directly with Node type stripping', () => {
+    const codecUrl = pathToFileURL(resolve('lib/bundle/codec.ts')).href
+    const output = execFileSync(
+      process.execPath,
+      [
+        '--experimental-strip-types',
+        '--input-type=module',
+        '-e',
+        `import('${codecUrl}')`,
+      ],
+      { encoding: 'utf8' }
+    )
+    expect(output).toBe('')
+  })
 })
 
 describe('front coding', () => {
@@ -174,6 +206,8 @@ function workedFixture(): BundleInput {
       v: 1,
       generatedAt: '2026-07-31T16:39:00Z',
       commit: 'e664d73',
+      days: ['2026-07-31', '2026-07-28'],
+      refs: 'all',
       windowStart: '2026-07-28',
       windowEnd: '2026-07-31',
       dayCount: 4,
@@ -235,6 +269,8 @@ function generatedInput(
       v: 1,
       generatedAt: '2026-07-31T16:39:00Z',
       commit: 'fixture',
+      days: ['2026-07-31', '2026-07-12'],
+      refs: 'all',
       windowStart: '2026-07-12',
       windowEnd: '2026-07-31',
       dayCount,

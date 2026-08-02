@@ -1,4 +1,5 @@
-import { frontCode, frontDecode } from './frontcode'
+// @ts-expect-error Node type stripping requires explicit TypeScript extensions.
+import { frontCode, frontDecode } from './frontcode.ts'
 import {
   BAND_COUNT,
   BUNDLE_VERSION,
@@ -6,7 +7,8 @@ import {
   DEFAULT_CHUNK_SIZE,
   dictFileName,
   MAX_DICT_SLICE_GZIP_BYTES,
-} from './schema'
+  // @ts-expect-error Node type stripping requires explicit TypeScript extensions.
+} from './schema.ts'
 import type {
   Actor,
   ActorId,
@@ -22,7 +24,7 @@ import type {
   RepoStatus,
   RepoWire,
   SortableEvent,
-} from './schema'
+} from './schema.ts'
 
 export interface BundleInput {
   meta: BundleMeta
@@ -185,6 +187,8 @@ export function decodeManifest(text: string): Manifest {
     v: readVersion(value, 'v'),
     generatedAt: readString(value, 'generatedAt'),
     commit: readString(value, 'commit'),
+    days: readEventSpan(value, 'days'),
+    refs: readRefs(value, 'refs'),
     windowStart: readIsoDay(value, 'windowStart'),
     windowEnd: readIsoDay(value, 'windowEnd'),
     dayCount: readPositiveInteger(value, 'dayCount'),
@@ -335,6 +339,11 @@ function validateInput(input: BundleInput): void {
 function validateMeta(meta: BundleMeta): void {
   assert(meta.v === BUNDLE_VERSION, 'Unsupported bundle version.')
   isoSecondMs(meta.generatedAt)
+  assert(meta.days.length === 2, 'Event span must contain two days.')
+  const newest = isoDayMs(meta.days[0])
+  const oldest = isoDayMs(meta.days[1])
+  assert(newest >= oldest, 'Invalid event span.')
+  assert(meta.refs === 'all' || meta.refs === 'head', 'Invalid refs mode.')
   assert(
     isoDayMs(meta.windowStart) <= isoDayMs(meta.windowEnd),
     'Invalid bundle window.'
@@ -646,6 +655,30 @@ function recordFromValue(value: unknown): Record<string, unknown> {
 function readString(record: Record<string, unknown>, key: string): string {
   const value = record[key]
   assert(typeof value === 'string', `Expected ${key} to be a string.`)
+  return value
+}
+
+function readEventSpan(
+  record: Record<string, unknown>,
+  key: string
+): [IsoDay, IsoDay] {
+  const values = readArray(record, key)
+  assert(values.length === 2, `Expected ${key} to contain two days.`)
+  return [readIsoDayValue(values[0], key), readIsoDayValue(values[1], key)]
+}
+
+function readIsoDayValue(value: unknown, key: string): IsoDay {
+  assert(typeof value === 'string', `Expected ${key} entries to be strings.`)
+  isoDayMs(value)
+  return value
+}
+
+function readRefs(
+  record: Record<string, unknown>,
+  key: string
+): 'all' | 'head' {
+  const value = readString(record, key)
+  assert(value === 'all' || value === 'head', `Invalid ${key} mode.`)
   return value
 }
 
