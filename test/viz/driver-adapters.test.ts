@@ -7,6 +7,7 @@ import {
 } from '../../lib/viz/driver'
 import { DAY_ALIVE, ENTITY_FILE, ENTITY_REPO } from '../../lib/viz/sim/types'
 import type { SimInput } from '../../lib/viz/sim/types'
+import { createDriverOptions } from './driver-render-fixture'
 
 const INPUT: SimInput = {
   dayCount: 12,
@@ -20,7 +21,7 @@ const INPUT: SimInput = {
 }
 
 function createDriver() {
-  return createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 12345 })
+  return createVizDriver(createDriverOptions(INPUT, ['alpha'], 12345))
 }
 
 describe('viz driver adapters', () => {
@@ -116,11 +117,10 @@ describe('viz driver adapters', () => {
     const firstDriver = createDriver()
     const firstUnbind = bindVizTransport(firstDriver, { dayCount: 12 })
     const first = getVizTransport().getSnapshot()
-    const laterDriver = createVizDriver({
-      input: { ...INPUT, windowStartISO: '2026-02-01' },
-      repoNames: ['alpha'],
-      seed: 12345,
-    })
+    const laterInput = { ...INPUT, windowStartISO: '2026-02-01' }
+    const laterDriver = createVizDriver(
+      createDriverOptions(laterInput, ['alpha'], 12345)
+    )
     const laterUnbind = bindVizTransport(laterDriver, { dayCount: 12 })
     const later = getVizTransport().getSnapshot()
 

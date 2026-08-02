@@ -1,12 +1,10 @@
 import { expect, test, vi } from 'vitest'
 
 import type { Ctx2D } from '../../lib/viz/render/budget'
-import {
-  createVizDriver,
-  type VizSurfaceGeometry,
-} from '../../lib/viz/driver'
+import { createVizDriver, type VizSurfaceGeometry } from '../../lib/viz/driver'
 import { DAY_ALIVE, ENTITY_FILE, ENTITY_REPO } from '../../lib/viz/sim/types'
 import type { SimInput } from '../../lib/viz/sim/types'
+import { createDriverOptions } from './driver-render-fixture'
 import { recordContext } from '../canvas-recorder'
 
 vi.mock('../../lib/viz/render/budget', async (importOriginal) => {
@@ -42,11 +40,7 @@ test('normalizes a resized downstream DPR transform at paint time', async () => 
   const context = canvas.getContext('2d')
   if (context === null) throw new Error('no 2d context')
   const recorded = recordContext(context)
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
 
   driver.attach({ id: 'ribbon', ctx: recorded.ctx, geometry: DPR_TWO_GEOMETRY })
   canvas.width = 1080
@@ -87,11 +81,7 @@ test('does not schedule while adapter cleanup detaches surfaces', () => {
   const canvas = document.createElement('canvas')
   const context = canvas.getContext('2d')
   if (context === null) throw new Error('no 2d context')
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
 
   driver.attach({ id: 'ribbon', ctx: context, geometry: DPR_TWO_GEOMETRY })
   const beforeDestroy = requests

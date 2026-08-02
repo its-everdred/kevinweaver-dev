@@ -29,8 +29,8 @@ import {
 import { createVizDriverRibbon } from './driver-ribbon'
 import {
   createVizDriverRenderLayers,
-  createVizRenderMeta,
   renderVizQuality,
+  type VizDriverRenderData,
 } from './driver-render'
 import type {
   VizPointer,
@@ -51,6 +51,7 @@ export type {
   VizSurfaceGeometry,
   VizSurfaceId,
 } from './surfaces'
+export type { VizDriverRenderData } from './driver-render'
 
 export type VizCanvasId = 'graph' | 'ribbon' | 'overview'
 export interface VizViewport {
@@ -111,7 +112,7 @@ export interface VizPerfInfo {
 }
 export interface VizDriverOptions {
   readonly input: SimInput
-  readonly repoNames: readonly string[]
+  readonly render: VizDriverRenderData
   readonly seed: number
   readonly reducedMotion?: boolean
 }
@@ -238,11 +239,14 @@ function positiveModulo(value: number, divisor: number): number {
   return ((value % divisor) + divisor) % divisor
 }
 
+/**
+ * @description Creates one deterministic simulation, rendering, and surface driver.
+ * @param options Simulation input, payload-derived render data, and deterministic seed.
+ * @returns The lifecycle and consumer adapters for one visualization instance.
+ * @throws {RangeError} When simulation and renderer inputs are inconsistent.
+ */
 export function createVizDriver(options: VizDriverOptions): VizDriver {
-  if (options.repoNames.length !== options.input.repoCount)
-    throw new RangeError(
-      `repoNames length ${options.repoNames.length} does not match repoCount ${options.input.repoCount}`
-    )
+  const repoNames = options.render.meta.repos.map((repo) => repo.short)
   let seed = options.seed
   const state = createSimState(options.input, seed)
   state.speedIndex = DEFAULT_SPEED_INDEX
@@ -281,7 +285,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   )
   const listeners = new Set<(info: VizFrameInfo) => void>()
   const destroyListeners = new Set<() => void>()
-  const layers = createVizDriverRenderLayers(options.input)
+  const layers = createVizDriverRenderLayers(options.input, options.render)
   const surfaceController = createVizSurfaceController(layers.budget)
   let quality = qualityForTier(0)
   let qualityMode: 'high' | 'low' | 'auto' = 'auto'
@@ -619,7 +623,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       state,
       layers,
       quality: renderVizQuality(quality),
-      meta: createVizRenderMeta(options.repoNames),
+      meta: options.render.meta,
       focusedDay: state.cursorDayInt,
       winStart,
       targets,
@@ -633,7 +637,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     const pointerHighlight = ribbon.pointerHighlight()
     return buildVizDriverInfo({
       state,
-      repoNames: options.repoNames,
+      repoNames,
       date: formatDayISO(options.input.windowStartISO, state.cursorDayInt),
       reducedMotion: lifecycle.reducedMotion,
       settled,
@@ -650,7 +654,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     return surfaceController.buildView(
       surface,
       renderVizQuality(quality),
-      createVizRenderMeta(options.repoNames),
+      options.render.meta,
       state.cursorDayInt
     )
   }

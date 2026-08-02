@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 import { createVizDriver, DWELL_TICKS } from '../../lib/viz/driver'
 import { DAY_ALIVE, ENTITY_FILE, ENTITY_REPO } from '../../lib/viz/sim/types'
 import type { SimInput } from '../../lib/viz/sim/types'
+import { createDriverOptions } from './driver-render-fixture'
 
 const INPUT: SimInput = {
   dayCount: 80,
@@ -28,11 +29,7 @@ test('preserves active playback and speed through a consumer seek', async () => 
 })
 
 test('does not report playback after a paused manual render', async () => {
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
 
   driver.setSpeedIndex(3)
   await driver.pause()
@@ -45,8 +42,8 @@ test('does not report playback after a paused manual render', async () => {
 })
 
 test('advances farther at faster playback speeds', async () => {
-  const slow = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
-  const fast = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+  const slow = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
+  const fast = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
 
   slow.setSpeedIndex(0)
   fast.setSpeedIndex(4)
@@ -60,11 +57,7 @@ test('advances farther at faster playback speeds', async () => {
 })
 
 test('changes speed without jumping the cursor', async () => {
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
   const before = await driver.renderFrame(DWELL_TICKS + 60)
 
   driver.setSpeedIndex(4)
@@ -104,11 +97,7 @@ function scheduledDriver() {
     return id
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => active.delete(id))
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
   return { active, driver }
 }
 

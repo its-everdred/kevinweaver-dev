@@ -10,6 +10,7 @@ import {
   MOTION_INPUT as INPUT,
   stubMotionWindow,
 } from './driver-motion-fixture'
+import { createDriverOptions } from './driver-render-fixture'
 
 test('resumes one frame with the selected speed', () => {
   const media = new FakeMediaQuery(false)
@@ -47,11 +48,7 @@ test.each(['pause', 'destroy'] as const)(
     stubMotionWindow(media)
     vi.stubGlobal('requestAnimationFrame', () => ++requests)
     vi.stubGlobal('cancelAnimationFrame', () => undefined)
-    const driver = createVizDriver({
-      input: INPUT,
-      repoNames: ['alpha'],
-      seed: 1,
-    })
+    const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
     driver.subscribe((info) => {
       if (!info.reducedMotion) driver[action]()
     })
@@ -75,10 +72,6 @@ function scheduledDriver(media: FakeMediaQuery) {
     return id
   })
   vi.stubGlobal('cancelAnimationFrame', (value: number) => active.delete(value))
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
   return { active, driver, nextId: () => id }
 }

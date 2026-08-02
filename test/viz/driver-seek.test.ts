@@ -1,12 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
 import { createVizDriver, ribbonWinStart } from '../../lib/viz/driver'
-import {
-  DAY_ALIVE,
-  ENTITY_FILE,
-  ENTITY_REPO,
-} from '../../lib/viz/sim/types'
+import { DAY_ALIVE, ENTITY_FILE, ENTITY_REPO } from '../../lib/viz/sim/types'
 import type { SimInput } from '../../lib/viz/sim/types'
+import { createDriverOptions } from './driver-render-fixture'
 
 const TINY: SimInput = {
   // 400 days so a far-away seekDay latches a ribbon window that genuinely
@@ -29,11 +26,7 @@ const TINY: SimInput = {
 }
 
 function driver() {
-  return createVizDriver({
-    input: TINY,
-    repoNames: ['alpha', 'beta'],
-    seed: 12345,
-  })
+  return createVizDriver(createDriverOptions(TINY, ['alpha', 'beta'], 12345))
 }
 
 describe('seek preserves the packed layout', () => {

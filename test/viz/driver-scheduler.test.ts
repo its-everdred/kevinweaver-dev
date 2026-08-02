@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 import { createVizDriver } from '../../lib/viz/driver'
 import { DAY_ALIVE, ENTITY_FILE, ENTITY_REPO } from '../../lib/viz/sim/types'
 import type { SimInput } from '../../lib/viz/sim/types'
+import { createDriverOptions } from './driver-render-fixture'
 
 const INPUT: SimInput = {
   dayCount: 12,
@@ -24,11 +25,7 @@ test('rearms a dirty paint after a canceled first animation frame', () => {
     return requests
   })
   vi.stubGlobal('cancelAnimationFrame', () => undefined)
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
   let paints = 0
   const unsubscribe = driver.subscribe(() => {
     paints += 1
@@ -57,7 +54,7 @@ test.each(['pause', 'destroy'] as const)(
       return callbacks.length
     })
     vi.stubGlobal('cancelAnimationFrame', () => undefined)
-    const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+    const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
     driver.subscribe(() => driver[action]())
 
     driver.play()
@@ -78,7 +75,7 @@ test('keeps one frame when a subscriber pauses then plays', () => {
     return id
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => callbacks.delete(id))
-  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
   let replay = true
   driver.subscribe(() => {
     if (!replay) return
@@ -108,7 +105,7 @@ test('counts paint time in the following frame elapsed time', () => {
     return id
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => callbacks.delete(id))
-  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
   let paints = 0
   driver.subscribe(() => {
     paints += 1
