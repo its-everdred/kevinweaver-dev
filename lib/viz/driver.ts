@@ -439,6 +439,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     raf = 0
     running = false
     state.playing = false
+    scheduleInvalidatedPaint()
   }
   function play(): void {
     state.playing = true
