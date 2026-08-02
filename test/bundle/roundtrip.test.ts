@@ -121,6 +121,34 @@ describe('bundle codec', () => {
     expect(() => encodeExternal(withPrivateRepository(input))).toThrow()
   })
 
+  it('keeps event history independent from the contribution grid window', () => {
+    const input = workedFixture()
+    const oldestEventDay = dayIndex('2013-04-15', '2026-07-31')
+    const extended = {
+      ...input,
+      meta: { ...input.meta, days: ['2026-07-31', '2013-04-15'] as const },
+      events: [
+        ...input.events,
+        event(
+          0,
+          oldestEventDay,
+          'packages/engine/src/history.ts',
+          1,
+          'aiur-team/aiur',
+          'oldest'
+        ),
+      ],
+    }
+    const decoded = decodeBundle(encodeBundle(extended).files)
+
+    expect(decoded.events).toContainEqual({
+      day: oldestEventDay,
+      repo: 0,
+      path: 'packages/engine/src/history.ts',
+      actor: 1,
+    })
+  })
+
   it('uses one calendar implementation for newest-first day identity', () => {
     expect(dayIndex('2026-07-28', '2026-07-31')).toBe(3)
     expect(dayFromIndex(3, '2026-07-31')).toBe('2026-07-28')

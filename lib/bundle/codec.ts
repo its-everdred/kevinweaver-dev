@@ -138,6 +138,7 @@ export function decodeBundle(
   const manifest = decodeManifest(requiredFile(files, 'manifest.json'))
   const repos = decodeRepos(requiredFile(files, 'repos.json'))
   const grid = decodeGrid(requiredFile(files, 'grid.json'))
+  const eventDayCount = eventSpanDayCount(manifest)
   assert(
     manifest.repoCount === repos.length,
     'Manifest repo count does not match repos.'
@@ -166,8 +167,8 @@ export function decodeBundle(
         'Chunk references an unknown repository.'
       )
       assert(
-        event.day < manifest.dayCount,
-        'Chunk event falls outside the window.'
+        event.day < eventDayCount,
+        'Chunk event falls outside the event span.'
       )
     })
     previousDay = expanded.at(-1)?.day ?? previousDay
@@ -429,8 +430,8 @@ function validateEvent(event: SortableEvent, input: BundleInput): void {
   assert(
     Number.isInteger(event.day) &&
       event.day >= 0 &&
-      event.day < input.meta.dayCount,
-    'Event falls outside the bundle window.'
+      event.day < eventSpanDayCount(input.meta),
+    'Event falls outside the event span.'
   )
   assert(
     event.repo === Math.floor(event.repo) &&
@@ -446,6 +447,10 @@ function validateEvent(event: SortableEvent, input: BundleInput): void {
     event.path.length > 0 && !event.path.includes('\n'),
     'Event path is invalid.'
   )
+}
+
+function eventSpanDayCount(meta: BundleMeta): number {
+  return dayIndex(meta.days[1], meta.days[0]) + 1
 }
 
 function buildDictionary(events: readonly SortableEvent[]): Dictionary {
