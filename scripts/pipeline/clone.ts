@@ -91,7 +91,7 @@ export async function syncRepo(
   if (backoffMs < 0) throw new RangeError('backoffMs must be non-negative')
 
   let cached = await cache.cacheExists(dir)
-  if (cached && !(await cache.cacheIsValid(dir, exec))) {
+  if (cached && !(await cache.cacheIsValid(dir, repo, exec))) {
     await rm(dir, { recursive: true, force: true })
     cached = false
   }

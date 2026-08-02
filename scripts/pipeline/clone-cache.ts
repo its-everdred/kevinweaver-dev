@@ -14,13 +14,32 @@ export async function cacheExists(directory: string): Promise<boolean> {
 /** Confirms that a cache still identifies a remote origin. */
 export async function cacheIsValid(
   directory: string,
+  repo: string,
   exec: GitExec
 ): Promise<boolean> {
   const result = await exec(
     ['-C', directory, 'config', '--get', 'remote.origin.url'],
     undefined
   )
-  return result.code === 0 && result.stdout.trim() !== ''
+  return result.code === 0 && originMatches(repo, result.stdout.trim())
+}
+
+/** Confirms that a cached origin names exactly the requested GitHub repository. */
+export function originMatches(repo: string, origin: string): boolean {
+  const expected = repo.toLowerCase()
+  const actual = githubPath(origin)
+  return actual?.toLowerCase() === expected
+}
+
+function githubPath(origin: string): string | undefined {
+  const value = origin
+    .trim()
+    .replace(/\/$/, '')
+    .replace(/\.git$/, '')
+  const match = value.match(/^(?:https?|git):\/\/github\.com\/(.+)$/)
+  const sshUrl = value.match(/^ssh:\/\/git@github\.com\/(.+)$/)
+  const ssh = value.match(/^git@github\.com:(.+)$/)
+  return match?.[1] ?? sshUrl?.[1] ?? ssh?.[1]
 }
 
 /** Reads sorted local branch heads without contacting the remote. */

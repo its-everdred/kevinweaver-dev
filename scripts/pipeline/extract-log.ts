@@ -2,6 +2,8 @@ import { spawn } from 'node:child_process'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { actorId, classify } from './identity.ts'
 import type { ExtractedEvent } from './extract.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { childEnvironment, gitLogArgs } from './extract-log-runtime.ts'
 
 type LogRecord = {
   sha: string
@@ -36,27 +38,61 @@ function readLog(
 ): void {
   const child = spawn('git', gitLogArgs(directory), { env: childEnvironment() })
   const state = logState(repo)
+  const failure = rejectOnce(repo, child, reject)
   child.stdout.setEncoding('utf8')
-  child.stdout.on('data', (chunk: string) => consumeChunk(state, chunk))
+  child.stdout.on('data', (chunk: string) =>
+    consumeOrReject(state, chunk, failure)
+  )
   child.stderr.on('data', (chunk: Buffer) => (state.stderr += chunk.toString()))
-  child.on('error', (error) => reject(new GitLogError(repo, error.message)))
-  child.on('close', (code) => finishLog(state, code, resolve, reject))
+  child.on('error', failure)
+  child.on('close', (code) => finishOrReject(state, code, resolve, failure))
 }
 
-function gitLogArgs(directory: string): string[] {
-  return [
-    '-C',
-    directory,
-    '-c',
-    'core.quotePath=false',
-    'log',
-    '--all',
-    '--no-merges',
-    '--no-renames',
-    '--no-mailmap',
-    '--name-only',
-    '--pretty=format:%x01%H%x1f%aI%x1f%ae',
-  ]
+function rejectOnce(
+  repo: string,
+  child: ReturnType<typeof spawn>,
+  reject: (error: Error) => void
+): (error: unknown) => void {
+  let rejected = false
+  return (error) => {
+    if (rejected) return
+    rejected = true
+    child.kill()
+    reject(errorFor(repo, error))
+  }
+}
+
+function errorFor(repo: string, error: unknown): GitLogError {
+  if (error instanceof GitLogError) return error
+  return new GitLogError(
+    repo,
+    error instanceof Error ? error.message : 'git log failed'
+  )
+}
+
+function consumeOrReject(
+  state: LogState,
+  chunk: string,
+  reject: (error: unknown) => void
+): void {
+  try {
+    consumeChunk(state, chunk)
+  } catch (error) {
+    reject(error)
+  }
+}
+
+function finishOrReject(
+  state: LogState,
+  code: number | null,
+  resolve: (events: ExtractedEvent[]) => void,
+  reject: (error: unknown) => void
+): void {
+  try {
+    finishLog(state, code, resolve, reject)
+  } catch (error) {
+    reject(error)
+  }
 }
 
 type LogState = {
@@ -80,7 +116,7 @@ function consumeChunk(state: LogState, chunk: string): void {
 function consumeLine(state: LogState, line: string): void {
   if (line.startsWith('\x01')) {
     flush(state)
-    state.record = recordFrom(line)
+    state.record = recordFrom(state.repo, line)
   } else if (line !== '' && state.record) state.record.paths.push(line)
 }
 
@@ -120,10 +156,10 @@ function addEvent(state: LogState, path: string): void {
   })
 }
 
-function recordFrom(line: string): LogRecord {
+function recordFrom(repo: string, line: string): LogRecord {
   const [sha, authorDate, authorEmail, ...rest] = line.slice(1).split('\x1f')
   if (!sha || !authorDate || !authorEmail || rest.length > 0)
-    throw new GitLogError('unknown', 'malformed log header')
+    throw new GitLogError(repo, 'malformed log header')
   return { sha, authorDate, authorEmail, paths: [] }
 }
 
@@ -144,19 +180,4 @@ function decodeEscape(escape: string): string {
       escape
     ] ?? escape
   )
-}
-
-function childEnvironment(): NodeJS.ProcessEnv {
-  const environment = { ...process.env }
-  delete environment.GITHUB_TOKEN
-  delete environment.GH_TOKEN
-  delete environment.CONTRIB_TOKEN
-  return {
-    ...environment,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_ASKPASS: '/bin/false',
-  }
 }

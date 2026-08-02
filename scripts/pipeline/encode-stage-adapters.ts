@@ -2,6 +2,8 @@ import type { CalendarBundle, GraphqlRequest } from './calendar.ts'
 import type { DiscoveryResult } from './discover.ts'
 import type { ExtractResult } from './extract.ts'
 import type { PrivateAggregate } from './private.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { extractionLike } from './encode-stage-extraction.ts'
 
 /** Narrows dynamic stage values at the runtime boundary. */
 export function clientValue(value: unknown): GraphqlRequest {
@@ -61,16 +63,6 @@ function discoveryLike(value: unknown): value is DiscoveryResult {
   )
 }
 
-function extractionLike(value: unknown): value is ExtractResult {
-  return (
-    record(value) &&
-    Array.isArray(value.events) &&
-    value.events.every(event) &&
-    Array.isArray(value.repos) &&
-    value.repos.every(extractionRepository)
-  )
-}
-
 function repository(value: unknown): boolean {
   return (
     record(value) &&
@@ -78,28 +70,6 @@ function repository(value: unknown): boolean {
     number(value.databaseId) &&
     number(value.stargazerCount) &&
     boolean(value.isPrivate)
-  )
-}
-
-function extractionRepository(value: unknown): boolean {
-  return (
-    record(value) &&
-    string(value.n) &&
-    string(value.first) &&
-    string(value.last) &&
-    record(value.heads) &&
-    strings(Object.keys(value.heads))
-  )
-}
-
-function event(value: unknown): boolean {
-  return (
-    record(value) &&
-    string(value.day) &&
-    string(value.repo) &&
-    string(value.sha) &&
-    string(value.path) &&
-    (value.actor === 0 || value.actor === 1)
   )
 }
 

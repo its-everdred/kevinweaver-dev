@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { syncAll, syncRepo } from './clone'
+import { originMatches } from './clone-cache'
 import { extractAll } from './extract'
 import type { GitExec } from './clone'
 
@@ -30,6 +31,16 @@ function failedExec(): GitExec {
 }
 
 describe('clone cache failure handling', () => {
+  it.each([
+    ['https://github.com/owner/repo.git', true],
+    ['git@github.com:owner/repo.git', true],
+    ['ssh://git@github.com/owner/repo', true],
+    ['https://github.com/other/repo.git', false],
+    ['https://example.test/owner/repo.git', false],
+  ])('matches only the requested cache origin', (origin, expected) => {
+    expect(originMatches('owner/repo', origin)).toBe(expected)
+  })
+
   it('retries a failed repository the configured total number of times', async () => {
     const outcome = await syncRepo('example/failing', {
       cloneRoot: root(),

@@ -62,13 +62,24 @@ beforeAll(() => {
     work,
     join(cloneRoot, 'fixture__repo.git'),
   ])
+  git(fixtureRoot, [
+    '-C',
+    join(cloneRoot, 'fixture__repo.git'),
+    'remote',
+    'set-url',
+    'origin',
+    'https://github.com/fixture/repo.git',
+  ])
 })
 
 afterAll(() => rmSync(fixtureRoot, { recursive: true, force: true }))
 
 describe('extractAll', () => {
   it('attributes only the known actors with their author-local calendar days', async () => {
-    const result = await extractAll(['fixture/repo'], [], { cloneRoot })
+    const result = await extractAll(['fixture/repo'], [], {
+      cloneRoot,
+      exec: cachedFetch(),
+    })
 
     expect(result.events).toHaveLength(2)
     expect(result.events).toMatchObject([
@@ -86,8 +97,14 @@ describe('extractAll', () => {
   })
 
   it('returns byte-identical event order from the same cache', async () => {
-    const first = await extractAll(['fixture/repo'], [], { cloneRoot })
-    const second = await extractAll(['fixture/repo'], [], { cloneRoot })
+    const first = await extractAll(['fixture/repo'], [], {
+      cloneRoot,
+      exec: cachedFetch(),
+    })
+    const second = await extractAll(['fixture/repo'], [], {
+      cloneRoot,
+      exec: cachedFetch(),
+    })
 
     expect(JSON.stringify(first.events)).toBe(JSON.stringify(second.events))
   })
@@ -125,7 +142,7 @@ function staleFetch(): GitExec {
     if (args.includes('config'))
       return {
         code: 0,
-        stdout: 'https://example.test/fixture.git\n',
+        stdout: 'https://github.com/fixture/repo.git\n',
         stderr: '',
       }
     if (args.includes('for-each-ref'))
@@ -135,5 +152,23 @@ function staleFetch(): GitExec {
         stderr: '',
       }
     return { code: 128, stdout: '', stderr: 'fetch unavailable' }
+  }
+}
+
+function cachedFetch(): GitExec {
+  return async (args) => {
+    if (args.includes('config'))
+      return {
+        code: 0,
+        stdout: 'https://github.com/fixture/repo.git\n',
+        stderr: '',
+      }
+    if (args.includes('for-each-ref'))
+      return {
+        code: 0,
+        stdout: `refs/heads/main ${'a'.repeat(40)}\n`,
+        stderr: '',
+      }
+    return { code: 0, stdout: '', stderr: '' }
   }
 }
