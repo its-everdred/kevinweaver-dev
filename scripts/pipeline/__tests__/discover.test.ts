@@ -3,14 +3,22 @@ import recordedFixture from './fixtures/discovery-response.json'
 import type { GraphQlClient } from '../discover'
 import { DISCOVERY_QUERY, REPO_COUNT_QUERY, discoverRepos } from '../discover'
 
-const repository = (nameWithOwner: string, isPrivate = false) => ({
+const repository = (
+  nameWithOwner: string,
+  isPrivate = false,
+  metadata: Partial<{
+    databaseId: number
+    stargazerCount: number
+    createdAt: string
+  }> = {}
+) => ({
   nameWithOwner,
-  databaseId: 123,
+  databaseId: metadata.databaseId ?? 123,
   isPrivate,
   isFork: false,
   isArchived: false,
-  stargazerCount: 2,
-  createdAt: '2026-05-18T00:26:04Z',
+  stargazerCount: metadata.stargazerCount ?? 2,
+  createdAt: metadata.createdAt ?? '2026-05-18T00:26:04Z',
 })
 
 const discoveryResponse = {
@@ -28,19 +36,31 @@ const discoveryResponse = {
       ],
       pullRequestContributionsByRepository: [
         {
-          repository: repository('aiur-team/aiur'),
+          repository: repository('aiur-team/aiur', false, {
+            databaseId: 200,
+            stargazerCount: 8,
+            createdAt: '2026-05-18T00:26:04Z',
+          }),
           contributions: { totalCount: 118 },
         },
       ],
       issueContributionsByRepository: [
         {
-          repository: repository('aiur-team/aiur'),
+          repository: repository('aiur-team/aiur', false, {
+            databaseId: 201,
+            stargazerCount: 9,
+            createdAt: '2026-05-19T00:26:04Z',
+          }),
           contributions: { totalCount: 14 },
         },
       ],
       pullRequestReviewContributionsByRepository: [
         {
-          repository: repository('aiur-team/aiur'),
+          repository: repository('aiur-team/aiur', false, {
+            databaseId: 202,
+            stargazerCount: 10,
+            createdAt: '2026-05-20T00:26:04Z',
+          }),
           contributions: { totalCount: 10 },
         },
       ],
@@ -113,16 +133,16 @@ describe('repository discovery', () => {
       'aiur-team/aiur',
       'its-everdred/gary',
     ])
+    expect(first.repos[0]).toMatchObject({
+      databaseId: 200,
+      stargazerCount: 8,
+      createdAt: '2026-05-18T00:26:04Z',
+    })
     expect(first.repos[0]?.contributions).toEqual({
       commit: 0,
       pullRequest: 1416,
       issue: 168,
       pullRequestReview: 120,
-    })
-    expect(first.repos[0]).toMatchObject({
-      databaseId: 123,
-      stargazerCount: 2,
-      createdAt: '2026-05-18T00:26:04Z',
     })
     expect(first.repos.some(({ isPrivate }) => isPrivate)).toBe(false)
     expect(first.repoCountDefinition).toEqual({
