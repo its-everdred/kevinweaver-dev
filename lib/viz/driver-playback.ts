@@ -2,19 +2,22 @@ import { FIXED_DT, SPEEDS } from './sim/types'
 import { advanceCursor, seekCursor } from './sim/cursor'
 import type { SimState } from './sim/types'
 
+/**
+ * @description Selects which lifecycle fields survive a deterministic seek.
+ */
 export type VizSeekMode = 'direct' | 'consumer' | 'motion'
 
-export interface VizPlaybackProjection {
+interface VizPlaybackProjection {
   readonly day: number
   readonly moving: boolean
 }
 
-export interface VizSeekState {
+interface VizSeekState {
   readonly speedIndex: number
   readonly playing: boolean
 }
 
-export interface VizPlaybackTrajectory {
+interface VizPlaybackTrajectory {
   project(tick: number, speedIndex: number): VizPlaybackProjection
   rebase(tick: number, day: number): void
   syncCanonical(tick: number, day: number): void
