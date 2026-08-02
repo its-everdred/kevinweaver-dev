@@ -19,21 +19,43 @@ import {
   type SimInput,
   type SimState,
 } from './sim/types'
-import { renderGraph, createGraphLayer } from './render/graph'
-import { renderOverview, createOverviewLayer } from './render/overview'
-import { renderRibbon, createRibbonLayer } from './render/ribbon'
+import { createGraphLayer } from './render/graph'
+import { createOverviewLayer } from './render/overview'
+import { createRibbonLayer } from './render/ribbon'
 import {
   createFrameBudget,
-  instrumentContext,
-  type Ctx2D,
   type GridSeries,
-  type RenderMeta,
-  type RenderTheme,
-  type RenderView,
   type Quality,
-  type Viewport,
+  type RenderMeta,
+  type RenderView,
 } from './render/budget'
-import { AG, LV, PANE_SURFACE } from './tokens/ramp'
+import { createVizSurfaceAdapter } from './surfaces'
+import {
+  highlightVizRibbonPointer,
+  syncVizRibbonWindow,
+} from './surface-pointer'
+import { createVizSurfaceController } from './surface-controller'
+import { paintVizSurfaces } from './surface-painter'
+import type {
+  VizPointer,
+  VizSurfaceAdapter,
+  VizSurfaceAttachment,
+  VizSurfaceGeometry,
+  VizSurfaceId,
+} from './surfaces'
+
+export { bindVizTransport, getVizTransport } from './transport'
+export type {
+  VizTransport,
+  VizTransportMetadata,
+  VizTransportSnapshot,
+} from './transport'
+export type {
+  VizPointer,
+  VizSurfaceAttachment,
+  VizSurfaceGeometry,
+  VizSurfaceId,
+} from './surfaces'
 
 export type VizCanvasId = 'graph' | 'ribbon' | 'overview'
 export interface VizViewport {
@@ -102,6 +124,12 @@ export interface VizDriver {
   readonly state: SimState
   setCanvas(id: VizCanvasId, ctx: CanvasRenderingContext2D | null): void
   setViewport(id: VizCanvasId, viewport: VizViewport): void
+  attach(attachment: VizSurfaceAttachment): void
+  detach(id: VizSurfaceId): void
+  resize(id: VizSurfaceId, geometry: VizSurfaceGeometry): void
+  invalidate(id: VizSurfaceId): void
+  setPointer(id: VizSurfaceId, point: VizPointer | null): void
+  scrubTo(fraction: number): void
   start(): void
   stop(): void
   play(): void
@@ -117,6 +145,7 @@ export interface VizDriver {
   inspect(): VizFrameInfo
   perf(): VizPerfInfo
   subscribe(listener: (info: VizFrameInfo) => void): () => void
+  onDestroy(listener: () => void): () => void
   destroy(): void
 }
 
@@ -250,15 +279,16 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     state.repoAngle.set(packedLayout.repoAngle)
   }
   const mapping = tickMapping(options.input)
-  const contexts = new Map<VizCanvasId, Ctx2D>()
-  const viewports = new Map<VizCanvasId, VizViewport>()
   const listeners = new Set<(info: VizFrameInfo) => void>()
+  const destroyListeners = new Set<() => void>()
   const layers = createLayers(options.input)
+  const surfaceController = createVizSurfaceController(layers.budget)
   let quality = qualityForTier(0)
   let qualityMode: 'high' | 'low' | 'auto' = 'auto'
   let running = false
   let resumeAfterReduce = false
   let raf = 0
+  let invalidationRaf = 0
   let previous = 0
   let accumulator = 0
   let latchedWindow: number | null = null
@@ -271,6 +301,8 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   let framesOverBudget = 0
   let samples: number[] = []
   let governorStreak = 0
+  let ribbonPointer: VizPointer | null = null
+  let pointerHighlight: VizFrameInfo['highlightCell'] | undefined
   let lastInfo = buildInfo()
 
   const onMediaChange = (event: MediaQueryListEvent): void => {
@@ -300,11 +332,91 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     id: VizCanvasId,
     ctx: CanvasRenderingContext2D | null
   ): void {
-    if (ctx) contexts.set(id, instrumentContext(ctx, layers.budget))
-    else contexts.delete(id)
+    surfaceController.setCanvas(id, ctx)
   }
   function setViewport(id: VizCanvasId, viewport: VizViewport): void {
-    viewports.set(id, viewport)
+    surfaceController.setViewport(id, viewport)
+  }
+  function setSurfaceGeometry(
+    id: VizCanvasId,
+    geometry: VizSurfaceGeometry
+  ): void {
+    surfaceController.setGeometry(id, geometry)
+  }
+  function detachCanvas(id: VizCanvasId): void {
+    surfaceController.detach(id)
+    if (invalidationRaf && !surfaceController.hasDirty()) {
+      cancelAnimationFrame(invalidationRaf)
+      invalidationRaf = 0
+    }
+  }
+  function invalidateCanvas(id: VizCanvasId): void {
+    surfaceController.markDirty(id)
+    scheduleInvalidatedPaint()
+  }
+  function setSurfacePointer(id: VizSurfaceId, point: VizPointer | null): void {
+    if (id !== 'ribbon') return
+    ribbonPointer = point
+    pointerHighlight = point ? ribbonHighlight(point) : null
+    lastInfo = {
+      ...lastInfo,
+      winStart: syncRibbonWindow(),
+      highlightCell: pointerHighlight,
+    }
+    invalidateCanvas('ribbon')
+  }
+  function ribbonHighlight(
+    point: VizPointer,
+    view = buildRenderView('ribbon')
+  ): VizFrameInfo['highlightCell'] {
+    syncRibbonWindow()
+    return highlightVizRibbonPointer(
+      options.input,
+      layers.ribbon,
+      view,
+      point,
+      (day, winStart) => highlightCellFor(options.input, day, winStart)
+    )
+  }
+  function syncRibbonWindow(): number {
+    const winStart = ribbonWinStart(
+      options.input,
+      state.cursorDayInt,
+      latchedWindow
+    )
+    syncVizRibbonWindow(layers.ribbon, winStart)
+    return winStart
+  }
+  function attach(attachment: VizSurfaceAttachment): void {
+    surfaceAdapter.attach(attachment)
+  }
+  function detach(id: VizSurfaceId): void {
+    surfaceAdapter.detach(id)
+  }
+  function resize(id: VizSurfaceId, geometry: VizSurfaceGeometry): void {
+    surfaceAdapter.resize(id, geometry)
+  }
+  function invalidate(id: VizSurfaceId): void {
+    surfaceAdapter.invalidate(id)
+  }
+  function setPointer(id: VizSurfaceId, point: VizPointer | null): void {
+    surfaceAdapter.setPointer(id, point)
+  }
+  function scrubTo(fraction: number): void {
+    surfaceAdapter.scrubTo(fraction)
+  }
+  function scheduleInvalidatedPaint(): void {
+    if (
+      running ||
+      invalidationRaf ||
+      typeof requestAnimationFrame !== 'function'
+    )
+      return
+    invalidationRaf = requestAnimationFrame(() => {
+      invalidationRaf = 0
+      const targets = surfaceController.drainDirty()
+      if (targets.size > 0) paint(settled, targets)
+    })
   }
   function start(): void {
     if (running) return
@@ -317,6 +429,8 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   function schedule(): void {
     running = true
     state.playing = true
+    if (invalidationRaf) cancelAnimationFrame(invalidationRaf)
+    invalidationRaf = 0
     previous = performance.now()
     raf = requestAnimationFrame(frame)
   }
@@ -428,10 +542,11 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       0,
       Math.min(options.input.dayCount - 1, Math.floor(day))
     )
-    const tick =
+    const rewindTick =
       target === mapping.day0
         ? 0
         : DWELL_TICKS + Math.ceil((mapping.day0 - target) / mapping.daysPerTick)
+    const tick = Math.min(mapping.sweepTicks - 1, rewindTick)
     latchedWindow = ribbonWinStart(options.input, target, null)
     return seekTick(tick)
   }
@@ -478,38 +593,56 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     listeners.add(listener)
     return () => listeners.delete(listener)
   }
+  function onDestroy(listener: () => void): () => void {
+    destroyListeners.add(listener)
+    return () => destroyListeners.delete(listener)
+  }
   function destroy(): void {
+    destroyListeners.forEach((listener) => listener())
+    destroyListeners.clear()
     stop()
+    if (invalidationRaf) cancelAnimationFrame(invalidationRaf)
+    invalidationRaf = 0
     media?.removeEventListener('change', onMediaChange)
     media = null
     uninstallHarness?.()
-    contexts.clear()
+    surfaceAdapter.destroy()
+    surfaceController.destroy()
     listeners.clear()
   }
-  function paint(nextSettled: boolean): void {
+  function paint(
+    nextSettled: boolean,
+    targets?: ReadonlySet<VizCanvasId>
+  ): void {
     settled = nextSettled
-    const winStart = ribbonWinStart(
-      options.input,
-      state.cursorDayInt,
-      latchedWindow
+    const winStart = syncRibbonWindow()
+    const total = paintVizSurfaces(
+      surfaceController,
+      surfacePaintOptions(winStart, targets)
     )
-    layers.budget.begin()
-    const renderView = buildRenderView()
-    const overview = contexts.get('overview')
-    if (overview)
-      renderOverview(state, overview, renderView, layers.overview, winStart)
-    const ribbon = contexts.get('ribbon')
-    if (ribbon) renderRibbon(state, ribbon, renderView, layers.ribbon)
-    const graph = contexts.get('graph')
-    if (graph) renderGraph(state, graph, renderView, layers.graph)
-    const report = layers.budget.end()
-    lastInfo = buildInfo(winStart, report.drawCalls)
+    if (targets === undefined) surfaceController.clearDirty()
+    lastInfo = buildInfo(winStart, total)
     listeners.forEach((listener) => listener(lastInfo))
   }
-  function buildInfo(
-    winStart = ribbonWinStart(options.input, state.cursorDayInt, latchedWindow),
-    total = 0
-  ): VizFrameInfo {
+  function surfacePaintOptions(
+    winStart: number,
+    targets: ReadonlySet<VizCanvasId> | undefined
+  ) {
+    return {
+      state,
+      layers,
+      quality: renderQuality(quality),
+      meta: renderMeta(options.repoNames),
+      focusedDay: state.cursorDayInt,
+      winStart,
+      targets,
+      onRibbonPaint: updateRibbonPointerHighlight,
+    }
+  }
+  function updateRibbonPointerHighlight(view: RenderView): void {
+    if (ribbonPointer) pointerHighlight = ribbonHighlight(ribbonPointer, view)
+  }
+  function buildInfo(winStart = syncRibbonWindow(), total = 0): VizFrameInfo {
     const digest = digestSimState(state)
     const names: string[] = []
     const ids = new Int32Array(state.entityCount)
@@ -535,44 +668,25 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       rngState: digest.rngState,
       rngDraws: digest.rngDraws,
       winStart,
-      highlightCell: highlightCellFor(
-        options.input,
-        state.cursorDayInt,
-        winStart
-      ),
+      highlightCell:
+        pointerHighlight === undefined
+          ? highlightCellFor(options.input, state.cursorDayInt, winStart)
+          : pointerHighlight,
       beams: state.beamLife.filter((life) => life > 0).length,
       drawCalls: { graph: 0, ribbon: 0, overview: 0, total },
       qualityTier: quality.tier,
     }
   }
-  function buildRenderView(): RenderView {
-    const viewport = viewports.get('graph') ?? {
-      cssWidth: 1,
-      cssHeight: 1,
-      dpr: 1,
-    }
-    const renderViewport: Viewport = {
-      ...viewport,
-      pxWidth: Math.max(1, Math.round(viewport.cssWidth * viewport.dpr)),
-      pxHeight: Math.max(1, Math.round(viewport.cssHeight * viewport.dpr)),
-    }
-    return {
-      viewport: renderViewport,
-      theme: defaultTheme(),
-      quality: renderQuality(quality),
-      meta: renderMeta(options.repoNames),
-      budget: layers.budget,
-      focusedDay: state.cursorDayInt,
-    }
+  function buildRenderView(surface: VizCanvasId = 'graph'): RenderView {
+    return surfaceController.buildView(
+      surface,
+      renderQuality(quality),
+      renderMeta(options.repoNames),
+      state.cursorDayInt
+    )
   }
   function flushRaster(): void {
-    for (const [id, ctx] of contexts) {
-      try {
-        ctx.getImageData(0, 0, 1, 1)
-      } catch {
-        contexts.delete(id)
-      }
-    }
+    surfaceController.flush()
   }
   function sampleGovernor(now: number): void {
     const delta =
@@ -590,10 +704,25 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       governorStreak = 0
     }
   }
-  const driver: VizDriver = {
+  const driver: VizDriver & {
+    detachCanvas(id: VizCanvasId): void
+    invalidateCanvas(id: VizCanvasId): void
+    setSurfaceGeometry(id: VizCanvasId, geometry: VizSurfaceGeometry): void
+    setSurfacePointer(id: VizSurfaceId, point: VizPointer | null): void
+  } = {
     state,
     setCanvas,
     setViewport,
+    detachCanvas,
+    invalidateCanvas,
+    setSurfaceGeometry,
+    setSurfacePointer,
+    attach,
+    detach,
+    resize,
+    invalidate,
+    setPointer,
+    scrubTo,
     start,
     stop,
     play,
@@ -609,8 +738,10 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     inspect,
     perf,
     subscribe,
+    onDestroy,
     destroy,
   }
+  const surfaceAdapter: VizSurfaceAdapter = createVizSurfaceAdapter(driver)
   const buildHooks =
     process.env.NODE_ENV !== 'production' ||
     process.env.NEXT_PUBLIC_TEST_HOOKS === '1'
@@ -644,40 +775,6 @@ function createLayers(input: SimInput): {
     graph: createGraphLayer(input.entityCount),
     ribbon: createRibbonLayer(grid),
     overview: createOverviewLayer(grid),
-  }
-}
-function defaultTheme(): RenderTheme {
-  const token = {
-    bgH: PANE_SURFACE,
-    bg0: LV[0],
-    bg1: LV[1],
-    bg2: LV[2],
-    bg3: LV[3],
-    bg4: LV[4],
-    fg0: LV[9],
-    fg1: LV[8],
-    fg2: LV[7],
-    fg3: LV[6],
-    fg4: LV[5],
-    gray: LV[4],
-    green: LV[8],
-    greenD: LV[6],
-    aqua: AG[8],
-    aquaD: AG[6],
-    purple: AG[7],
-    purpleD: AG[5],
-    yellow: LV[9],
-    yellowD: LV[7],
-    red: AG[8],
-    blue: AG[7],
-  } as const
-  return {
-    lv: LV,
-    ag: AG,
-    paneSurface: PANE_SURFACE,
-    token,
-    fontPx: { micro: 10, small: 12, mono: 14 },
-    fontFamily: 'monospace',
   }
 }
 function renderQuality(value: VizQuality): Quality {
