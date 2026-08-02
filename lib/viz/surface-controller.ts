@@ -21,7 +21,7 @@ export interface VizSurfaceController {
     meta: RenderMeta,
     focusedDay: number
   ): RenderView
-  context(id: VizCanvasId): Ctx2D | undefined
+  paintContext(id: VizCanvasId): Ctx2D | undefined
   detach(id: VizCanvasId): void
   markDirty(id: VizCanvasId): void
   hasDirty(): boolean
@@ -63,8 +63,10 @@ class SurfaceController implements VizSurfaceController {
   ): RenderView {
     return this.#views.build(id, quality, meta, this.budget, focusedDay)
   }
-  context(id: VizCanvasId): Ctx2D | undefined {
-    return this.#contexts.get(id)
+  paintContext(id: VizCanvasId): Ctx2D | undefined {
+    const ctx = this.#contexts.get(id)
+    if (ctx) ctx.setTransform(1, 0, 0, 1, 0, 0)
+    return ctx
   }
   detach(id: VizCanvasId): void {
     this.#contexts.delete(id)

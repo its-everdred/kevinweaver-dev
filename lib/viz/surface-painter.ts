@@ -48,7 +48,7 @@ function paintOverviewSurface(
   options: VizSurfacePaintOptions
 ): void {
   if (!shouldPaint('overview', options.targets)) return
-  const ctx = controller.context('overview')
+  const ctx = controller.paintContext('overview')
   if (!ctx) return
   renderOverview(
     options.state,
@@ -65,7 +65,7 @@ function paintRibbonSurface(
 ): void {
   if (!shouldPaint('ribbon', options.targets)) return
   const view = viewFor(controller, 'ribbon', options)
-  const ctx = controller.context('ribbon')
+  const ctx = controller.paintContext('ribbon')
   if (ctx) renderRibbon(options.state, ctx, view, options.layers.ribbon)
   options.onRibbonPaint(view)
 }
@@ -75,7 +75,7 @@ function paintGraphSurface(
   options: VizSurfacePaintOptions
 ): void {
   if (!shouldPaint('graph', options.targets)) return
-  const ctx = controller.context('graph')
+  const ctx = controller.paintContext('graph')
   if (!ctx) return
   renderGraph(
     options.state,
