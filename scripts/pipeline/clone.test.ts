@@ -83,6 +83,6 @@ describe('clone cache failure handling', () => {
         backoffMs: 0,
         exec: failedExec(),
       })
-    ).rejects.toThrow('preserved bare clone is unavailable')
+    ).rejects.toThrow('Upstream pipeline input is unavailable')
   })
 })

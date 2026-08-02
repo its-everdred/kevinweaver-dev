@@ -1,7 +1,7 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { PipelineStateError, readState, writeState } from './state.ts'
+import { readState, writeState } from './state.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { encodeBundle } from './encode-bundle.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
@@ -92,9 +92,10 @@ type PreparedRun = {
 
 async function prepareRun(options: Options): Promise<PreparedRun> {
   const statePath = options.state ?? 'data/.pipeline-state.json'
+  const target = options.out ?? 'public/data/v1'
   const previous = await readState(statePath)
-  await recoverPromotion(options.out ?? 'public/data/v1', previous)
-  const input = await resolveInput(options.input)
+  await recoverPromotion(target, previous)
+  const input = await resolveInput(options.input, previous, target)
   const bundle = encodeBundle(withGeneratedAt(input, options.generatedAt))
   return { bundle, input, previous, statePath }
 }

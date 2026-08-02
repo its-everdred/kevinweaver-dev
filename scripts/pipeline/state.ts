@@ -3,6 +3,8 @@ import { dirname } from 'node:path'
 import { z } from 'zod'
 
 export interface RepoPipelineState {
+  databaseId?: number
+  stargazerCount?: number
   heads: Readonly<Record<string, string>>
   events: number
   lastEventDay?: string
@@ -29,6 +31,8 @@ export interface PipelineState {
 const repoStateSchema = z
   .object({
     heads: z.record(z.string(), z.string()),
+    databaseId: z.number().int().positive().optional(),
+    stargazerCount: z.number().int().nonnegative().optional(),
     events: z.number().int().nonnegative(),
     lastEventDay: z.string().optional(),
     status: z.enum(['ok', 'stale', 'gone']),
@@ -101,6 +105,7 @@ export function mergeRepoState(
 ): RepoPipelineState {
   if (next.status === 'ok' || previous === undefined) return next
   return {
+    ...previous,
     ...next,
     heads: previous.heads,
     events: previous.events,
