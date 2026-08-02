@@ -1,0 +1,397 @@
+{
+  "build_order_id": "its-everdred/kevinweaver-dev:site-rewrite",
+  "plan_version": 1,
+  "repository": "its-everdred/kevinweaver-dev",
+  "title": "kevinweaver.dev site rewrite",
+  "root_number": 55,
+  "tickets": [
+    {
+      "id": "KW-001",
+      "title": "Foundation: toolchain re-scaffold and green CI gate",
+      "number": 23,
+      "state": "closed",
+      "complexity": 4,
+      "workstream": "platform",
+      "depends_on": []
+    },
+    {
+      "id": "KW-002",
+      "title": "Repo governance: agent labels, CODEOWNERS, AGENTS.md, and auto-merge",
+      "number": 24,
+      "state": "closed",
+      "complexity": 1,
+      "workstream": "platform",
+      "depends_on": []
+    },
+    {
+      "id": "KW-003",
+      "title": "Vendor the design system as web CSS, bridge it into Tailwind v4, and ship the global accessibility layer",
+      "number": 25,
+      "state": "closed",
+      "complexity": 3,
+      "workstream": "chrome",
+      "depends_on": [
+        "KW-001"
+      ]
+    },
+    {
+      "id": "KW-004",
+      "title": "Self-host JetBrains Mono and the SVG control icon set",
+      "number": 26,
+      "state": "closed",
+      "complexity": 2,
+      "workstream": "chrome",
+      "depends_on": [
+        "KW-001"
+      ]
+    },
+    {
+      "id": "KW-005",
+      "title": "App shell, region slot contract, and seven region stubs",
+      "number": 27,
+      "state": "closed",
+      "complexity": 3,
+      "workstream": "chrome",
+      "depends_on": [
+        "KW-001"
+      ]
+    },
+    {
+      "id": "KW-006",
+      "title": "Content modules: resume, man page, career log, identity, boot",
+      "number": 28,
+      "state": "closed",
+      "complexity": 2,
+      "workstream": "content",
+      "depends_on": [
+        "KW-001"
+      ]
+    },
+    {
+      "id": "KW-007",
+      "title": "Contribution ramp, log2 bands, and contrast fixtures",
+      "number": 29,
+      "state": "closed",
+      "complexity": 1,
+      "workstream": "viz",
+      "depends_on": [
+        "KW-001"
+      ]
+    },
+    {
+      "id": "KW-008",
+      "title": "Viz contract: SimState types, lifespan cursors, seeded RNG",
+      "number": 30,
+      "state": "closed",
+      "complexity": 3,
+      "workstream": "viz",
+      "depends_on": [
+        "KW-001"
+      ]
+    },
+    {
+      "id": "KW-009",
+      "title": "Pipeline A: repo discovery and identity allowlist",
+      "number": 31,
+      "state": "closed",
+      "complexity": 2,
+      "workstream": "data",
+      "depends_on": [
+        "KW-001"
+      ]
+    },
+    {
+      "id": "KW-010",
+      "title": "Pipeline B: contribution calendar and private aggregate through an SSO-authorized PAT",
+      "number": 32,
+      "state": "closed",
+      "complexity": 2,
+      "workstream": "data",
+      "depends_on": [
+        "KW-001"
+      ]
+    },
+    {
+      "id": "KW-011",
+      "title": "Vitest scaffolding: node / dom / browser projects",
+      "number": 33,
+      "state": "closed",
+      "complexity": 2,
+      "workstream": "platform",
+      "depends_on": [
+        "KW-001"
+      ]
+    },
+    {
+      "id": "KW-012",
+      "title": "Bundle schema and codec contract (encode/decode)",
+      "number": 34,
+      "state": "closed",
+      "complexity": 3,
+      "workstream": "data",
+      "depends_on": [
+        "KW-001"
+      ]
+    },
+    {
+      "id": "KW-013",
+      "title": "Pipeline C: blobless clone cache and author-filtered extractor",
+      "number": 35,
+      "state": "closed",
+      "complexity": 3,
+      "workstream": "data",
+      "depends_on": [
+        "KW-009",
+        "KW-012"
+      ]
+    },
+    {
+      "id": "KW-014",
+      "title": "Pipeline D: Scheme D encoder, bundle validator, and pipeline state file",
+      "number": 88,
+      "state": "open",
+      "complexity": 3,
+      "workstream": "data",
+      "depends_on": [
+        "KW-010",
+        "KW-012"
+      ]
+    },
+    {
+      "id": "KW-015",
+      "title": "Client bundle loader: newest-first boot with one-chunk-ahead prefetch",
+      "number": 37,
+      "state": "closed",
+      "complexity": 2,
+      "workstream": "data",
+      "depends_on": [
+        "KW-012"
+      ]
+    },
+    {
+      "id": "KW-016",
+      "title": "Region: man-page pane with a less(1)-style zero-client-JS pager",
+      "number": 38,
+      "state": "closed",
+      "complexity": 2,
+      "workstream": "chrome",
+      "depends_on": [
+        "KW-003",
+        "KW-005",
+        "KW-006"
+      ]
+    },
+    {
+      "id": "KW-017",
+      "title": "Region: career git-log pane",
+      "number": 39,
+      "state": "closed",
+      "complexity": 3,
+      "workstream": "chrome",
+      "depends_on": [
+        "KW-003",
+        "KW-005",
+        "KW-006"
+      ]
+    },
+    {
+      "id": "KW-018",
+      "title": "Region: sticky header/nav and tmux status bar",
+      "number": 40,
+      "state": "closed",
+      "complexity": 2,
+      "workstream": "chrome",
+      "depends_on": [
+        "KW-003",
+        "KW-004",
+        "KW-005"
+      ]
+    },
+    {
+      "id": "KW-019",
+      "title": "Region: contact pane + privacy scrub",
+      "number": 89,
+      "state": "open",
+      "complexity": 1,
+      "workstream": "chrome",
+      "depends_on": [
+        "KW-003",
+        "KW-005",
+        "KW-006"
+      ]
+    },
+    {
+      "id": "KW-020",
+      "title": "Region: boot overlay",
+      "number": 42,
+      "state": "closed",
+      "complexity": 2,
+      "workstream": "chrome",
+      "depends_on": [
+        "KW-005",
+        "KW-006"
+      ]
+    },
+    {
+      "id": "KW-021",
+      "title": "Viz sim reducer + pack-once layout",
+      "number": 43,
+      "state": "closed",
+      "complexity": 3,
+      "workstream": "viz",
+      "depends_on": [
+        "KW-008"
+      ]
+    },
+    {
+      "id": "KW-022",
+      "title": "Viz render modules: graph / ribbon / overview",
+      "number": 44,
+      "state": "closed",
+      "complexity": 4,
+      "workstream": "viz",
+      "depends_on": [
+        "KW-008",
+        "KW-007"
+      ]
+    },
+    {
+      "id": "KW-023",
+      "title": "Playwright scaffolding and containerized e2e workflow",
+      "number": 90,
+      "state": "open",
+      "complexity": 3,
+      "workstream": "platform",
+      "depends_on": [
+        "KW-001",
+        "KW-011"
+      ]
+    },
+    {
+      "id": "KW-024",
+      "title": "Viz driver: single rAF owner, test harness, reduced motion",
+      "number": 91,
+      "state": "closed",
+      "complexity": 2,
+      "workstream": "viz",
+      "depends_on": [
+        "KW-021",
+        "KW-022"
+      ]
+    },
+    {
+      "id": "KW-025",
+      "title": "Region: instrument pane \u2014 three self-sizing canvases, pointer input, and the lazy viz island",
+      "number": 47,
+      "state": "open",
+      "complexity": 3,
+      "workstream": "viz",
+      "depends_on": [
+        "KW-005",
+        "KW-015",
+        "KW-024"
+      ]
+    },
+    {
+      "id": "KW-026",
+      "title": "Transport bar controls, keyboard bindings, and arcade-game removal",
+      "number": 48,
+      "state": "open",
+      "complexity": 2,
+      "workstream": "chrome",
+      "depends_on": [
+        "KW-024",
+        "KW-004",
+        "KW-005"
+      ]
+    },
+    {
+      "id": "KW-027",
+      "title": "SEO metadata, OG card, /resume.txt, /kevinweaver.1, and the no-JavaScript fallback",
+      "number": 49,
+      "state": "closed",
+      "complexity": 2,
+      "workstream": "content",
+      "depends_on": [
+        "KW-005",
+        "KW-006",
+        "KW-016",
+        "KW-017"
+      ]
+    },
+    {
+      "id": "KW-028",
+      "title": "GitHub Actions daily data workflow and first-byte budget gate",
+      "number": 50,
+      "state": "open",
+      "complexity": 2,
+      "workstream": "data",
+      "depends_on": [
+        "KW-013",
+        "KW-014"
+      ]
+    },
+    {
+      "id": "KW-029",
+      "title": "Accessibility gate: axe conformance, canvas text equivalent, and reduced-motion proof",
+      "number": 51,
+      "state": "open",
+      "complexity": 3,
+      "workstream": "platform",
+      "depends_on": [
+        "KW-016",
+        "KW-017",
+        "KW-018",
+        "KW-019",
+        "KW-020",
+        "KW-023",
+        "KW-025",
+        "KW-026"
+      ]
+    },
+    {
+      "id": "KW-030",
+      "title": "Performance budgets: size-limit hard gate and first-load assertion",
+      "number": 52,
+      "state": "open",
+      "complexity": 2,
+      "workstream": "platform",
+      "depends_on": [
+        "KW-023",
+        "KW-025",
+        "KW-028"
+      ]
+    },
+    {
+      "id": "KW-031",
+      "title": "Visual regression baselines and determinism canary",
+      "number": 53,
+      "state": "open",
+      "complexity": 3,
+      "workstream": "platform",
+      "depends_on": [
+        "KW-023",
+        "KW-024",
+        "KW-025"
+      ]
+    },
+    {
+      "id": "KW-032",
+      "title": "Capstone: full-page integration and production deploy verification",
+      "number": 54,
+      "state": "open",
+      "complexity": 2,
+      "workstream": "platform",
+      "depends_on": [
+        "KW-002",
+        "KW-018",
+        "KW-019",
+        "KW-026",
+        "KW-027",
+        "KW-029",
+        "KW-030",
+        "KW-031"
+      ]
+    }
+  ]
+}
