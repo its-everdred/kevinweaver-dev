@@ -100,7 +100,7 @@ async function settleGenerations(
 ): Promise<void> {
   if (!expectedHash)
     throw new PromotionRecoveryError('Cannot identify prior bundle generation.')
-  if ((await hashFor(target)) === expectedHash)
+  if (await matchesHash(hashFor, target, expectedHash))
     return operations.remove(previous)
   if ((await hashFor(previous)) !== expectedHash)
     throw new PromotionRecoveryError(
@@ -108,6 +108,18 @@ async function settleGenerations(
     )
   await operations.remove(target)
   await operations.rename(previous, target)
+}
+
+async function matchesHash(
+  hashFor: (directory: string) => Promise<string>,
+  directory: string,
+  expectedHash: string
+): Promise<boolean> {
+  try {
+    return (await hashFor(directory)) === expectedHash
+  } catch {
+    return false
+  }
 }
 
 async function backUpTarget(

@@ -1,47 +1,25 @@
-import type { EncodeInput, RawEvent, RepoInput } from './encode-types.ts'
+import type { EncodeInput, RepoInput } from './encode-types.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { SamlCanaryError } from './calendar.ts'
+import type { CalendarBundle, GraphqlRequest } from './calendar.ts'
+import type { DiscoveryResult } from './discover.ts'
+import type { ExtractResult } from './extract.ts'
+import type { PrivateAggregate } from './private.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { BAND_LOWER_BOUNDS } from '../../lib/viz/tokens/level.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { currentSecond, loadStage, requiredCommit, requiredToken } from './encode-stage-runtime.ts'
+import { currentSecond, loadStage, PipelineAvailabilityError, requiredCommit, requiredToken } from './encode-stage-runtime.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { sortedHeads } from './encode-heads.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import * as stageAdapters from './encode-stage-adapters.ts'
 
-type Client = <T>(
-  query: string,
-  variables?: Record<string, unknown>
-) => Promise<T>
-type Calendar = {
-  windowStart: string
-  windowEnd: string
-  canary: { ok: boolean; checkedAt: string }
-  combined: readonly { date: string; e: number; a: number }[]
-  degraded: readonly string[]
-}
-type Private = { p: readonly number[]; degraded: readonly string[] }
-type Discovery = {
-  repos: readonly {
-    nameWithOwner: string
-    databaseId: number
-    stargazerCount: number
-    isPrivate: boolean
-  }[]
-  repoCountDefinition: {
-    count: number
-    definition: EncodeInput['repoCountDefinition']
-  }
-}
-type Extraction = {
-  events: readonly (RawEvent & { authorDate: string })[]
-  repos: readonly {
-    n: string
-    first: string
-    last: string
-    private: false
-    status: RepoInput['status']
-    heads: Readonly<Record<string, string>>
-  }[]
-}
+type Client = GraphqlRequest
+type Calendar = CalendarBundle
+type Private = PrivateAggregate
+type Discovery = DiscoveryResult
+type Extraction = ExtractResult
 
 export async function resolveStages(): Promise<EncodeInput> {
   const token = requiredToken()
@@ -54,56 +32,52 @@ export async function resolveStages(): Promise<EncodeInput> {
 }
 
 async function clientFor(token: string): Promise<Client> {
-  const create = await loadStage<(value: string) => Client>(
-    './calendar.ts',
-    'createContribClient'
-  )
-  return create(token)
+  const create = await loadStage('./calendar.ts', 'createContribClient')
+  return stageAdapters.clientValue(create(token))
 }
 
 async function calendarFor(client: Client): Promise<Calendar> {
-  const fetch = await loadStage<(value: Client) => Promise<Calendar>>(
-    './calendar.ts',
-    'fetchCalendarBundle'
-  )
-  return fetch(client)
+  const fetch = await loadStage('./calendar.ts', 'fetchCalendarBundle')
+  try {
+    return stageAdapters.calendarValue(await fetch(client))
+  } catch (error) {
+    if (error instanceof SamlCanaryError)
+      throw new PipelineAvailabilityError(
+        'SAML canary refused the calendar.',
+        error
+      )
+    throw error
+  }
 }
 
 async function privateFor(client: Client, start: string): Promise<Private> {
-  const fetch = await loadStage<
-    (value: Client, options: { pStart: string }) => Promise<Private>
-  >('./private.ts', 'fetchPrivateAggregate')
-  return fetch(client, { pStart: start.slice(0, 7) })
+  const fetch = await loadStage('./private.ts', 'fetchPrivateAggregate')
+  return stageAdapters.privateValue(
+    await fetch(client, { pStart: start.slice(0, 7) })
+  )
 }
 
 async function discoveryFor(
   client: Client,
   calendar: Calendar
 ): Promise<Discovery> {
-  const discover = await loadStage<
-    (
-      value: Client,
-      options: {
-        logins: readonly ['its-everdred', 'its-applekid']
-        fromYear: number
-        toYear: number
-      }
-    ) => Promise<Discovery>
-  >('./discover.ts', 'discoverRepos')
-  return discover(client, {
-    logins: ['its-everdred', 'its-applekid'],
-    fromYear: year(calendar.windowStart),
-    toYear: year(calendar.windowEnd),
-  })
+  const discover = await loadStage('./discover.ts', 'discoverRepos')
+  return stageAdapters.discoveryValue(
+    await discover(client, {
+      logins: ['its-everdred', 'its-applekid'],
+      fromYear: year(calendar.windowStart),
+      toYear: year(calendar.windowEnd),
+    })
+  )
 }
 
 async function extractionFor(discovery: Discovery): Promise<Extraction> {
-  const extract = await loadStage<
-    (repos: readonly string[], prior: readonly []) => Promise<Extraction>
-  >('./extract.ts', 'extractAll')
-  return extract(
-    discovery.repos.map((repo) => repo.nameWithOwner),
-    []
+  const extract = await loadStage('./extract.ts', 'extractAll')
+  return stageAdapters.extractionValue(
+    await extract(
+      discovery.repos.map((repo) => repo.nameWithOwner),
+      []
+    )
   )
 }
 

@@ -1,11 +1,11 @@
-import { spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 
 // @ts-expect-error Node type stripping requires explicit TypeScript extensions.
-import { syncAll, type GitExec } from './clone.ts'
-// @ts-expect-error Node type stripping requires explicit TypeScript extensions.
-import { actorId, classify, type ActorId } from './identity.ts'
+import * as clone from './clone.ts'
+import type { ActorId } from './identity.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { extractRepo, GitLogError } from './extract-log.ts'
 import type { RepoStatus } from '../../lib/bundle/schema.ts'
 
 /** One author-attributed file touch ready for deterministic encoding. */
@@ -49,151 +49,13 @@ export interface ExtractOptions {
   cloneRoot?: string
   retries?: number
   backoffMs?: number
-  exec?: GitExec
-}
-
-interface LogRecord {
-  sha: string
-  authorDate: string
-  authorEmail: string
-  paths: string[]
-}
-
-class GitLogError extends Error {
-  constructor(repo: string, message: string) {
-    super(`Could not extract ${repo}: ${message}`)
-    this.name = 'GitLogError'
-  }
+  exec?: clone.GitExec
 }
 
 function cloneRootFor(root: string | undefined): string {
   return resolve(
     root ?? process.env.KW_CLONE_ROOT ?? join(tmpdir(), 'kw-clones-v1')
   )
-}
-
-function childEnvironment(): NodeJS.ProcessEnv {
-  const environment = { ...process.env }
-  const githubToken = 'GITHUB' + '_TOKEN'
-  const ghToken = 'GH' + '_TOKEN'
-  const contribToken = 'CONTRIB' + '_TOKEN'
-  delete environment[githubToken]
-  delete environment[ghToken]
-  delete environment[contribToken]
-  return {
-    ...environment,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_ASKPASS: '/bin/false',
-  }
-}
-
-function unquotePath(path: string): string {
-  if (!path.startsWith('"') || !path.endsWith('"')) return path
-  return path
-    .slice(1, -1)
-    .replace(/\\([\\"abfnrtv]|[0-7]{3})/g, (_, escape: string) => {
-      if (/^[0-7]{3}$/.test(escape))
-        return String.fromCharCode(Number.parseInt(escape, 8))
-      return (
-        { a: '\u0007', b: '\b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' }[
-          escape
-        ] ?? escape
-      )
-    })
-}
-
-function eventFrom(
-  record: LogRecord,
-  repo: string,
-  path: string
-): ExtractedEvent | undefined {
-  const login = classify(record.authorEmail)
-  if (login === null) return undefined
-  return {
-    day: record.authorDate.slice(0, 10),
-    repo,
-    sha: record.sha,
-    path: unquotePath(path),
-    actor: actorId(login),
-    authorDate: record.authorDate,
-  }
-}
-
-function recordFrom(line: string): LogRecord {
-  const [sha, authorDate, authorEmail, ...rest] = line.slice(1).split('\x1f')
-  if (!sha || !authorDate || !authorEmail || rest.length > 0)
-    throw new GitLogError('unknown', 'malformed log header')
-  return { sha, authorDate, authorEmail, paths: [] }
-}
-
-async function extractRepo(
-  repo: string,
-  dir: string
-): Promise<ExtractedEvent[]> {
-  return new Promise((done, fail) => {
-    const child = spawn(
-      'git',
-      [
-        '-C',
-        dir,
-        '-c',
-        'core.quotePath=false',
-        'log',
-        '--all',
-        '--no-merges',
-        '--no-renames',
-        '--no-mailmap',
-        '--name-only',
-        '--pretty=format:%x01%H%x1f%aI%x1f%ae',
-      ],
-      { env: childEnvironment() }
-    )
-    const events: ExtractedEvent[] = []
-    let record: LogRecord | undefined
-    let remaining = ''
-    const flush = () => {
-      if (!record) return
-      for (const path of record.paths) {
-        const event = eventFrom(record, repo, path)
-        if (event) events.push(event)
-      }
-    }
-    const consume = (line: string) => {
-      if (line.startsWith('\x01')) {
-        flush()
-        record = recordFrom(line)
-      } else if (line !== '' && record) {
-        record.paths.push(line)
-      }
-    }
-    let stderr = ''
-    child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => {
-      remaining += chunk
-      const lines = remaining.split('\n')
-      remaining = lines.pop() ?? ''
-      for (const line of lines) consume(line)
-    })
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-    })
-    child.on('error', (error) => fail(new GitLogError(repo, error.message)))
-    child.on('close', (code) => {
-      if (remaining) consume(remaining)
-      flush()
-      if (code === 0) done(events)
-      else
-        fail(
-          new GitLogError(
-            repo,
-            stderr.trim().split('\n').filter(Boolean).at(-1) ?? 'git log failed'
-          )
-        )
-    })
-  })
 }
 
 function bounds(events: readonly ExtractedEvent[]): {
@@ -245,12 +107,12 @@ export async function extractAll(
     throw new RangeError('at least one repository is required')
   const cloneRoot = cloneRootFor(opts?.cloneRoot)
   const priorByRepo = new Map(prior.map((repo) => [repo.n, repo]))
-  const outcomes = await syncAll(repos, opts)
+  const outcomes = await clone.syncAll(repos, opts)
   const extracted: RepoExtract[] = []
   for (const outcome of outcomes) {
     const before = priorByRepo.get(outcome.repo)
     if (!outcome.ok) {
-      extracted.push(stale(outcome.repo, before, outcome.error))
+      extracted.push(await staleFromCache(outcome, before))
       continue
     }
     const events = await extractRepo(outcome.repo, outcome.dir)
@@ -276,5 +138,22 @@ export async function extractAll(
     repos: extracted.sort((a, b) => (a.n < b.n ? -1 : a.n > b.n ? 1 : 0)),
     commitScope: '--all',
     cloneRoot,
+  }
+}
+
+async function staleFromCache(
+  outcome: clone.CloneOutcome,
+  prior: RepoExtract | undefined
+): Promise<RepoExtract> {
+  if (!outcome.cached)
+    throw new GitLogError(outcome.repo, 'preserved bare clone is unavailable')
+  const events = await extractRepo(outcome.repo, outcome.dir)
+  const { first, last } = bounds(events)
+  return {
+    ...stale(outcome.repo, prior, outcome.error),
+    first,
+    last,
+    heads: outcome.heads,
+    events,
   }
 }

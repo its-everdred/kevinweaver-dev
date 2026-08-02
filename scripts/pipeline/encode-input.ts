@@ -19,6 +19,7 @@ const schema = z.object({
       n: z.string(),
       databaseId: z.number().int().positive(),
       stargazerCount: z.number().int().nonnegative(),
+      heads: z.record(z.string(), z.string()).optional(),
       first: z.string().optional(),
       last: z.string().optional(),
       private: z.boolean(),

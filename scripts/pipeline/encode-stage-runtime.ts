@@ -14,10 +14,12 @@ export function currentSecond(): string {
   return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
 
-export async function loadStage<T>(
+export type StageFunction = (...args: readonly unknown[]) => unknown
+
+export async function loadStage(
   specifier: string,
   binding: string
-): Promise<T> {
+): Promise<StageFunction> {
   let stage: Record<string, unknown>
   try {
     stage = await import(specifier)
@@ -25,14 +27,25 @@ export async function loadStage<T>(
     throw new UpstreamUnavailableError(specifier)
   }
   const value = stage[binding]
-  if (typeof value !== 'function')
+  if (!isStageFunction(value))
     throw new UpstreamUnavailableError(`${specifier}#${binding}`)
-  return value as T
+  return value
+}
+
+function isStageFunction(value: unknown): value is StageFunction {
+  return typeof value === 'function'
 }
 
 export class UpstreamUnavailableError extends Error {
   constructor(specifier: string) {
     super(`Upstream pipeline input is unavailable: ${specifier}`)
     this.name = 'UpstreamUnavailableError'
+  }
+}
+
+export class PipelineAvailabilityError extends Error {
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause })
+    this.name = 'PipelineAvailabilityError'
   }
 }
