@@ -518,11 +518,11 @@ function drawRepoLabels(
     ctx.textAlign =
       Math.abs(cosine) < 0.35 ? 'center' : cosine > 0 ? 'left' : 'right'
     ctx.fillStyle =
-      phase === PHASE_GHOST ? view.theme.token.bg4 : view.theme.token.fg2
+      phase === PHASE_GHOST ? view.theme.token.fg4 : view.theme.token.fg2
     ctx.fillText(meta?.short ?? `repo-${repoId}`, x, y)
     if (phase === PHASE_GHOST || !meta || meta.stars <= 40) continue
     ctx.font = `700 ${view.theme.fontPx.micro}px ${view.theme.fontFamily}`
-    ctx.fillStyle = view.theme.token.bg4
+    ctx.fillStyle = view.theme.token.fg4
     ctx.fillText(starLabel(meta.stars), x, y + view.theme.fontPx.micro + 2)
   }
 }
@@ -625,7 +625,7 @@ function drawBirthCopy(
   if (meta.agentBirthLabel) ctx.fillText(meta.agentBirthLabel, x, y - 5)
   if (!meta.agentBirthSubLabel) return
   ctx.font = `600 ${theme.fontPx.micro}px ${theme.fontFamily}`
-  ctx.fillStyle = theme.token.bg4
+  ctx.fillStyle = theme.token.fg4
   ctx.fillText(meta.agentBirthSubLabel, x, y + theme.fontPx.micro + 3)
 }
 
