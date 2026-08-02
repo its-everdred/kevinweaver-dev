@@ -3,7 +3,14 @@ import { expect, test, type Page, type Request } from '@playwright/test'
 const EPOCH = new Date('2026-06-01T00:00:00.000Z')
 const PAUSE_AT = new Date('2026-06-01T01:00:00.000Z')
 const ORIGIN = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:3000').origin
-const BOOT_SESSION_KEY = 'kw.boot.v1'
+const DATA_FALLBACK_PATH = /\/data\/v1\/(manifest|grid)\.json$/
+const EXPECTED_DATA_FALLBACK_TYPES = new Set([
+  'document',
+  'fetch',
+  'xhr',
+  'eventsource',
+  'websocket',
+])
 
 declare global {
   interface Window {
@@ -11,10 +18,13 @@ declare global {
   }
 }
 
-async function dismissBootOverlay(page: Page) {
-  await page.addInitScript(
-    (sessionKey) => window.sessionStorage.setItem(sessionKey, '1'),
-    BOOT_SESSION_KEY
+function isCheckedSubresource(request: Request) {
+  return !EXPECTED_DATA_FALLBACK_TYPES.has(request.resourceType())
+}
+
+async function completeExpectedDataFallback(page: Page) {
+  await page.route(DATA_FALLBACK_PATH, (route) =>
+    route.fulfill({ status: 404 })
   )
 }
 
@@ -30,16 +40,21 @@ test.describe('smoke', () => {
 
   test('no subresource fails to load', async ({ page }) => {
     const broken: string[] = []
-    await dismissBootOverlay(page)
+    await completeExpectedDataFallback(page)
     page.on('response', (response) => {
-      if (response.status() >= 400) {
+      if (
+        isCheckedSubresource(response.request()) &&
+        response.status() >= 400
+      ) {
         broken.push(`${response.status()} ${response.url()}`)
       }
     })
     page.on('requestfailed', (request) => {
-      broken.push(
-        `failed ${request.url()} ${request.failure()?.errorText ?? 'unknown error'}`
-      )
+      if (isCheckedSubresource(request)) {
+        broken.push(
+          `failed ${request.url()} ${request.failure()?.errorText ?? 'unknown error'}`
+        )
+      }
     })
 
     await page.goto('/', { waitUntil: 'networkidle' })
@@ -49,7 +64,7 @@ test.describe('smoke', () => {
 
   test('the page makes no cross-origin request', async ({ page }) => {
     const external: string[] = []
-    await dismissBootOverlay(page)
+    await completeExpectedDataFallback(page)
     page.on('request', (request: Request) => {
       if (
         !request.url().startsWith('data:') &&

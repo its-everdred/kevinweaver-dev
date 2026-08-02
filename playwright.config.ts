@@ -16,6 +16,8 @@ export default defineConfig({
     : [['list'], ['html', { open: 'never' }]],
   expect: {
     timeout: 10_000,
+    // Snapshot follow-up owns the sanctioned container-only update guard, root
+    // snapshotPathTemplate, and comparison keys (threshold, maxDiffPixelRatio).
     toHaveScreenshot: { stylePath: './e2e/screenshot.css' },
   },
   webServer: remoteOrigin
@@ -25,6 +27,8 @@ export default defineConfig({
         url: LOCAL_ORIGIN,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
+        // webServer.env applies only at start. Local hook builds need
+        // NEXT_PUBLIC_TEST_HOOKS=1 npm run build.
         env: {
           NEXT_PUBLIC_TEST_HOOKS: '1',
           NEXT_TELEMETRY_DISABLED: '1',
