@@ -13,6 +13,7 @@ type ContributionCategory = (typeof CATEGORIES)[number]
 
 export interface DiscoveredRepo {
   nameWithOwner: string
+  databaseId: number
   isPrivate: boolean
   isFork: boolean
   isArchived: boolean
@@ -51,10 +52,10 @@ export interface DiscoverOptions {
 export const DISCOVERY_QUERY = `query Discover($login: String!, $from: DateTime!, $to: DateTime!, $max: Int!) {
   user(login: $login) {
     contributionsCollection(from: $from, to: $to) {
-      commitContributionsByRepository(maxRepositories: $max) { repository { nameWithOwner isPrivate isFork isArchived stargazerCount createdAt } contributions { totalCount } }
-      pullRequestContributionsByRepository(maxRepositories: $max) { repository { nameWithOwner isPrivate isFork isArchived stargazerCount createdAt } contributions { totalCount } }
-      issueContributionsByRepository(maxRepositories: $max) { repository { nameWithOwner isPrivate isFork isArchived stargazerCount createdAt } contributions { totalCount } }
-      pullRequestReviewContributionsByRepository(maxRepositories: $max) { repository { nameWithOwner isPrivate isFork isArchived stargazerCount createdAt } contributions { totalCount } }
+      commitContributionsByRepository(maxRepositories: $max) { repository { nameWithOwner databaseId isPrivate isFork isArchived stargazerCount createdAt } contributions { totalCount } }
+      pullRequestContributionsByRepository(maxRepositories: $max) { repository { nameWithOwner databaseId isPrivate isFork isArchived stargazerCount createdAt } contributions { totalCount } }
+      issueContributionsByRepository(maxRepositories: $max) { repository { nameWithOwner databaseId isPrivate isFork isArchived stargazerCount createdAt } contributions { totalCount } }
+      pullRequestReviewContributionsByRepository(maxRepositories: $max) { repository { nameWithOwner databaseId isPrivate isFork isArchived stargazerCount createdAt } contributions { totalCount } }
     }
   }
   rateLimit { cost remaining }
@@ -67,6 +68,7 @@ export const REPO_COUNT_QUERY = `query RepoCount($login: String!) {
 
 const RepositorySchema = z.object({
   nameWithOwner: z.string(),
+  databaseId: z.number().int().nonnegative(),
   isPrivate: z.boolean(),
   isFork: z.boolean(),
   isArchived: z.boolean(),

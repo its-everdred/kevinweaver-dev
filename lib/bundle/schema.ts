@@ -19,6 +19,8 @@ export type RepoCountDefinition =
 export type IsoDay = string
 export type IsoMonth = string
 export type IsoSecond = string
+export type EventSpan = readonly [newest: IsoDay, oldest: IsoDay]
+export type BundleRefs = 'all' | 'head'
 
 export interface Actor {
   id: ActorId
@@ -31,6 +33,8 @@ export interface BundleMeta {
   v: typeof BUNDLE_VERSION
   generatedAt: IsoSecond
   commit: string
+  days: EventSpan
+  refs: BundleRefs
   windowStart: IsoDay
   windowEnd: IsoDay
   dayCount: number
