@@ -140,10 +140,6 @@ export function decodeBundle(
   const grid = decodeGrid(requiredFile(files, 'grid.json'))
   const eventDayCount = eventSpanDayCount(manifest)
   assert(
-    manifest.repoCount === repos.length,
-    'Manifest repo count does not match repos.'
-  )
-  assert(
     grid.start === manifest.windowStart,
     'Grid start does not match manifest.'
   )
@@ -323,10 +319,6 @@ function validateInput(input: BundleInput): void {
   validateMeta(input.meta)
   validateRepos(input.repos)
   validateGrid(input.grid)
-  assert(
-    input.meta.repoCount === input.repos.length,
-    'Meta repo count does not match repos.'
-  )
   assert(
     input.grid.start === input.meta.windowStart,
     'Grid start must equal window start.'
