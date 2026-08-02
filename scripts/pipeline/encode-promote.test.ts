@@ -4,12 +4,14 @@ import type { FileOperations } from './encode-promote.ts'
 import { promoteWith, recoverWith, rollbackWith } from './encode-promote.ts'
 
 describe('bundle promotion', () => {
-  it('recovers a prior generation before promotion', async () => {
+  it('refuses promotion before prior-generation recovery', async () => {
     const disk = fakeDisk(['target.previous', 'temporary'])
 
-    await promoteWith(disk.operations, 'temporary', 'target')
+    await expect(
+      promoteWith(disk.operations, 'temporary', 'target')
+    ).rejects.toThrow('Bundle recovery must run before promotion.')
 
-    expect(disk.paths()).toEqual(['target', 'target.previous'])
+    expect(disk.paths()).toEqual(['target.previous', 'temporary'])
   })
 
   it('restores the good generation when promotion rename fails', async () => {
@@ -58,6 +60,36 @@ describe('bundle promotion', () => {
     await recoverWith(disk.operations, hash, 'target', 'old')
 
     expect(disk.paths()).toEqual(['target'])
+  })
+
+  it('restores a previous-only generation only when its hash matches state', async () => {
+    const disk = fakeDisk(['target.previous'])
+
+    await recoverWith(disk.operations, hashFor('', 'old'), 'target', 'old')
+
+    expect(disk.paths()).toEqual(['target'])
+  })
+
+  it('leaves a previous-only mismatch untouched', async () => {
+    const disk = fakeDisk(['target.previous'])
+
+    await expect(
+      recoverWith(disk.operations, hashFor('', 'old'), 'target', 'other')
+    ).rejects.toThrow('No bundle generation matches pipeline state.')
+
+    expect(disk.paths()).toEqual(['target.previous'])
+  })
+
+  it('leaves a previous-only hash failure untouched', async () => {
+    const disk = fakeDisk(['target.previous'])
+    const broken = async (): Promise<string> =>
+      Promise.reject(new Error('damaged'))
+
+    await expect(
+      recoverWith(disk.operations, broken, 'target', 'old')
+    ).rejects.toThrow('No bundle generation matches pipeline state.')
+
+    expect(disk.paths()).toEqual(['target.previous'])
   })
 
   it('retains both generations when rollback restoration fails', async () => {

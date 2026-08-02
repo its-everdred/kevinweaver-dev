@@ -106,9 +106,12 @@ function strings(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(string)
 }
 
+/**
+ * @description Signals malformed or empty data returned by a local stage.
+ */
 export class StageDataError extends Error {
-  constructor(message: string) {
-    super(message)
+  constructor(message: string, cause?: unknown) {
+    super(message, { cause })
     this.name = 'StageDataError'
   }
 }

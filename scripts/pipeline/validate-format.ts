@@ -71,16 +71,22 @@ export function validateManifestBytes(
       'Manifest bytes differ from the encoded value.'
     )
 }
-export function firstByte(files: ReadonlyMap<string, string>): string {
+
+/**
+ * @description Selects resources required before the first visualization frame.
+ * @param files Decoded bundle resource text keyed by relative path.
+ * @returns Resource bodies in network request order.
+ */
+export function firstByteResources(
+  files: ReadonlyMap<string, string>
+): string[] {
   return [
     'manifest.json',
     'repos.json',
     'grid.json',
     'events/ee-00.json',
     'paths/pd-00.json',
-  ]
-    .map((path) => files.get(path) ?? '')
-    .join('')
+  ].map((path) => files.get(path) ?? '')
 }
 export function dayEnd(start: string, count: number): string {
   return new Date(Date.parse(`${start}T00:00:00Z`) + (count - 1) * 86_400_000)

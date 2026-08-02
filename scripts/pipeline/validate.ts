@@ -10,7 +10,7 @@ import type { PipelineState } from './state.ts'
 import { add } from './validate-types.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { firstByte, numbered, validateIntegrity, validateJson, validateManifestBytes } from './validate-format.ts'
+import { firstByteResources, numbered, validateIntegrity, validateJson, validateManifestBytes } from './validate-format.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { validateCanonicalBytes } from './validate-canonical.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
@@ -21,6 +21,12 @@ import type {
   ValidationResources,
   ValidationResult,
 } from './validate-types.ts'
+/**
+ * @description Validates every emitted resource and its promotion safety bounds.
+ * @param bundle Encoded bundle to validate.
+ * @param prev Prior successful state, or null on first publication.
+ * @returns Findings and compression metrics for the candidate bundle.
+ */
 export function validateBundle(
   bundle: EncodedBundle,
   prev: PipelineState | null
@@ -61,9 +67,10 @@ function measure(
   resources: ValidationResources
 ): Pick<ValidationResult, 'firstByteBrotliBytes' | 'maxDictSliceGzipBytes'> {
   return {
-    firstByteBrotliBytes: brotliCompressSync(
-      Buffer.from(firstByte(resources.files))
-    ).byteLength,
+    firstByteBrotliBytes: firstByteResources(resources.files).reduce(
+      (total, text) => total + brotliCompressSync(Buffer.from(text)).byteLength,
+      0
+    ),
     maxDictSliceGzipBytes: Math.max(
       0,
       ...resources.slices.map((slice) => gzipSync(slice).byteLength)

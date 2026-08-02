@@ -92,6 +92,7 @@ function publicRepo(
       first: extracted.first || undefined,
       last: extracted.last || undefined,
       private: current?.isPrivate ?? false,
+      consecutiveFailures: extracted.consecutiveFailures,
       status:
         extracted.status === 'stale' && extracted.consecutiveFailures >= 7
           ? 'gone'

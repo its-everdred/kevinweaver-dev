@@ -4,35 +4,64 @@ import { persistWith } from './encode-transaction.ts'
 import type { PersistenceOperations } from './encode-transaction.ts'
 
 describe('state persistence transaction', () => {
-  it('rolls back only when state writing fails', async () => {
-    const operations = faults('write')
+  it('discards state without promotion when journal writing fails', async () => {
+    const operations = faults('stage')
 
     await expect(
-      persistWith(operations, 'state', state(), 'target')
-    ).rejects.toThrow('write failed')
+      persistWith(operations, 'state', state(), 'temporary', 'target')
+    ).rejects.toThrow('stage failed')
 
-    expect(operations.calls).toEqual(['write', 'rollback'])
+    expect(operations.calls).toEqual(['stage', 'discard'])
   })
 
-  it('retains the promoted generation when cleanup fails', async () => {
+  it('rolls back a generation when state commit fails', async () => {
+    const operations = faults('commit')
+
+    await expect(
+      persistWith(operations, 'state', state(), 'temporary', 'target')
+    ).rejects.toThrow('commit failed')
+
+    expect(operations.calls).toEqual([
+      'stage',
+      'promote',
+      'commit',
+      'rollback',
+      'discard',
+    ])
+  })
+
+  it('discards state without redundant rollback when promotion fails', async () => {
+    const operations = faults('promote')
+
+    await expect(
+      persistWith(operations, 'state', state(), 'temporary', 'target')
+    ).rejects.toThrow('promote failed')
+
+    expect(operations.calls).toEqual(['stage', 'promote', 'discard'])
+  })
+
+  it('retains committed state and generation when cleanup fails', async () => {
     const operations = faults('finalize')
 
     await expect(
-      persistWith(operations, 'state', state(), 'target')
+      persistWith(operations, 'state', state(), 'temporary', 'target')
     ).rejects.toThrow('finalize failed')
 
-    expect(operations.calls).toEqual(['write', 'finalize'])
+    expect(operations.calls).toEqual(['stage', 'promote', 'commit', 'finalize'])
   })
 })
 
 function faults(
-  failure: 'write' | 'finalize'
+  failure: 'stage' | 'promote' | 'commit' | 'finalize'
 ): PersistenceOperations & { calls: string[] } {
   const calls: string[] = []
   return {
     calls,
-    write: async () => failIf(calls, failure, 'write'),
+    stage: async () => failIf(calls, failure, 'stage'),
+    promote: async () => failIf(calls, failure, 'promote'),
+    commit: async () => failIf(calls, failure, 'commit'),
     rollback: async () => void calls.push('rollback'),
+    discard: async () => void calls.push('discard'),
     finalize: async () => failIf(calls, failure, 'finalize'),
   }
 }

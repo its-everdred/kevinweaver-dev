@@ -2,10 +2,15 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { decodeGrid } from '../../lib/bundle/codec.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { readBundleHash } from './encode-hash.ts'
 import type { CalendarBundle } from './calendar.ts'
 import type { ExtractionPrior } from './extract.ts'
 import type { PipelineState } from './state.ts'
 
+/**
+ * @description Trusted contribution arrays recovered from a public generation.
+ */
 export interface PriorGrid {
   start: string
   e: readonly number[]
@@ -13,13 +18,19 @@ export interface PriorGrid {
   p: readonly number[]
 }
 
-/** Reads the last public grid only after a successful state has been persisted. */
+/**
+ * @description Reads the prior public grid only when it matches persisted state.
+ * @param target Public generation directory.
+ * @param previous Previously persisted state.
+ * @returns The trusted grid, or undefined when no matching generation exists.
+ */
 export async function readPriorGrid(
   target: string | undefined,
   previous: PipelineState | null
 ): Promise<PriorGrid | undefined> {
-  if (!previous || !target) return undefined
+  if (!previous?.bundleHash || !target) return undefined
   try {
+    if ((await readBundleHash(target)) !== previous.bundleHash) return undefined
     const grid = decodeGrid(await readFile(join(target, 'grid.json'), 'utf8'))
     return {
       start: grid.start,
@@ -33,7 +44,11 @@ export async function readPriorGrid(
   }
 }
 
-/** Rehydrates a calendar fallback from measured public grid data. */
+/**
+ * @description Rehydrates calendar data from an already measured public grid.
+ * @param grid Trusted prior grid.
+ * @returns Calendar data marked as degraded.
+ */
 export function calendarFromGrid(grid: PriorGrid): CalendarBundle {
   const end = dayAt(grid.start, grid.e.length - 1)
   return {
@@ -58,7 +73,11 @@ export function calendarFromGrid(grid: PriorGrid): CalendarBundle {
   }
 }
 
-/** Reuses only the measured public private aggregate after a transient failure. */
+/**
+ * @description Reuses only a measured private aggregate after a transient failure.
+ * @param grid Trusted prior grid.
+ * @returns The degraded private aggregate.
+ */
 export function privateFromGrid(grid: PriorGrid): {
   p: number[]
   degraded: string[]
@@ -66,7 +85,11 @@ export function privateFromGrid(grid: PriorGrid): {
   return { p: [...grid.p], degraded: ['private'] }
 }
 
-/** Creates cache-recovery metadata without inventing events or dates. */
+/**
+ * @description Creates clone-cache recovery metadata without inventing events.
+ * @param state Prior pipeline state.
+ * @returns Extraction recovery metadata.
+ */
 export function extractionPriors(
   state: PipelineState | null
 ): ExtractionPrior[] {
@@ -78,7 +101,12 @@ export function extractionPriors(
   }))
 }
 
-/** Produces the complete public-name extraction set from discovery and state. */
+/**
+ * @description Produces the union of current discovery and retained state names.
+ * @param discovered Current discovered names.
+ * @param state Prior pipeline state.
+ * @returns Canonically ordered names for extraction.
+ */
 export function extractionNames(
   discovered: readonly string[],
   state: PipelineState | null

@@ -1,6 +1,4 @@
 import type { EncodeInput } from './encode-types.ts'
-// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { SamlCanaryError } from './calendar.ts'
 import type { CalendarBundle, GraphqlRequest } from './calendar.ts'
 import type { DiscoveryResult } from './discover.ts'
 import type { ExtractResult } from './extract.ts'
@@ -8,7 +6,7 @@ import type { PrivateAggregate } from './private.ts'
 import type { PipelineState } from './state.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { loadStage, PipelineAvailabilityError, requiredToken, UpstreamUnavailableError } from './encode-stage-runtime.ts'
+import { EmptyPipelineDataError, loadStage, PipelineAvailabilityError, requiredToken, UpstreamUnavailableError } from './encode-stage-runtime.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { calendarFromGrid, extractionNames, extractionPriors, privateFromGrid, readPriorGrid } from './encode-stage-prior.ts'
@@ -62,7 +60,8 @@ async function calendarFor(
       await fetch(client, { previous: fallback && calendarFromGrid(fallback) })
     )
   } catch (error) {
-    if (error instanceof SamlCanaryError) throw calendarRefusal(error)
+    const refusal = await samlRefusal(error)
+    if (refusal) throw calendarRefusal(refusal)
     if (error instanceof stageAdapters.StageDataError) throw error
     if (fallback) return calendarFromGrid(fallback)
     throw stageFailure('calendar', error)
@@ -80,7 +79,8 @@ async function privateFor(
       await fetch(client, { pStart: start.slice(0, 7) })
     )
   } catch (error) {
-    if (error instanceof SamlCanaryError) throw calendarRefusal(error)
+    const refusal = await samlRefusal(error)
+    if (refusal) throw calendarRefusal(refusal)
     if (error instanceof stageAdapters.StageDataError) throw error
     if (fallback) return privateFromGrid(fallback)
     throw stageFailure('private', error)
@@ -131,10 +131,26 @@ function stageFailure(stage: string, error: unknown): Error {
     error instanceof stageAdapters.StageDataError
   )
     return error
-  return new UpstreamUnavailableError(`${stage} stage failed`)
+  if (error instanceof EmptyPipelineDataError)
+    return new stageAdapters.StageDataError(
+      `E_EMPTY: ${stage} returned no attributable data.`,
+      error
+    )
+  return new UpstreamUnavailableError(`${stage} stage failed`, error)
 }
 
-function calendarRefusal(error: SamlCanaryError): PipelineAvailabilityError {
+type SamlRefusal = Error & { canary: CalendarBundle['canary'] }
+
+async function samlRefusal(error: unknown): Promise<SamlRefusal | undefined> {
+  const constructor = await loadStage('./calendar.ts', 'SamlCanaryError')
+  return error instanceof constructor && hasCanary(error) ? error : undefined
+}
+
+function hasCanary(error: unknown): error is SamlRefusal {
+  return error instanceof Error && 'canary' in error
+}
+
+function calendarRefusal(error: SamlRefusal): PipelineAvailabilityError {
   return new PipelineAvailabilityError(
     'SAML canary refused the calendar.',
     error

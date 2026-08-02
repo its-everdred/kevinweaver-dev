@@ -1,13 +1,21 @@
 import { rename, rm, stat } from 'node:fs/promises'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { readBundleHash } from './encode-hash.ts'
+// prettier-ignore
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { PromotionRecoveryError, previousPath, recoverState, recoverWith } from './encode-recovery.ts'
 import type { PipelineState } from './state.ts'
 
+/**
+ * @description Minimal filesystem boundary required for atomic publication.
+ */
 export interface FileOperations {
   exists(path: string): Promise<boolean>
   remove(path: string): Promise<void>
   rename(source: string, target: string): Promise<void>
 }
+
+export { PromotionRecoveryError, recoverWith }
 
 const files: FileOperations = {
   exists: async (path) => {
@@ -23,6 +31,12 @@ const files: FileOperations = {
   rename,
 }
 
+/**
+ * @description Atomically publishes one staged bundle generation.
+ * @param tempDir Complete staged generation directory.
+ * @param targetDir Public generation directory.
+ * @returns Resolves after the staged generation becomes visible.
+ */
 export async function promote(
   tempDir: string,
   targetDir: string
@@ -30,96 +44,61 @@ export async function promote(
   await promoteWith(files, tempDir, targetDir)
 }
 
+/**
+ * @description Publishes through an injectable filesystem boundary.
+ * @param operations Filesystem operations used for the transaction.
+ * @param tempDir Complete staged generation directory.
+ * @param targetDir Public generation directory.
+ * @returns Resolves after the staged generation becomes visible.
+ */
 export async function promoteWith(
   operations: FileOperations,
   tempDir: string,
   targetDir: string
 ): Promise<void> {
   const previous = previousPath(targetDir)
-  await recoverPrevious(operations, previous, targetDir)
+  await assertRecovered(operations, previous)
   await backUpTarget(operations, targetDir, previous)
   await moveTemporary(operations, tempDir, targetDir, previous)
 }
 
+/**
+ * @description Removes the backup after pipeline state is safely persisted.
+ * @param targetDir Public generation directory.
+ * @returns Resolves after the backup is removed.
+ */
 export async function finalizePromotion(targetDir: string): Promise<void> {
   await files.remove(previousPath(targetDir))
 }
 
+/**
+ * @description Restores the last committed generation after persistence fails.
+ * @param targetDir Public generation directory.
+ * @returns Resolves after the visible generation is safe.
+ */
 export async function rollbackPromotion(targetDir: string): Promise<void> {
   await rollbackWith(files, targetDir)
 }
 
-/** Restores the previous generation without deleting it before replacement. */
+/**
+ * @description Restores the prior generation, or removes an uncommitted first
+ * generation when there is no prior generation to restore.
+ * @param operations Filesystem operations used for the transaction.
+ * @param target Public generation directory.
+ * @returns Resolves after the visible generation is safe.
+ */
 export async function rollbackWith(
   operations: FileOperations,
   target: string
 ): Promise<void> {
   const previous = previousPath(target)
-  if (!(await operations.exists(previous))) return
+  if (!(await operations.exists(previous))) return operations.remove(target)
   if (!(await operations.exists(target)))
     return operations.rename(previous, target)
-  await restorePrevious(operations, target, previous)
+  await restorePrior(operations, target, previous)
 }
 
-/** Resolves an interrupted promotion using the persisted generation digest. */
-export async function recoverPromotion(
-  targetDir: string,
-  state: PipelineState | null
-): Promise<void> {
-  await recoverWith(files, readBundleHash, targetDir, state?.bundleHash)
-}
-
-export async function recoverWith(
-  operations: FileOperations,
-  hashFor: (directory: string) => Promise<string>,
-  target: string,
-  expectedHash: string | undefined
-): Promise<void> {
-  const previous = previousPath(target)
-  if (!(await operations.exists(previous))) return
-  if (!(await operations.exists(target)))
-    return operations.rename(previous, target)
-  await settleGenerations(operations, hashFor, target, previous, expectedHash)
-}
-
-function previousPath(targetDir: string): string {
-  return `${targetDir}.previous`
-}
-
-async function recoverPrevious(
-  operations: FileOperations,
-  previous: string,
-  target: string
-): Promise<void> {
-  const hasTarget = await operations.exists(target)
-  const hasPrevious = await operations.exists(previous)
-  if (hasTarget && hasPrevious)
-    throw new PromotionRecoveryError(
-      'Bundle recovery must run before promotion.'
-    )
-  if (hasTarget || !hasPrevious) return
-  await operations.rename(previous, target)
-}
-
-async function settleGenerations(
-  operations: FileOperations,
-  hashFor: (directory: string) => Promise<string>,
-  target: string,
-  previous: string,
-  expectedHash: string | undefined
-): Promise<void> {
-  if (!expectedHash)
-    throw new PromotionRecoveryError('Cannot identify prior bundle generation.')
-  if (await matchesHash(hashFor, target, expectedHash))
-    return operations.remove(previous)
-  if ((await hashFor(previous)) !== expectedHash)
-    throw new PromotionRecoveryError(
-      'No bundle generation matches pipeline state.'
-    )
-  await restorePrevious(operations, target, previous)
-}
-
-async function restorePrevious(
+async function restorePrior(
   operations: FileOperations,
   target: string,
   previous: string
@@ -136,16 +115,25 @@ async function restorePrevious(
   await operations.remove(displaced)
 }
 
-async function matchesHash(
-  hashFor: (directory: string) => Promise<string>,
-  directory: string,
-  expectedHash: string
-): Promise<boolean> {
-  try {
-    return (await hashFor(directory)) === expectedHash
-  } catch {
-    return false
-  }
+/**
+ * @description Resolves an interrupted promotion using the persisted digest.
+ * @param targetDir Public generation directory.
+ * @param state Persisted pipeline state, when one exists.
+ * @returns Resolves when the visible generation matches state.
+ */
+export async function recoverPromotion(
+  targetDir: string,
+  state: PipelineState | null
+): Promise<void> {
+  await recoverState(files, readBundleHash, targetDir, state)
+}
+
+async function assertRecovered(
+  operations: FileOperations,
+  previous: string
+): Promise<void> {
+  if (!(await operations.exists(previous))) return
+  throw new PromotionRecoveryError('Bundle recovery must run before promotion.')
 }
 
 async function backUpTarget(
@@ -180,11 +168,4 @@ function isMissing(error: unknown): boolean {
     'code' in error &&
     error.code === 'ENOENT'
   )
-}
-
-export class PromotionRecoveryError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'PromotionRecoveryError'
-  }
 }

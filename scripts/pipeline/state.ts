@@ -58,7 +58,9 @@ const stateSchema = z
   })
   .passthrough()
 
-/** Raises when a persisted state cannot safely participate in regression checks. */
+/**
+ * @description Signals that persisted state cannot safely participate in checks.
+ */
 export class PipelineStateError extends Error {
   constructor(message: string, cause?: unknown) {
     super(message, { cause })
@@ -66,12 +68,19 @@ export class PipelineStateError extends Error {
   }
 }
 
-/** Creates the schema-one baseline used when no prior run has been persisted. */
+/**
+ * @description Creates the schema-one baseline used before a successful run.
+ * @returns Empty schema-one state.
+ */
 export function bootstrapState(): PipelineState {
   return { schema: 1, repos: {} }
 }
 
-/** Reads a pipeline state file, returning null only when the file is absent. */
+/**
+ * @description Reads state, treating the committed empty bootstrap as no prior run.
+ * @param path State file path.
+ * @returns Persisted state, or null when no successful state exists.
+ */
 export async function readState(path: string): Promise<PipelineState | null> {
   try {
     const state = parseState(await readFile(path, 'utf8'))
@@ -88,7 +97,12 @@ function isBootstrap(state: PipelineState): boolean {
   )
 }
 
-/** Writes state atomically while retaining unknown forward-compatible fields. */
+/**
+ * @description Atomically writes state while retaining forward-compatible fields.
+ * @param path State file path.
+ * @param state Fully validated pipeline state.
+ * @returns Resolves once state is durably replaced.
+ */
 export async function writeState(
   path: string,
   state: PipelineState
@@ -99,7 +113,12 @@ export async function writeState(
   await rename(temporary, path)
 }
 
-/** Merges a repository result without allowing stale or gone records to lose history. */
+/**
+ * @description Merges repository state without losing facts from cached history.
+ * @param previous Prior per-repository state.
+ * @param next Newly observed or cached repository state.
+ * @returns Merged state retaining unknown fields.
+ */
 export function mergeRepoState(
   previous: RepoPipelineState | undefined,
   next: RepoPipelineState
@@ -109,12 +128,28 @@ export function mergeRepoState(
   return {
     ...previous,
     ...next,
-    heads: previous.heads,
-    events: previous.events,
-    lastEventDay: previous.lastEventDay,
+    heads: hasHeads(next) ? next.heads : previous.heads,
+    events: Math.max(previous.events, next.events),
+    lastEventDay: latestDay(previous.lastEventDay, next.lastEventDay),
     lastOk: previous.lastOk,
-    consecutiveFailures: previous.consecutiveFailures + 1,
+    consecutiveFailures: Math.max(
+      previous.consecutiveFailures + 1,
+      next.consecutiveFailures
+    ),
   }
+}
+
+function hasHeads(state: RepoPipelineState): boolean {
+  return Object.keys(state.heads).length > 0
+}
+
+function latestDay(
+  left: string | undefined,
+  right: string | undefined
+): string | undefined {
+  if (!left) return right
+  if (!right) return left
+  return left > right ? left : right
 }
 
 function parseState(text: string): PipelineState {

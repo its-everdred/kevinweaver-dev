@@ -5,6 +5,8 @@ import { describe, expect, it } from 'vitest'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { encodeBundle } from './encode.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { bundleHash } from './encode-hash.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { validInput } from './encode-fixture.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
@@ -13,16 +15,19 @@ import { calendarFromGrid, extractionNames, extractionPriors, privateFromGrid, r
 describe('prior stage inputs', () => {
   it('uses prior public grid data only after a successful state exists', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'kw014-prior-'))
-    const bundle = encodeBundle(validInput())
-    const grid = bundle.files.find((file) => file.path === 'grid.json')
-    if (!grid) throw new Error('Missing grid fixture.')
-    await mkdir(directory, { recursive: true })
-    await writeFile(join(directory, 'grid.json'), grid.bytes)
+    const input = validInput()
+    input.grid.p = [37]
+    const bundle = encodeBundle(input)
+    await writeBundle(directory, bundle)
 
-    const prior = await readPriorGrid(directory, { schema: 1, repos: {} })
+    const prior = await readPriorGrid(directory, {
+      schema: 1,
+      repos: {},
+      bundleHash: bundleHash(bundle),
+    })
     expect(prior).toMatchObject({ start: '2026-07-31', e: [40_000] })
     expect(calendarFromGrid(prior!).degraded).toEqual(['calendar'])
-    expect(privateFromGrid(prior!)).toEqual({ p: [0], degraded: ['private'] })
+    expect(privateFromGrid(prior!)).toEqual({ p: [37], degraded: ['private'] })
     await expect(readPriorGrid(directory, null)).resolves.toBeUndefined()
   })
 
@@ -50,3 +55,17 @@ describe('prior stage inputs', () => {
     })
   })
 })
+
+async function writeBundle(
+  directory: string,
+  bundle: ReturnType<typeof encodeBundle>
+): Promise<void> {
+  await mkdir(directory, { recursive: true })
+  await Promise.all(
+    bundle.files.map(async (file) => {
+      const path = join(directory, file.path)
+      await mkdir(join(path, '..'), { recursive: true })
+      await writeFile(path, file.bytes)
+    })
+  )
+}

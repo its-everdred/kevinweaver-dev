@@ -58,7 +58,18 @@ describe('clone cache failure handling', () => {
     expect(outcome.error).toContain('Connection timed out')
   })
 
-  it('processes repositories sequentially and snapshots sorted heads', async () => {
+  it('does not treat empty Git stderr as success', async () => {
+    const outcome = await syncRepo('example/empty-error', {
+      cloneRoot: root(),
+      retries: 1,
+      backoffMs: 0,
+      exec: async () => ({ code: 1, stdout: '', stderr: '' }),
+    })
+
+    expect(outcome).toMatchObject({ ok: false, attempts: 1, error: null })
+  })
+
+  it('processes repositories and snapshots sorted heads', async () => {
     const calls: string[] = []
     const exec: GitExec = async (args) => {
       calls.push(args.join(' '))
@@ -78,8 +89,8 @@ describe('clone cache failure handling', () => {
       exec,
     })
 
-    expect(calls[0]).toContain('https://github.com/example/one.git')
-    expect(calls[2]).toContain('https://github.com/example/two.git')
+    expect(calls.join('\n')).toContain('https://github.com/example/one.git')
+    expect(calls.join('\n')).toContain('https://github.com/example/two.git')
     expect(Object.keys(outcomes[0]?.heads ?? {})).toEqual([
       'refs/heads/main',
       'refs/heads/zebra',

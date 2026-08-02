@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { brotliCompressSync } from 'node:zlib'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { decodeChunk, decodeDictSlice } from '../../lib/bundle/codec.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
@@ -57,8 +58,28 @@ describe('bundle validator', () => {
     expect(findings.map((finding) => finding.code)).toContain('E_EMPTY')
   })
 
-  it('requires a prior stale repository to retain its history', () => {
-    const findings = validateBundle(encodeBundle(validInput()), {
+  it('measures first-byte resources as separately served responses', () => {
+    const bundle = encodeBundle(validInput())
+    const paths = [
+      'manifest.json',
+      'repos.json',
+      'grid.json',
+      'events/ee-00.json',
+      'paths/pd-00.json',
+    ]
+    const expected = paths.reduce(
+      (total, path) =>
+        total + brotliCompressSync(Buffer.from(text(bundle, path))).byteLength,
+      0
+    )
+
+    expect(validateBundle(bundle, null).firstByteBrotliBytes).toBe(expected)
+  })
+
+  it('requires the first stale transition to retain prior history', () => {
+    const input = validInput()
+    input.repos[0]!.status = 'stale'
+    const findings = validateBundle(encodeBundle(input), {
       schema: 1,
       events: 40_000,
       combinedTotal: 40_000,
@@ -66,7 +87,7 @@ describe('bundle validator', () => {
         'owner/repo-00': {
           heads: {},
           events: 1_001,
-          status: 'stale',
+          status: 'ok',
           lastOk: '2026-07-31T00:00:00Z',
           consecutiveFailures: 1,
         },

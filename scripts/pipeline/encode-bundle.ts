@@ -12,7 +12,15 @@ import type {
   RawEvent,
   RepoInput,
 } from './encode-types.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { extensions } from './encode-bundle-extensions.ts'
 
+/**
+ * @description Encodes one canonical Scheme D bundle without filesystem effects.
+ * @param input Fully validated source events, repositories, and contribution grid.
+ * @returns Deterministic resource bytes and validation metadata.
+ * @throws {Error} When required source invariants cannot be represented.
+ */
 export function encodeBundle(input: EncodeInput): EncodedBundle {
   if (input.chunkSize !== 1500)
     throw new Error('Scheme D chunk size must be 1,500.')
@@ -164,18 +172,6 @@ function dominantActor(events: readonly RawEvent[]): 0 | 1 {
     throw new Error('Repository has no events to establish its dominant actor.')
   const agents = events.filter((event) => event.actor === 1).length
   return agents > events.length - agents ? 1 : 0
-}
-function extensions(events: readonly RawEvent[]): string[] {
-  return [
-    ...new Set(events.map((event) => extension(event.path)).filter(Boolean)),
-  ]
-    .sort()
-    .slice(0, 8)
-}
-function extension(path: string): string {
-  const base = path.slice(path.lastIndexOf('/') + 1)
-  const dot = base.lastIndexOf('.')
-  return dot > 0 && dot < base.length - 1 ? base.slice(dot + 1) : ''
 }
 function dayAt(start: string, offset: number): string {
   return new Date(Date.parse(`${start}T00:00:00Z`) + offset * 86_400_000)

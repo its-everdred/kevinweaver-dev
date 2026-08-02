@@ -25,6 +25,7 @@ const schema = z.object({
       last: z.string().optional(),
       private: z.boolean(),
       status: z.enum(['ok', 'stale', 'gone']),
+      consecutiveFailures: z.number().int().nonnegative().optional(),
     })
   ),
   grid: z.object({

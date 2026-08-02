@@ -6,9 +6,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { EncodedBundle } from './encode.ts'
 import type { EncodeInput } from './encode-types.ts'
 
-const override = vi.hoisted(() => ({
-  bundle: undefined as EncodedBundle | undefined,
+const override = vi.hoisted((): { bundle: EncodedBundle | undefined } => ({
+  bundle: undefined,
 }))
+const staging = vi.hoisted(() => ({ corrupt: false }))
 
 vi.mock('./encode-bundle.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./encode-bundle.ts')>()
@@ -16,6 +17,22 @@ vi.mock('./encode-bundle.ts', async (importOriginal) => {
     ...actual,
     encodeBundle: (input: EncodeInput) =>
       override.bundle ?? actual.encodeBundle(input),
+  }
+})
+
+vi.mock('./encode-stage-output.ts', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('./encode-stage-output.ts')>()
+  return {
+    ...actual,
+    writeBundle: async (bundle: EncodedBundle, directory: string) => {
+      await actual.writeBundle(bundle, directory)
+      if (staging.corrupt)
+        await writeFile(
+          join(directory, 'events/ee-00.json'),
+          '{"broken":true}\n'
+        )
+    },
   }
 })
 
@@ -27,10 +44,10 @@ import { MINI_INPUT, validInput } from './encode-fixture.ts'
 import { validateBundle } from './validate.ts'
 
 const lastGood = encodeBundle(validInput())
-
 describe('main refusal boundary', () => {
   afterEach(() => {
     override.bundle = undefined
+    staging.corrupt = false
   })
 
   it.each([
@@ -79,16 +96,26 @@ describe('main refusal boundary', () => {
     override.bundle = bundle
     await expect(refusal(1, previous)).resolves.toBeUndefined()
   })
-})
 
+  it('refuses corrupt staged bytes before promotion', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'kw014-staged-main-'))
+    const input = join(directory, 'input.json')
+    const output = join(directory, 'bundle')
+    await writeFile(input, JSON.stringify(validInput()))
+    await writeBundle(lastGood, output)
+    const before = await tree(output)
+    staging.corrupt = true
+
+    await expect(main(['--input', input, '--out', output])).resolves.toBe(1)
+    await expect(tree(output)).resolves.toEqual(before)
+  })
+})
 function validBundle(): EncodedBundle {
   return encodeBundle(validInput())
 }
-
 function changedChunk(text: string): EncodedBundle {
   return changedFile('events/ee-00.json', text)
 }
-
 function changedFile(path: string, text: string): EncodedBundle {
   const bundle = validBundle()
   const bytes = Buffer.from(text)

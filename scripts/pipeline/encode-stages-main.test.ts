@@ -2,6 +2,8 @@ import { mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { decodeGrid, decodeManifest } from '../../lib/bundle/codec.ts'
 
 const stages = vi.hoisted(() => ({
   calendar: vi.fn(),
@@ -22,6 +24,12 @@ vi.mock('./extract.ts', () => ({ extractAll: stages.extraction }))
 
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { encodeBundle, main, writeBundle } from './encode.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { bundleHash } from './encode-hash.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { GitLogError } from './extract-log.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { EmptyPipelineDataError } from './encode-stage-runtime.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { successfulStages } from './encode-stages-fixture.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
@@ -55,9 +63,14 @@ describe('successful live stage runs', () => {
     await expect(
       main(['--out', fixture.target, '--state', fixture.state])
     ).resolves.toBe(0)
-    expect(
+    const manifest = decodeManifest(
       await readFile(join(fixture.target, 'manifest.json'), 'utf8')
-    ).toContain('private')
+    )
+    const grid = decodeGrid(
+      await readFile(join(fixture.target, 'grid.json'), 'utf8')
+    )
+    expect(manifest.degraded).toContain('private')
+    expect(grid.privateMonthly).toEqual([37])
     useSuccessfulStages()
     stages.calendar.mockRejectedValueOnce(new Error('offline'))
     const before = await tree(fixture.target)
@@ -101,6 +114,30 @@ describe('successful live stage runs', () => {
       await expect(tree(fixture.target)).resolves.toEqual(before)
     }
   )
+
+  it('treats zero attributable extraction events as a local refusal', async () => {
+    stages.extraction.mockRejectedValueOnce(
+      new EmptyPipelineDataError('No attributable events were extracted.')
+    )
+    const directory = await mkdtemp(join(tmpdir(), 'kw014-empty-'))
+    const target = join(directory, 'bundle')
+    await expect(
+      main(['--out', target, '--state', join(directory, 'state.json')])
+    ).resolves.toBe(1)
+    await expect(readFile(target)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('treats a broken git history as unavailable upstream data', async () => {
+    stages.extraction.mockRejectedValueOnce(
+      new GitLogError('owner/repo', 'malformed log header')
+    )
+    const directory = await mkdtemp(join(tmpdir(), 'kw014-broken-history-'))
+    const target = join(directory, 'bundle')
+    await expect(
+      main(['--out', target, '--state', join(directory, 'state.json')])
+    ).resolves.toBe(3)
+    await expect(readFile(target)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
 })
 
 function useSuccessfulStages(): void {
@@ -129,7 +166,10 @@ async function priorGeneration(): Promise<{ target: string; state: string }> {
   const directory = await mkdtemp(join(tmpdir(), 'kw014-prior-'))
   const target = join(directory, 'bundle')
   const state = join(directory, 'state.json')
-  await writeBundle(encodeBundle(validInput()), target)
+  const input = validInput()
+  input.grid.p = [37]
+  const bundle = encodeBundle(input)
+  await writeBundle(bundle, target)
   await writeFile(
     state,
     JSON.stringify({
@@ -137,6 +177,7 @@ async function priorGeneration(): Promise<{ target: string; state: string }> {
       repos: {},
       events: 40_000,
       combinedTotal: 40_000,
+      bundleHash: bundleHash(bundle),
     })
   )
   return { target, state }

@@ -5,9 +5,10 @@ import { join, resolve } from 'node:path'
 import * as clone from './clone.ts'
 import type { ActorId } from './identity.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { extractRepo, GitLogError } from './extract-log.ts'
+import { extractRepo } from './extract-log.ts'
+// prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { UpstreamUnavailableError } from './encode-stage-runtime.ts'
+import { EmptyPipelineDataError, UpstreamUnavailableError } from './encode-stage-runtime.ts'
 import type { RepoStatus } from '../../lib/bundle/schema.ts'
 
 /** One author-attributed file touch ready for deterministic encoding. */
@@ -114,7 +115,9 @@ export async function extractAll(
   opts?: ExtractOptions
 ): Promise<ExtractResult> {
   if (repos.length === 0)
-    throw new RangeError('at least one repository is required')
+    throw new EmptyPipelineDataError(
+      'No repositories are available for extraction.'
+    )
   const cloneRoot = cloneRootFor(opts?.cloneRoot)
   const priorByRepo = new Map(prior.map((repo) => [repo.n, repo]))
   const outcomes = await clone.syncAll(repos, opts)
@@ -142,7 +145,7 @@ export async function extractAll(
   }
   const events = extracted.flatMap((repo) => repo.events).sort(compareRawEvents)
   if (events.length === 0)
-    throw new GitLogError('all repositories', 'no attributable events')
+    throw new EmptyPipelineDataError('No attributable events were extracted.')
   return {
     events,
     repos: extracted.sort((a, b) => (a.n < b.n ? -1 : a.n > b.n ? 1 : 0)),

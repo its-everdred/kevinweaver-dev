@@ -37,7 +37,7 @@ export function validateRegression(
 ): void {
   validatePreviousRun(bundle, prev, findings)
   validateRepositoryStatuses(repos, findings)
-  validateStaleHistory(prev, repos, findings)
+  validateStaleHistory(bundle, prev, repos, findings)
 }
 
 function validateCorpus(
@@ -159,25 +159,39 @@ function validateRepositoryStatuses(
 }
 
 function validateStaleHistory(
+  bundle: EncodedBundle,
   prev: PipelineState | null,
   repos: readonly Repository[],
   findings: Finding[]
 ): void {
-  if (!prev || !hasLostStaleHistory(prev, repos)) return
+  if (!prev || !hasLostStaleHistory(bundle, prev, repos)) return
   add(findings, 'E_REPO_STATUS', 'A stale repository lost event history.')
 }
 
 function hasLostStaleHistory(
+  bundle: EncodedBundle,
   previous: PipelineState,
   repos: readonly Repository[]
 ): boolean {
   const current = new Map(repos.map((repo) => [repo.name, repo]))
   return Object.entries(previous.repos).some(([name, repo]) => {
-    if (repo.events === 0) return false
-    if (repo.status !== 'stale' && repo.status !== 'gone') return false
     const retained = current.get(name)
+    if (!requiresHistory(bundle, repo, retained)) return false
     return !retained || retained.vol < repo.events
   })
+}
+
+function requiresHistory(
+  bundle: EncodedBundle,
+  previous: PipelineState['repos'][string],
+  current: Repository | undefined
+): boolean {
+  return (
+    previous.events > 0 &&
+    (previous.status !== 'ok' ||
+      bundle.manifest.degraded.includes('events') ||
+      current?.status !== 'ok')
+  )
 }
 
 function gridTotal(grid: DecodedBundle['grid'] | undefined): number {

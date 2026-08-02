@@ -1,7 +1,6 @@
-import { mkdir, rm, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { rm } from 'node:fs/promises'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { readState, writeState } from './state.ts'
+import { readState } from './state.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { encodeBundle } from './encode-bundle.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
@@ -22,39 +21,31 @@ import { recoverPromotion } from './encode-promote.ts'
 import { persistWith } from './encode-transaction.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { commitPipelineState, discardPipelineState, recoverPipelineState, stagePipelineState } from './encode-state-journal.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { readStagedBundle, writeBundle } from './encode-stage-output.ts'
+// prettier-ignore
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { PipelineAvailabilityError, UpstreamUnavailableError } from './encode-stage-runtime.ts'
-export async function writeBundle(
-  bundle: EncodedBundle,
-  dir: string
-): Promise<void> {
-  validatePaths(bundle)
-  await mkdirParents(bundle, dir)
-  await Promise.all(
-    bundle.files.map((file) => writeFile(join(dir, file.path), file.bytes))
-  )
-}
-
-function validatePaths(bundle: EncodedBundle): void {
-  bundle.files.forEach((file) => {
-    if (!isBundlePath(file.path))
-      throw new BundleWriteError(`Unsafe bundle path: ${file.path}`)
-  })
-}
-
-async function mkdirParents(bundle: EncodedBundle, dir: string): Promise<void> {
-  const parents = new Set(
-    bundle.files.map((file) => dirname(join(dir, file.path)))
-  )
-  await Promise.all(
-    [...parents].map((parent) => mkdir(parent, { recursive: true }))
-  )
-}
+export { writeBundle }
+/**
+ * @description Atomically replaces the public bundle with a staged generation.
+ * @param tempDir Complete staged generation directory.
+ * @param targetDir Public generation directory.
+ * @returns Resolves after the staged generation becomes visible.
+ */
 export async function promoteBundle(
   tempDir: string,
   targetDir: string
 ): Promise<void> {
   await promote(tempDir, targetDir)
 }
+
+/**
+ * @description Runs the encoder pipeline and returns its stable process status.
+ * @param argv Command-line arguments without the executable and script names.
+ * @returns Zero on publication or a classified non-zero refusal code.
+ */
 export async function main(
   argv: readonly string[] = process.argv.slice(2)
 ): Promise<number> {
@@ -62,19 +53,22 @@ export async function main(
     console.log(usage())
     return 0
   }
+  let temporary: string | undefined
+  let result: number
   try {
     const options = readOptions(argv)
     const run = await prepareRun(options)
-    const validation = validateBundle(run.bundle, run.previous)
-    if (!validation.ok)
-      return report(validation.findings, refusalCode(run.bundle))
-    if (options.dryRun) return 0
-    await publish(run, options.out)
-    return 0
+    temporary = temporaryPath(options.out)
+    const staged = await stageRun(run, temporary)
+    const validation = validateBundle(staged.bundle, staged.previous)
+    result = validation.ok
+      ? await publishOrValidate(staged, options)
+      : report(validation.findings, refusalCode(staged.bundle))
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'Pipeline failed')
-    return exitCode(error)
+    result = exitCode(error)
   }
+  return cleanupResult(temporary, result)
 }
 
 function exitCode(error: unknown): number {
@@ -90,11 +84,14 @@ type PreparedRun = {
   statePath: string
 }
 
+type StagedRun = PreparedRun & { temporary: string }
+
 async function prepareRun(options: Options): Promise<PreparedRun> {
   const statePath = options.state ?? 'data/.pipeline-state.json'
   const target = options.out ?? 'public/data/v1'
-  const previous = await readState(statePath)
-  await recoverPromotion(target, previous)
+  const persisted = await readState(statePath)
+  await recoverPromotion(target, persisted)
+  const previous = await recoverPipelineState(statePath, target, persisted)
   const input = await resolveInput(options.input, previous, target)
   const bundle = encodeBundle(withGeneratedAt(input, options.generatedAt))
   return { bundle, input, previous, statePath }
@@ -118,42 +115,72 @@ function refusalCode(bundle: EncodedBundle): number {
 }
 
 async function publish(
-  run: PreparedRun,
+  run: StagedRun,
   output: string | undefined
 ): Promise<void> {
   const target = output ?? 'public/data/v1'
-  const temporary = `${target}.tmp-${process.pid}`
-  await rm(temporary, { recursive: true, force: true })
-  await writeBundle(run.bundle, temporary)
-  await promoteBundle(temporary, target)
   await persistState(run, target)
 }
 
-async function persistState(run: PreparedRun, target: string): Promise<void> {
+async function publishOrValidate(
+  run: StagedRun,
+  options: Options
+): Promise<number> {
+  if (!options.dryRun) await publish(run, options.out)
+  return 0
+}
+
+async function stageRun(
+  run: PreparedRun,
+  temporary: string
+): Promise<StagedRun> {
+  await cleanTemporary(temporary)
+  await writeBundle(run.bundle, temporary)
+  return {
+    ...run,
+    bundle: await readStagedBundle(run.bundle, temporary),
+    temporary,
+  }
+}
+
+function temporaryPath(output: string | undefined): string {
+  return `${output ?? 'public/data/v1'}.tmp-${process.pid}`
+}
+
+async function cleanTemporary(temporary: string): Promise<void> {
+  await rm(temporary, { recursive: true, force: true })
+}
+
+async function cleanupResult(
+  temporary: string | undefined,
+  result: number
+): Promise<number> {
+  if (!temporary) return result
+  try {
+    await cleanTemporary(temporary)
+    return result
+  } catch (error) {
+    console.error(
+      error instanceof Error ? error.message : 'Staged bundle cleanup failed'
+    )
+    return result === 0 ? 1 : result
+  }
+}
+
+async function persistState(run: StagedRun, target: string): Promise<void> {
   await persistWith(
     {
-      write: writeState,
+      stage: stagePipelineState,
+      promote: promoteBundle,
+      commit: commitPipelineState,
       rollback: rollbackPromotion,
+      discard: discardPipelineState,
       finalize: finalizePromotion,
     },
     run.statePath,
     nextState(run.previous, run.bundle, run.input),
+    run.temporary,
     target
-  )
-}
-class BundleWriteError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'BundleWriteError'
-  }
-}
-function isBundlePath(path: string): boolean {
-  return (
-    !path.startsWith('/') &&
-    !path.includes('\\') &&
-    path
-      .split('/')
-      .every((segment) => segment !== '' && segment !== '.' && segment !== '..')
   )
 }
 function report(

@@ -10,6 +10,15 @@ import { bundleHash } from './encode-hash.ts'
 import type { EncodeInput } from './encode-types.ts'
 
 describe('pipeline state encoder', () => {
+  it('records the first cached-stale failure without prior state', () => {
+    const input = fixture()
+    input.repos[0]!.status = 'stale'
+
+    const state = nextState(null, encodeBundle(input), input)
+
+    expect(state.repos['owner/current']?.consecutiveFailures).toBe(1)
+  })
+
   it('records sorted extracted heads on the first successful run', () => {
     const input = fixture()
     input.repos[0]!.heads = {
@@ -29,7 +38,7 @@ describe('pipeline state encoder', () => {
     })
   })
 
-  it('preserves heads when an extracted repository is stale', () => {
+  it('retains newer cached heads when an extracted repository is stale', () => {
     const input = fixture()
     input.repos[0]!.status = 'stale'
     input.repos[0]!.heads = { 'refs/heads/main': 'new'.repeat(13) + 'n' }
@@ -37,9 +46,7 @@ describe('pipeline state encoder', () => {
 
     const state = nextState(previous, encodeBundle(input), input)
 
-    expect(state.repos['owner/current']?.heads).toEqual(
-      previous.repos['owner/current']?.heads
-    )
+    expect(state.repos['owner/current']?.heads).toEqual(input.repos[0]?.heads)
     expect(state.repos['owner/current']).toMatchObject({
       databaseId: 1,
       stargazerCount: 0,

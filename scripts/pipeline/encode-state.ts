@@ -55,7 +55,11 @@ function repositoryState(
     status: repo.status,
     lastOk: repo.status === 'ok' ? generatedAt : (previous?.lastOk ?? null),
     consecutiveFailures:
-      repo.status === 'ok' ? 0 : (previous?.consecutiveFailures ?? 0),
+      repo.status === 'ok'
+        ? 0
+        : (repo.consecutiveFailures ??
+          previous?.consecutiveFailures ??
+          (repo.status === 'gone' ? 7 : 1)),
   }
   return mergeRepoState(previous, next)
 }
