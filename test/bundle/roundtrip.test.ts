@@ -147,6 +147,35 @@ describe('bundle codec', () => {
       path: 'packages/engine/src/history.ts',
       actor: 1,
     })
+    const unrelated = {
+      ...input.meta,
+      days: ['2026-07-31', '2026-07-27'] as const,
+    }
+    expect(() => encodeBundle({ ...input, meta: unrelated })).toThrow()
+    const unrelatedFiles = new Map(encodeBundle(input).files)
+    const unrelatedManifest = JSON.parse(
+      unrelatedFiles.get('manifest.json')!
+    ) as Record<string, unknown>
+    unrelatedManifest.days = unrelated.days
+    unrelatedFiles.set('manifest.json', JSON.stringify(unrelatedManifest))
+    expect(() => decodeBundle(unrelatedFiles)).toThrow()
+    const beyondSpan = dayIndex('2013-04-14', '2026-07-31')
+    expect(() =>
+      encodeBundle({
+        ...extended,
+        events: [
+          ...extended.events,
+          event(
+            0,
+            beyondSpan,
+            'packages/engine/src/beyond-span.ts',
+            1,
+            'aiur-team/aiur',
+            'beyond-span'
+          ),
+        ],
+      })
+    ).toThrow()
   })
 
   it('uses one calendar implementation for newest-first day identity', () => {
