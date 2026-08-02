@@ -1,7 +1,7 @@
 # kevinweaver.dev
 
-Kevin Weaver's personal site — simultaneously a résumé and a dashboard of what he is
-working on right now. Built for engineer peers and the OSS community.
+Dashboard of what Kevin Weaver is
+working on right now.
 
 Next.js (App Router) on Vercel. gruvbox dark medium, terminal/tmux visual language,
 JetBrains Mono throughout.
