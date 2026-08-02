@@ -9,6 +9,8 @@ import { encodeBundle } from './encode.ts'
 import { validateBundle } from './validate.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { MINI_INPUT } from './encode-fixture.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { validInput } from './encode-fixture.ts'
 import type { EncodedBundle } from './encode.ts'
 
 describe('bundle validator', () => {
@@ -36,6 +38,31 @@ describe('bundle validator', () => {
     expect(
       roundtripMessages(replaceFile(bundle, 'paths/pd-00.json', mutation))
     ).toContain('Dictionary slice 0 is not canonically encoded.')
+  })
+
+  it('reports regression against a prior successful corpus', () => {
+    const findings = validateBundle(encodeBundle(validInput()), {
+      schema: 1,
+      events: 50_000,
+      combinedTotal: 50_000,
+      repos: {},
+    }).findings
+
+    expect(findings.map((finding) => finding.code)).toContain('E_REGRESSION')
+  })
+
+  it.each([
+    ['E_COLUMNS', '{"b":0,"d":[0],"r":[],"p":[0],"a":[0]}\n'],
+    ['E_DELTA', '{"b":0,"d":[-1],"r":[0],"p":[0],"a":[0]}\n'],
+    ['E_PATH_RANGE', '{"b":0,"d":[0],"r":[0],"p":[999],"a":[0]}\n'],
+    ['E_REPO_RANGE', '{"b":0,"d":[0],"r":[999],"p":[0],"a":[0]}\n'],
+  ])('reports %s for malformed chunk geometry', (code, chunk) => {
+    const findings = validateBundle(
+      replace('events/ee-00.json', chunk),
+      null
+    ).findings
+
+    expect(findings.map((finding) => finding.code)).toContain(code)
   })
 })
 
