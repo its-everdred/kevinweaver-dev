@@ -72,6 +72,34 @@ describe('bundle codec', () => {
     })
   })
 
+  it('round-trips a manifest count independent of the repo table length', () => {
+    const input = workedFixture()
+    input.meta = {
+      ...input.meta,
+      repoCount: input.repos.length + 1,
+    }
+
+    const decoded = decodeBundle(encodeBundle(input).files)
+
+    expect(decoded.manifest.repoCount).toBe(input.meta.repoCount)
+    expect(decoded.manifest.repoCountDefinition).toBe('ownerPublicNonFork')
+    expect(decoded.repos).toHaveLength(input.repos.length)
+  })
+
+  it('decodes a manifest count that differs from the repo table length', () => {
+    const files = new Map(encodeBundle(workedFixture()).files)
+    const manifest = JSON.parse(
+      files.get('manifest.json')!
+    ) as Record<string, unknown>
+    manifest.repoCount = 3
+    files.set('manifest.json', JSON.stringify(manifest))
+
+    const decoded = decodeBundle(files)
+
+    expect(decoded.manifest.repoCount).toBe(3)
+    expect(decoded.repos).toHaveLength(2)
+  })
+
   it('round-trips a corpus larger than 5,000 events across 21 repositories', () => {
     const input = generatedInput(5_040, 21)
     const encoded = encodeBundle(input, { chunkSize: 500 })
