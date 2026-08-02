@@ -2,9 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { encodeBundle } from './encode.ts'
-import type { EncodedBundle } from './encode.ts'
-// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { MINI_INPUT } from './encode.test.ts'
+import type { EncodedBundle, EncodeInput } from './encode.ts'
 import type { PipelineState } from './state.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { validateBundle } from './validate.ts'
@@ -12,11 +10,11 @@ import { validateBundle } from './validate.ts'
 describe('pipeline validator', () => {
   it('refuses an empty corpus and a failed SAML canary', () => {
     const bundle = encodeBundle({
-      ...MINI_INPUT,
+      ...input,
       events: [],
       repos: [],
       repoCount: 0,
-      samlCanary: { ...MINI_INPUT.samlCanary, ok: false },
+      samlCanary: { ...input.samlCanary, ok: false },
     })
     expect(codes(bundle)).toEqual(expect.arrayContaining(['E_EMPTY', 'E_SAML']))
   })
@@ -73,11 +71,53 @@ describe('pipeline validator', () => {
 
 function validBundle(): EncodedBundle {
   return encodeBundle({
-    ...MINI_INPUT,
-    repos: [MINI_INPUT.repos[0]!],
+    ...input,
+    repos: [input.repos[0]!],
     repoCount: 1,
-    events: [MINI_INPUT.events[0]!],
+    events: [input.events[0]!],
   })
+}
+
+const input: EncodeInput = {
+  events: [
+    {
+      day: '2026-07-31',
+      repo: 'aiur-team/aiur',
+      sha: 'a'.repeat(40),
+      path: 'packages/engine/src/run.ts',
+      actor: 0,
+    },
+  ],
+  repos: [
+    {
+      n: 'aiur-team/aiur',
+      first: '2026-07-31',
+      last: '2026-07-31',
+      private: false,
+      status: 'ok',
+    },
+  ],
+  grid: {
+    start: '2026-07-31',
+    e: [1],
+    a: [0],
+    p: [0],
+    bands: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+  },
+  combinedTotal: 1,
+  generatedAt: '2026-07-31T00:00:00Z',
+  commit: 'abcdef0',
+  repoCount: 1,
+  repoCountDefinition: 'ownerPublicNonFork',
+  refs: 'all',
+  chunkSize: 1500,
+  dictSliceGuardGzipBytes: 12_288,
+  samlCanary: {
+    ok: true,
+    org: 'ethereum-optimism',
+    checkedAt: '2026-07-31T00:00:00Z',
+  },
+  degraded: [],
 }
 
 function withFile(
