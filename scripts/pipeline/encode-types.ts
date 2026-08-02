@@ -11,6 +11,7 @@ export interface RepoInput {
   n: string
   databaseId: number
   stargazerCount: number
+  heads?: Readonly<Record<string, string>>
   first?: string
   last?: string
   private: boolean

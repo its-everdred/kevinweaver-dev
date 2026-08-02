@@ -2,6 +2,8 @@ import type { PipelineState, RepoPipelineState } from './state.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { bootstrapState, mergeRepoState } from './state.ts'
 import type { EncodedBundle, EncodeInput, RepoInput } from './encode-types.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { bundleHash } from './encode-hash.ts'
 export function nextState(
   previous: PipelineState | null,
   bundle: EncodedBundle,
@@ -16,6 +18,7 @@ export function nextState(
     samlCanary: bundle.samlCanary.ok ? 'ok' : 'failed',
     combinedTotal: bundle.combinedTotal,
     events: bundle.manifest.events,
+    bundleHash: bundleHash(bundle),
     repos: nextRepositories(previous, input, bundle.manifest.generatedAt),
   }
 }
@@ -44,7 +47,7 @@ function repositoryState(
   generatedAt: string
 ): RepoPipelineState {
   const next: RepoPipelineState = {
-    heads: previous?.heads ?? {},
+    heads: repo.heads ?? previous?.heads ?? {},
     events: input.events.filter((event) => event.repo === repo.n).length,
     lastEventDay: repo.last ?? previous?.lastEventDay,
     status: repo.status,

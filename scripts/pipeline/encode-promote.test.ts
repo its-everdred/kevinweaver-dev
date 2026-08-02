@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { FileOperations } from './encode-promote.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { promoteWith } from './encode-promote.ts'
+import { promoteWith, recoverWith } from './encode-promote.ts'
 
 describe('bundle promotion', () => {
   it('recovers a prior generation before promotion', async () => {
@@ -21,7 +21,38 @@ describe('bundle promotion', () => {
 
     expect(disk.paths()).toEqual(['target', 'temporary'])
   })
+
+  it('restores the state-matching generation after target promotion', async () => {
+    const disk = fakeDisk(['target', 'target.previous'])
+
+    await recoverWith(disk.operations, hashFor('new', 'old'), 'target', 'old')
+
+    expect(disk.paths()).toEqual(['target'])
+  })
+
+  it('finalizes the state-matching target after state persistence', async () => {
+    const disk = fakeDisk(['target', 'target.previous'])
+
+    await recoverWith(disk.operations, hashFor('new', 'old'), 'target', 'new')
+
+    expect(disk.paths()).toEqual(['target'])
+  })
+
+  it('refuses ambiguous generations that do not match state', async () => {
+    const disk = fakeDisk(['target', 'target.previous'])
+
+    await expect(
+      recoverWith(disk.operations, hashFor('new', 'old'), 'target', 'other')
+    ).rejects.toThrow('No bundle generation matches pipeline state.')
+
+    expect(disk.paths()).toEqual(['target', 'target.previous'])
+  })
 })
+
+function hashFor(target: string, previous: string) {
+  return async (path: string): Promise<string> =>
+    path === 'target' ? target : previous
+}
 
 function fakeDisk(
   initial: readonly string[],

@@ -5,9 +5,39 @@ import { BAND_LOWER_BOUNDS } from '../../lib/viz/tokens/level.ts'
 import { encodeBundle } from './encode-bundle.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { nextState } from './encode-state.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { bundleHash } from './encode-hash.ts'
 import type { EncodeInput } from './encode-types.ts'
 
 describe('pipeline state encoder', () => {
+  it('records sorted extracted heads on the first successful run', () => {
+    const input = fixture()
+    input.repos[0]!.heads = {
+      'refs/heads/z': 'z'.repeat(40),
+      'refs/heads/main': 'm'.repeat(40),
+    }
+
+    const state = nextState(null, encodeBundle(input), input)
+
+    expect(state.repos['owner/current']?.heads).toEqual({
+      'refs/heads/z': 'z'.repeat(40),
+      'refs/heads/main': 'm'.repeat(40),
+    })
+  })
+
+  it('preserves heads when an extracted repository is stale', () => {
+    const input = fixture()
+    input.repos[0]!.status = 'stale'
+    input.repos[0]!.heads = { 'refs/heads/main': 'new'.repeat(13) + 'n' }
+    const previous = previousRepository()
+
+    const state = nextState(previous, encodeBundle(input), input)
+
+    expect(state.repos['owner/current']?.heads).toEqual(
+      previous.repos['owner/current']?.heads
+    )
+  })
+
   it('retains a prior-only repository and marks it gone after seven failures', () => {
     const input = fixture()
     const bundle = encodeBundle(input)
@@ -32,8 +62,25 @@ describe('pipeline state encoder', () => {
       status: 'gone',
       consecutiveFailures: 7,
     })
+    expect(state.bundleHash).toBe(bundleHash(bundle))
   })
 })
+
+function previousRepository() {
+  return {
+    schema: 1 as const,
+    repos: {
+      'owner/current': {
+        heads: { 'refs/heads/main': 'old'.repeat(13) + 'o' },
+        events: 1,
+        lastEventDay: '2026-07-31',
+        status: 'ok' as const,
+        lastOk: '2026-07-31T00:00:00Z',
+        consecutiveFailures: 0,
+      },
+    },
+  }
+}
 
 function fixture(): EncodeInput {
   return {
