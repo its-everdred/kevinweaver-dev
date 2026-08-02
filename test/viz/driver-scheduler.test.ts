@@ -68,3 +68,31 @@ test.each(['pause', 'destroy'] as const)(
     vi.unstubAllGlobals()
   }
 )
+
+test('keeps one frame when a subscriber pauses then plays', () => {
+  const callbacks = new Map<number, FrameRequestCallback>()
+  let nextId = 0
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    const id = ++nextId
+    callbacks.set(id, callback)
+    return id
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => callbacks.delete(id))
+  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+  let replay = true
+  driver.subscribe(() => {
+    if (!replay) return
+    replay = false
+    void driver.pause()
+    driver.play()
+  })
+
+  driver.play()
+  const callback = callbacks.get(1)
+  callbacks.delete(1)
+  callback?.(0)
+
+  expect(callbacks).toHaveLength(1)
+  driver.destroy()
+  vi.unstubAllGlobals()
+})
