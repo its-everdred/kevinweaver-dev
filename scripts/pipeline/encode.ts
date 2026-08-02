@@ -32,8 +32,8 @@ export interface RawEvent {
 }
 export interface RepoInput {
   n: string
-  ghId: number
-  stars: number
+  databaseId: number
+  stargazerCount: number
   first: string
   last: string
   private: boolean
@@ -89,8 +89,8 @@ const inputSchema = z.object({
   repos: z.array(
     z.object({
       n: z.string(),
-      ghId: z.number().int().nonnegative(),
-      stars: z.number().int().nonnegative(),
+      databaseId: z.number().int().nonnegative(),
+      stargazerCount: z.number().int().nonnegative(),
       first: z.string(),
       last: z.string(),
       private: z.boolean(),
@@ -129,6 +129,7 @@ const inputSchema = z.object({
 /** Encodes canonical inputs through KW-012's deterministic Scheme D codec. */
 export function encodeBundle(input: EncodeInput): EncodedBundle {
   const repos = repoRecords(input)
+  const days = eventSpan(input.events)
   const windowEnd = dayAt(input.grid.start, input.grid.e.length - 1)
   const encoded = encodeCodec(
     {
@@ -136,6 +137,8 @@ export function encodeBundle(input: EncodeInput): EncodedBundle {
         v: BUNDLE_VERSION,
         generatedAt: input.generatedAt,
         commit: input.commit,
+        days,
+        refs: input.refs,
         windowStart: input.grid.start,
         windowEnd,
         dayCount: input.grid.e.length,
@@ -157,7 +160,7 @@ export function encodeBundle(input: EncodeInput): EncodedBundle {
         privateStart: input.grid.start.slice(0, 7),
         bands: input.grid.bands,
       },
-      events: sortableEvents(input.events, repos, windowEnd),
+      events: sortableEvents(input.events, repos, days[0]),
     },
     {
       chunkSize: input.chunkSize,
@@ -292,12 +295,12 @@ function repoRecords(input: EncodeInput): RepoRecord[] {
       const events = input.events.filter((event) => event.repo === repo.n)
       return {
         id,
-        ghId: repo.ghId,
+        ghId: repo.databaseId,
         name: repo.n,
         short: repo.n.split('/').at(-1) ?? repo.n,
         actor: dominantActor(events),
         vol: counts.get(repo.n) ?? 0,
-        stars: repo.stars,
+        stars: repo.stargazerCount,
         from: repo.first,
         to: repo.last,
         private: false,
@@ -310,15 +313,29 @@ function repoRecords(input: EncodeInput): RepoRecord[] {
 function sortableEvents(
   events: readonly RawEvent[],
   repos: readonly RepoRecord[],
-  windowEnd: string
+  newestEventDay: string
 ): SortableEvent[] {
   const ids = new Map(repos.map((repo) => [repo.name, repo.id]))
   return events.map((event) => ({
     ...event,
-    day: dayIndex(event.day, windowEnd),
+    day: dayIndex(event.day, newestEventDay),
     repo: requiredId(ids, event.repo),
     repoName: event.repo,
   }))
+}
+
+function eventSpan(
+  events: readonly RawEvent[]
+): [newest: string, oldest: string] {
+  const first = events[0]
+  if (!first) throw new Error('Event stream must not be empty.')
+  let newest = first.day
+  let oldest = first.day
+  for (const event of events) {
+    if (event.day > newest) newest = event.day
+    if (event.day < oldest) oldest = event.day
+  }
+  return [newest, oldest]
 }
 
 function eventCounts(events: readonly RawEvent[]): Map<string, number> {

@@ -34,8 +34,8 @@ export const MINI_INPUT: EncodeInput = {
   repos: [
     {
       n: 'aiur-team/aiur',
-      ghId: 1,
-      stars: 10,
+      databaseId: 1,
+      stargazerCount: 10,
       first: '2026-07-30',
       last: '2026-07-31',
       private: false,
@@ -43,8 +43,8 @@ export const MINI_INPUT: EncodeInput = {
     },
     {
       n: 'ethereum-optimism/actions',
-      ghId: 2,
-      stars: 20,
+      databaseId: 2,
+      stargazerCount: 20,
       first: '2026-07-30',
       last: '2026-07-30',
       private: false,
@@ -52,9 +52,9 @@ export const MINI_INPUT: EncodeInput = {
     },
   ],
   grid: {
-    start: '2026-07-30',
-    e: [1, 2],
-    a: [0, 1],
+    start: '2026-07-28',
+    e: [1, 2, 0, 0, 0],
+    a: [0, 1, 0, 0, 0],
     p: [0],
     bands: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
   },
@@ -85,9 +85,10 @@ describe('pipeline encoder', () => {
     expect(first.files).toEqual(second.files)
     expect(first.manifest).toMatchObject({
       generatedAt: MINI_INPUT.generatedAt,
-      windowStart: '2026-07-30',
-      windowEnd: '2026-07-31',
-      dayCount: 2,
+      days: ['2026-07-31', '2026-07-30'],
+      windowStart: '2026-07-28',
+      windowEnd: '2026-08-01',
+      dayCount: 5,
     })
     expect(text(first, 'events/ee-00.json')).toBe(
       '{"b":0,"d":[0,0,1],"r":[0,0,1],"p":[0,1,2],"a":[0,1,0]}\n'
@@ -133,7 +134,10 @@ describe('pipeline encoder', () => {
   it('rejects an input without discovery metadata', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'kw014-encode-'))
     const input = join(directory, 'input.json')
-    await writeFile(input, JSON.stringify(MINI_INPUT).replace('"ghId":1,', ''))
+    await writeFile(
+      input,
+      JSON.stringify(MINI_INPUT).replace('"databaseId":1,', '')
+    )
 
     await expect(main(['--input', input, '--dry-run'])).resolves.toBe(3)
   })
