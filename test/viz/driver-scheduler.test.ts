@@ -96,3 +96,34 @@ test('keeps one frame when a subscriber pauses then plays', () => {
   driver.destroy()
   vi.unstubAllGlobals()
 })
+
+test('counts paint time in the following frame elapsed time', () => {
+  const callbacks = new Map<number, FrameRequestCallback>()
+  let clock = 0
+  let nextId = 0
+  vi.stubGlobal('performance', { now: () => clock })
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+    const id = ++nextId
+    callbacks.set(id, callback)
+    return id
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => callbacks.delete(id))
+  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+  let paints = 0
+  driver.subscribe(() => {
+    paints += 1
+    if (paints === 1) clock = 10
+  })
+
+  driver.play()
+  const first = callbacks.get(1)
+  callbacks.delete(1)
+  first?.(0)
+  const second = callbacks.get(2)
+  callbacks.delete(2)
+  second?.(20)
+
+  expect(driver.inspect().tick).toBe(2)
+  driver.destroy()
+  vi.unstubAllGlobals()
+})
