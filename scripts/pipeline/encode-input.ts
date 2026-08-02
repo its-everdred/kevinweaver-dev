@@ -17,8 +17,8 @@ const schema = z.object({
       n: z.string(),
       databaseId: z.number().int().positive(),
       stargazerCount: z.number().int().nonnegative(),
-      first: z.string(),
-      last: z.string(),
+      first: z.string().optional(),
+      last: z.string().optional(),
       private: z.boolean(),
       status: z.enum(['ok', 'stale', 'gone']),
     })
@@ -42,7 +42,7 @@ const schema = z.object({
     'repositoriesContributedTo',
   ]),
   refs: z.enum(['all', 'head']),
-  chunkSize: z.number().int().positive(),
+  chunkSize: z.literal(1500),
   dictSliceGuardGzipBytes: z.number().int().nonnegative(),
   samlCanary: z.object({
     ok: z.boolean(),

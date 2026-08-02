@@ -11,8 +11,8 @@ export interface RepoInput {
   n: string
   databaseId: number
   stargazerCount: number
-  first: string
-  last: string
+  first?: string
+  last?: string
   private: boolean
   status: 'ok' | 'stale' | 'gone'
 }

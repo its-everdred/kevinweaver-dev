@@ -6,9 +6,16 @@ import { dayIndex, decodeManifest, encodeBundle as encodeCodec } from '../../lib
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { BUNDLE_VERSION } from '../../lib/bundle/schema.ts'
 import type { RepoRecord, SortableEvent } from '../../lib/bundle/schema.ts'
-import type { EncodedBundle, EncodeInput, RawEvent } from './encode-types.ts'
+import type {
+  EncodedBundle,
+  EncodeInput,
+  RawEvent,
+  RepoInput,
+} from './encode-types.ts'
 
 export function encodeBundle(input: EncodeInput): EncodedBundle {
+  if (input.chunkSize !== 1500)
+    throw new Error('Scheme D chunk size must be 1,500.')
   const repos = repoRecords(input)
   const days = eventSpan(input.events)
   const windowEnd = dayAt(input.grid.start, input.grid.e.length - 1)
@@ -62,30 +69,62 @@ export function encodeBundle(input: EncodeInput): EncodedBundle {
   }
 }
 function repoRecords(input: EncodeInput): RepoRecord[] {
-  if (input.repoCount !== input.repos.length)
-    throw new Error('Repo count does not match repositories.')
-  const counts = eventCounts(input.events)
-  return [...input.repos]
-    .sort((a, b) => a.n.localeCompare(b.n))
-    .map((repo, id) => {
-      if (repo.private)
-        throw new Error('Private repositories cannot enter the bundle.')
-      const events = input.events.filter((event) => event.repo === repo.n)
-      return {
-        id,
-        ghId: repo.databaseId,
-        name: repo.n,
-        short: repo.n.split('/').at(-1) ?? repo.n,
-        actor: dominantActor(events),
-        vol: counts.get(repo.n) ?? 0,
-        stars: repo.stargazerCount,
-        from: repo.first,
-        to: repo.last,
-        private: false,
-        ext: extensions(events),
-        status: repo.status,
-      }
-    })
+  const eventsByRepo = groupEvents(input.events)
+  return input.repos
+    .filter((repo) => (eventsByRepo.get(repo.n)?.length ?? 0) > 0)
+    .sort(compareRepos)
+    .map((repo, id) => repoRecord(repo, id, eventsByRepo.get(repo.n)!))
+}
+
+function repoRecord(
+  repo: RepoInput,
+  id: number,
+  events: readonly RawEvent[]
+): RepoRecord {
+  if (repo.private)
+    throw new Error('Private repositories cannot enter the bundle.')
+  assertBounds(repo, events)
+  return {
+    id,
+    ghId: repo.databaseId,
+    name: repo.n,
+    short: repo.n.split('/').at(-1) ?? repo.n,
+    actor: dominantActor(events),
+    vol: events.length,
+    stars: repo.stargazerCount,
+    from: repo.first,
+    to: repo.last,
+    private: false,
+    ext: extensions(events),
+    status: repo.status,
+  }
+}
+
+function assertBounds(
+  repo: RepoInput,
+  events: readonly RawEvent[]
+): asserts repo is RepoInput & { first: string; last: string } {
+  const [first, last] = eventBounds(events)
+  if (repo.first === first && repo.last === last) return
+  throw new Error(`Repository bounds do not match events: ${repo.n}`)
+}
+
+function eventBounds(events: readonly RawEvent[]): [string, string] {
+  const first = events[0]
+  if (!first) throw new Error('Observed repository has no events.')
+  let earliest = first.day
+  let latest = first.day
+  for (const event of events) {
+    if (event.day < earliest) earliest = event.day
+    if (event.day > latest) latest = event.day
+  }
+  return [earliest, latest]
+}
+
+function compareRepos(left: RepoInput, right: RepoInput): number {
+  if (left.n < right.n) return -1
+  if (left.n > right.n) return 1
+  return 0
 }
 function sortableEvents(
   events: readonly RawEvent[],
@@ -111,11 +150,14 @@ function eventSpan(events: readonly RawEvent[]): [string, string] {
   }
   return [newest, oldest]
 }
-function eventCounts(events: readonly RawEvent[]): Map<string, number> {
-  const counts = new Map<string, number>()
-  for (const event of events)
-    counts.set(event.repo, (counts.get(event.repo) ?? 0) + 1)
-  return counts
+function groupEvents(events: readonly RawEvent[]): Map<string, RawEvent[]> {
+  const grouped = new Map<string, RawEvent[]>()
+  for (const event of events) {
+    const repoEvents = grouped.get(event.repo) ?? []
+    repoEvents.push(event)
+    grouped.set(event.repo, repoEvents)
+  }
+  return grouped
 }
 function dominantActor(events: readonly RawEvent[]): 0 | 1 {
   if (events.length === 0)

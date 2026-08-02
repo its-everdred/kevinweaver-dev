@@ -5,7 +5,7 @@ import { z } from 'zod'
 export interface RepoPipelineState {
   heads: Readonly<Record<string, string>>
   events: number
-  lastEventDay: string
+  lastEventDay?: string
   status: 'ok' | 'stale' | 'gone'
   lastOk: string | null
   consecutiveFailures: number
@@ -29,7 +29,7 @@ export interface PipelineState {
 const repoStateSchema = z.object({
   heads: z.record(z.string(), z.string()),
   events: z.number().int().nonnegative(),
-  lastEventDay: z.string(),
+  lastEventDay: z.string().optional(),
   status: z.enum(['ok', 'stale', 'gone']),
   lastOk: z.string().nullable(),
   consecutiveFailures: z.number().int().nonnegative(),
@@ -67,11 +67,18 @@ export function bootstrapState(): PipelineState {
 /** Reads a pipeline state file, returning null only when the file is absent. */
 export async function readState(path: string): Promise<PipelineState | null> {
   try {
-    return parseState(await readFile(path, 'utf8'))
+    const state = parseState(await readFile(path, 'utf8'))
+    return isBootstrap(state) ? null : state
   } catch (error: unknown) {
     if (isMissing(error)) return null
     throw error
   }
+}
+
+function isBootstrap(state: PipelineState): boolean {
+  return (
+    Object.keys(state).length === 2 && Object.keys(state.repos).length === 0
+  )
 }
 
 /** Writes state atomically while retaining unknown forward-compatible fields. */

@@ -106,12 +106,13 @@ function json(text: string): boolean {
 function record(text: string): Record<string, unknown> | undefined {
   try {
     const value: unknown = JSON.parse(text)
-    return typeof value === 'object' && value !== null && !Array.isArray(value)
-      ? (value as Record<string, unknown>)
-      : undefined
+    return isRecord(value) ? value : undefined
   } catch {
     return undefined
   }
+}
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 function integer(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value)

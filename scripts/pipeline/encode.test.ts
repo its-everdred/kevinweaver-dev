@@ -36,7 +36,7 @@ export const MINI_INPUT: EncodeInput = {
       n: 'aiur-team/aiur',
       databaseId: 1,
       stargazerCount: 10,
-      first: '2026-07-30',
+      first: '2026-07-31',
       last: '2026-07-31',
       private: false,
       status: 'ok',
@@ -64,7 +64,7 @@ export const MINI_INPUT: EncodeInput = {
   repoCount: 2,
   repoCountDefinition: 'ownerPublicNonFork',
   refs: 'all',
-  chunkSize: 3,
+  chunkSize: 1500,
   dictSliceGuardGzipBytes: 12_288,
   samlCanary: {
     ok: true,

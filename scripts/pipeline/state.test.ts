@@ -28,6 +28,8 @@ describe('pipeline state', () => {
     })
 
     expect(await readState(path)).toBeNull()
+    await writeState(path, bootstrapState())
+    expect(await readState(path)).toBeNull()
     await writeState(path, {
       ...bootstrapState(),
       repos: { 'owner/repo': stale },

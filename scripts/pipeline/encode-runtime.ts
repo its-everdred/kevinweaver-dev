@@ -1,6 +1,5 @@
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises'
+import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { pathToFileURL } from 'node:url'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { PipelineStateError, readState, writeState } from './state.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
@@ -9,41 +8,45 @@ import { encodeBundle } from './encode-bundle.ts'
 import { readOptions, resolveInput } from './encode-input.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { nextState } from './encode-state.ts'
-import type { EncodedBundle } from './encode-types.ts'
+import type { EncodedBundle, EncodeInput } from './encode-types.ts'
+import type { Options } from './encode-input.ts'
+import type { PipelineState } from './state.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { validateBundle } from './validate.ts'
+// prettier-ignore
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { finalizePromotion, promote, rollbackPromotion } from './encode-promote.ts'
 export async function writeBundle(
   bundle: EncodedBundle,
   dir: string
 ): Promise<void> {
+  validatePaths(bundle)
+  await mkdirParents(bundle, dir)
   await Promise.all(
-    bundle.files.map(async (file) => {
-      if (!isBundlePath(file.path))
-        throw new BundleWriteError(`Unsafe bundle path: ${file.path}`)
-      const path = join(dir, file.path)
-      await mkdir(dirname(path), { recursive: true })
-      await writeFile(path, file.bytes)
-    })
+    bundle.files.map((file) => writeFile(join(dir, file.path), file.bytes))
+  )
+}
+
+function validatePaths(bundle: EncodedBundle): void {
+  bundle.files.forEach((file) => {
+    if (!isBundlePath(file.path))
+      throw new BundleWriteError(`Unsafe bundle path: ${file.path}`)
+  })
+}
+
+async function mkdirParents(bundle: EncodedBundle, dir: string): Promise<void> {
+  const parents = new Set(
+    bundle.files.map((file) => dirname(join(dir, file.path)))
+  )
+  await Promise.all(
+    [...parents].map((parent) => mkdir(parent, { recursive: true }))
   )
 }
 export async function promoteBundle(
   tempDir: string,
   targetDir: string
 ): Promise<void> {
-  const previous = `${targetDir}.previous`
-  await rm(previous, { recursive: true, force: true })
-  try {
-    await rename(targetDir, previous)
-  } catch (error) {
-    if (!isMissing(error)) throw error
-  }
-  try {
-    await rename(tempDir, targetDir)
-  } catch (error) {
-    await restorePrevious(previous, targetDir)
-    throw error
-  }
-  await rm(previous, { recursive: true, force: true })
+  await promote(tempDir, targetDir)
 }
 export async function main(
   argv: readonly string[] = process.argv.slice(2)
@@ -54,33 +57,72 @@ export async function main(
   }
   try {
     const options = readOptions(argv)
-    const input = await resolveInput(options.input)
-    const bundle = encodeBundle(
-      options.generatedAt
-        ? { ...input, generatedAt: options.generatedAt }
-        : input
-    )
-    const statePath = options.state ?? 'data/.pipeline-state.json'
-    const previous = await readState(statePath)
-    const validation = validateBundle(bundle, previous)
+    const run = await prepareRun(options)
+    const validation = validateBundle(run.bundle, run.previous)
     if (!validation.ok)
-      return report(
-        validation.findings,
-        bundle.samlCanary.ok && !bundle.manifest.degraded.includes('calendar')
-          ? 1
-          : 2
-      )
+      return report(validation.findings, refusalCode(run.bundle))
     if (options.dryRun) return 0
-    const target = options.out ?? 'public/data/v1'
-    const temporary = `${target}.tmp-${process.pid}`
-    await rm(temporary, { recursive: true, force: true })
-    await writeBundle(bundle, temporary)
-    await promoteBundle(temporary, target)
-    await writeState(statePath, nextState(previous, bundle, input))
+    await publish(run, options.out)
     return 0
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'Pipeline failed')
     return error instanceof PipelineStateError ? 1 : 3
+  }
+}
+
+type PreparedRun = {
+  bundle: EncodedBundle
+  input: EncodeInput
+  previous: PipelineState | null
+  statePath: string
+}
+
+async function prepareRun(options: Options): Promise<PreparedRun> {
+  const input = await resolveInput(options.input)
+  const bundle = encodeBundle(withGeneratedAt(input, options.generatedAt))
+  const statePath = options.state ?? 'data/.pipeline-state.json'
+  return { bundle, input, previous: await readState(statePath), statePath }
+}
+
+function withGeneratedAt(
+  input: EncodeInput,
+  generatedAt: string | undefined
+): EncodeInput {
+  return { ...input, generatedAt: generatedAt ?? currentSecond() }
+}
+
+function currentSecond(): string {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+}
+
+function refusalCode(bundle: EncodedBundle): number {
+  return bundle.samlCanary.ok && !bundle.manifest.degraded.includes('calendar')
+    ? 1
+    : 2
+}
+
+async function publish(
+  run: PreparedRun,
+  output: string | undefined
+): Promise<void> {
+  const target = output ?? 'public/data/v1'
+  const temporary = `${target}.tmp-${process.pid}`
+  await rm(temporary, { recursive: true, force: true })
+  await writeBundle(run.bundle, temporary)
+  await promoteBundle(temporary, target)
+  await persistState(run, target)
+}
+
+async function persistState(run: PreparedRun, target: string): Promise<void> {
+  try {
+    await writeState(
+      run.statePath,
+      nextState(run.previous, run.bundle, run.input)
+    )
+    await finalizePromotion(target)
+  } catch (error) {
+    await rollbackPromotion(target)
+    throw error
   }
 }
 class BundleWriteError extends Error {
@@ -88,14 +130,6 @@ class BundleWriteError extends Error {
     super(message)
     this.name = 'BundleWriteError'
   }
-}
-function isMissing(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === 'ENOENT'
-  )
 }
 function isBundlePath(path: string): boolean {
   return (
@@ -105,16 +139,6 @@ function isBundlePath(path: string): boolean {
       .split('/')
       .every((segment) => segment !== '' && segment !== '.' && segment !== '..')
   )
-}
-async function restorePrevious(
-  previous: string,
-  target: string
-): Promise<void> {
-  try {
-    await rename(previous, target)
-  } catch (error) {
-    if (!isMissing(error)) throw error
-  }
 }
 function report(
   findings: readonly { message: string }[],
@@ -126,7 +150,3 @@ function report(
 function usage(): string {
   return 'Usage: data:build --input <encode-input.json> [--out <dir>] [--state <path>] [--generated-at <rfc3339>] [--dry-run]'
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
-  void main().then((code) => {
-    process.exitCode = code
-  })
