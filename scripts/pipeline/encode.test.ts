@@ -134,6 +134,37 @@ describe('pipeline encoder', () => {
     ).resolves.toContain('generatedAt')
     await expect(readFile(state, 'utf8')).resolves.toContain('bundleHash')
   })
+
+  it('leaves an existing target untouched for every fixture refusal', async () => {
+    const cases = [
+      {
+        input: {
+          ...MINI_INPUT,
+          samlCanary: { ...MINI_INPUT.samlCanary, ok: false },
+        },
+        code: 2,
+      },
+      { input: { ...MINI_INPUT, degraded: ['calendar'] as const }, code: 2 },
+      {
+        input: { ...MINI_INPUT, grid: { ...MINI_INPUT.grid, a: [] } },
+        code: 1,
+      },
+      { input: { ...MINI_INPUT, chunkSize: 1_499 }, code: 1 },
+      { input: { ...MINI_INPUT, dictSliceGuardGzipBytes: 0 }, code: 1 },
+    ]
+    for (const fixture of cases) {
+      const directory = await mkdtemp(join(tmpdir(), 'kw014-refusal-'))
+      const input = join(directory, 'input.json')
+      const output = join(directory, 'bundle')
+      await writeFile(input, JSON.stringify(fixture.input))
+      await writeFile(output, 'last good bundle')
+
+      await expect(main(['--input', input, '--out', output])).resolves.toBe(
+        fixture.code
+      )
+      await expect(readFile(output, 'utf8')).resolves.toBe('last good bundle')
+    }
+  })
 })
 
 function text(bundle: ReturnType<typeof encodeBundle>, path: string): string {
