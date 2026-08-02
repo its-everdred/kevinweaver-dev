@@ -11,7 +11,9 @@ import type { SimState } from './sim/types'
 import type { VizCanvasId } from './driver'
 import type { VizSurfaceController } from './surface-controller'
 
-/** Inputs required to paint the selected consumer surfaces. */
+/**
+ * @description Inputs required to paint the selected consumer surfaces.
+ */
 export interface VizSurfacePaintOptions {
   readonly state: SimState
   readonly layers: VizSurfaceRenderLayers
@@ -23,7 +25,9 @@ export interface VizSurfacePaintOptions {
   readonly onRibbonPaint: (view: RenderView) => void
 }
 
-/** Renderer layers shared by the driver-owned surface painter. */
+/**
+ * @description Renderer layers shared by the driver-owned surface painter.
+ */
 export interface VizSurfaceRenderLayers {
   readonly budget: FrameBudget
   readonly graph: GraphLayer
@@ -31,7 +35,12 @@ export interface VizSurfaceRenderLayers {
   readonly overview: OverviewLayer
 }
 
-/** Paints all surfaces or only the supplied invalidation targets. */
+/**
+ * @description Paints all surfaces or only the supplied invalidation targets.
+ * @param controller - Driver-owned storage for surface contexts and render views.
+ * @param options - Simulation, rendering, and target-selection inputs for this paint.
+ * @returns The total draw calls consumed by the paint budget.
+ */
 export function paintVizSurfaces(
   controller: VizSurfaceController,
   options: VizSurfacePaintOptions

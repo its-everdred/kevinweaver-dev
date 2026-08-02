@@ -1,9 +1,13 @@
 import type { VizCanvasId, VizViewport } from './driver'
 
-/** Identifies a consumer-managed canvas surface. */
+/**
+ * @description Identifies a consumer-managed canvas surface.
+ */
 export type VizSurfaceId = 'overview' | 'ribbon' | 'gource'
 
-/** Resolved canvas dimensions and typography supplied by the owning surface. */
+/**
+ * @description Resolved canvas dimensions and typography supplied by the owning surface.
+ */
 export interface VizSurfaceGeometry extends VizViewport {
   readonly deviceWidth: number
   readonly deviceHeight: number
@@ -14,20 +18,26 @@ export interface VizSurfaceGeometry extends VizViewport {
   }
 }
 
-/** Couples a consumer-owned context to one driver render surface. */
+/**
+ * @description Couples a consumer-owned context to one driver render surface.
+ */
 export interface VizSurfaceAttachment {
   readonly id: VizSurfaceId
   readonly ctx: CanvasRenderingContext2D
   readonly geometry: VizSurfaceGeometry
 }
 
-/** The local CSS-pixel pointer coordinate supplied by an instrument surface. */
+/**
+ * @description Local CSS-pixel pointer coordinate supplied by an instrument surface.
+ */
 export interface VizPointer {
   readonly x: number
   readonly y: number
 }
 
-/** The driver hooks used by instrument surfaces. */
+/**
+ * @description Driver hooks used by instrument surfaces.
+ */
 export interface VizSurfaceDriver {
   readonly state: { readonly dayCount: number }
   setCanvas(id: VizCanvasId, ctx: CanvasRenderingContext2D | null): void
@@ -39,7 +49,9 @@ export interface VizSurfaceDriver {
   seekDay(day: number): Promise<unknown>
 }
 
-/** The consumer-facing bridge for canvas lifecycle and scrub input. */
+/**
+ * @description Consumer-facing bridge for canvas lifecycle and scrub input.
+ */
 export interface VizSurfaceAdapter {
   attach(attachment: VizSurfaceAttachment): void
   detach(id: VizSurfaceId): void

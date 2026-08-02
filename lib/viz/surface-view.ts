@@ -39,7 +39,9 @@ const SURFACE_TOKEN: Readonly<Record<TokenName, string>> = {
   blue: AG[7],
 }
 
-/** Stores consumer geometry and creates the matching renderer view. */
+/**
+ * @description Stores consumer geometry and creates the matching renderer view.
+ */
 export interface VizSurfaceViews {
   setViewport(id: VizCanvasId, viewport: VizViewport): void
   setGeometry(id: VizCanvasId, geometry: VizSurfaceGeometry): void
@@ -53,7 +55,10 @@ export interface VizSurfaceViews {
   ): RenderView
 }
 
-/** Creates the surface-owned geometry store used by driver painters. */
+/**
+ * @description Creates the surface-owned geometry store used by driver painters.
+ * @returns A geometry store that resolves renderer views for attached surfaces.
+ */
 export function createVizSurfaceViews(): VizSurfaceViews {
   return new SurfaceViews()
 }

@@ -10,7 +10,9 @@ import type { VizCanvasId, VizViewport } from './driver'
 import { createVizSurfaceViews } from './surface-view'
 import type { VizSurfaceGeometry } from './surfaces'
 
-/** Owns consumer surface lifecycle state without scheduling animation frames. */
+/**
+ * @description Owns consumer surface lifecycle state without scheduling animation frames.
+ */
 export interface VizSurfaceController {
   setCanvas(id: VizCanvasId, ctx: CanvasRenderingContext2D | null): void
   setViewport(id: VizCanvasId, viewport: VizViewport): void
@@ -31,7 +33,11 @@ export interface VizSurfaceController {
   destroy(): void
 }
 
-/** Creates surface lifecycle storage for the driver-owned painter. */
+/**
+ * @description Creates surface lifecycle storage for the driver-owned painter.
+ * @param budget - Shared draw-call budget instrumented across attached contexts.
+ * @returns Surface context, geometry, dirtiness, and flush state for one driver.
+ */
 export function createVizSurfaceController(
   budget: FrameBudget
 ): VizSurfaceController {

@@ -9,7 +9,9 @@ import type {
   VizSurfaceId,
 } from './surfaces'
 
-/** Driver-owned hooks that preserve scheduling and pointer authority. */
+/**
+ * @description Driver-owned hooks that preserve scheduling and pointer authority.
+ */
 export interface VizSurfaceApiHooks {
   readonly state: { readonly dayCount: number }
   onDirty(): void
@@ -18,7 +20,9 @@ export interface VizSurfaceApiHooks {
   seekDay(day: number): Promise<unknown>
 }
 
-/** The public and internal surface methods exposed by the driver. */
+/**
+ * @description Public and internal surface methods exposed by the driver.
+ */
 export interface VizDriverSurfaceApi {
   setCanvas(id: VizCanvasId, ctx: CanvasRenderingContext2D | null): void
   setViewport(id: VizCanvasId, viewport: VizViewport): void

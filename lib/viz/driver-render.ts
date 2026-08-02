@@ -7,7 +7,11 @@ import type { VizSurfaceRenderLayers } from './surface-painter'
 import type { RenderMeta } from './render/budget'
 import type { SimInput } from './sim/types'
 
-/** Creates renderer layers owned by one deterministic visualization driver. */
+/**
+ * @description Creates renderer layers owned by one deterministic visualization driver.
+ * @param input - Simulation dimensions used to size renderer-owned data structures.
+ * @returns The graph, ribbon, overview, and budget layers for one driver.
+ */
 export function createVizDriverRenderLayers(
   input: SimInput
 ): VizSurfaceRenderLayers {
@@ -20,7 +24,11 @@ export function createVizDriverRenderLayers(
   }
 }
 
-/** Converts the driver's quality policy into renderer configuration. */
+/**
+ * @description Converts the driver's quality policy into renderer configuration.
+ * @param value - Driver quality tier and rendering capability flags.
+ * @returns Renderer configuration matching the supplied policy.
+ */
 export function renderVizQuality(value: VizQuality): Quality {
   return {
     name: renderQualityName(value.tier),
@@ -33,7 +41,11 @@ export function renderVizQuality(value: VizQuality): Quality {
   }
 }
 
-/** Creates the display metadata shared by all driver renderers. */
+/**
+ * @description Creates the display metadata shared by all driver renderers.
+ * @param repoNames - Repository labels in deterministic simulation order.
+ * @returns Renderer metadata with the supplied labels and neutral presentation defaults.
+ */
 export function createVizRenderMeta(repoNames: readonly string[]): RenderMeta {
   return {
     repos: repoNames.map((short) => ({

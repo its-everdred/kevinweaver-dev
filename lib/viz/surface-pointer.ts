@@ -7,17 +7,25 @@ import type { RenderView } from './render/budget'
 import type { SimInput } from './sim/types'
 import type { VizPointer } from './surfaces'
 
-/** The calendar cell selected by a ribbon pointer. */
+/**
+ * @description The calendar cell selected by a ribbon pointer.
+ */
 export type VizRibbonHighlight = { week: number; weekday: number } | null
 
-/** Stores pointer state while the driver owns surface invalidation. */
+/**
+ * @description Stores pointer state while the driver owns surface invalidation.
+ */
 export interface VizRibbonPointerState {
   set(point: VizPointer | null, view: RenderView): VizRibbonHighlight
   refresh(view: RenderView): VizRibbonHighlight | undefined
   value(): VizRibbonHighlight | undefined
 }
 
-/** Creates mutable ribbon pointer state around a driver-owned hit test. */
+/**
+ * @description Creates mutable ribbon pointer state around a driver-owned hit test.
+ * @param resolve - Converts the current pointer and render view to a highlight.
+ * @returns Pointer state that can be refreshed after a ribbon repaint.
+ */
 export function createVizRibbonPointerState(
   resolve: (point: VizPointer, view: RenderView) => VizRibbonHighlight
 ): VizRibbonPointerState {
@@ -49,7 +57,12 @@ class RibbonPointerState implements VizRibbonPointerState {
   }
 }
 
-/** Pins the renderer layer to the driver's calendar-aligned window. */
+/**
+ * @description Pins the renderer layer to the driver's calendar-aligned window.
+ * @param layer - Mutable ribbon renderer state owned by the driver.
+ * @param winStart - Calendar-aligned first day visible in the ribbon.
+ * @returns Nothing.
+ */
 export function syncVizRibbonWindow(
   layer: RibbonLayer,
   winStart: number
@@ -58,7 +71,15 @@ export function syncVizRibbonWindow(
   layer.followPlayhead = false
 }
 
-/** Resolves a ribbon-local pointer to its driver highlight cell. */
+/**
+ * @description Resolves a ribbon-local pointer to its driver highlight cell.
+ * @param input - Simulation calendar used to map a hit to a day.
+ * @param layer - Ribbon renderer state containing the current window.
+ * @param view - Current ribbon geometry and rendering metadata.
+ * @param point - Pointer coordinates in local CSS pixels.
+ * @param highlightCell - Converts a day and window into a calendar cell.
+ * @returns The selected cell, or null when the pointer misses the ribbon.
+ */
 export function highlightVizRibbonPointer(
   input: SimInput,
   layer: RibbonLayer,
