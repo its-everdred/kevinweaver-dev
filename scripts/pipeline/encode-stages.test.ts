@@ -21,6 +21,8 @@ vi.mock('./extract.ts', () => ({ extractAll: stages.extraction }))
 import { resolveStages } from './encode-stages.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { main } from './encode.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { SamlCanaryError } from './calendar.ts'
 
 const prior = {
   schema: 1 as const,
@@ -78,6 +80,18 @@ describe('live stage assembly', () => {
     expect(stages.calendar).toHaveBeenCalledOnce()
     expect(stages.discovery).toHaveBeenCalledOnce()
     expect(stages.extraction).toHaveBeenCalledOnce()
+  })
+
+  it('maps an unavailable live stage to exit 3', async () => {
+    stages.discovery.mockRejectedValueOnce(new Error('offline'))
+    await expect(main(['--dry-run'])).resolves.toBe(3)
+  })
+
+  it('maps the concrete SAML refusal to exit 2', async () => {
+    stages.calendar.mockRejectedValueOnce(
+      new SamlCanaryError(calendar().canary)
+    )
+    await expect(main(['--dry-run'])).resolves.toBe(2)
   })
 })
 
