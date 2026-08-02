@@ -18,13 +18,13 @@ export async function loadStage<T>(
   specifier: string,
   binding: string
 ): Promise<T> {
-  let module: Record<string, unknown>
+  let stage: Record<string, unknown>
   try {
-    module = await import(specifier)
+    stage = await import(specifier)
   } catch {
     throw new UpstreamUnavailableError(specifier)
   }
-  const value = module[binding]
+  const value = stage[binding]
   if (typeof value !== 'function')
     throw new UpstreamUnavailableError(`${specifier}#${binding}`)
   return value as T
