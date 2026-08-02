@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createVizDriver } from '../../lib/viz/driver'
+import { createVizDriver, ribbonWinStart } from '../../lib/viz/driver'
 import {
   DAY_ALIVE,
   ENTITY_FILE,
@@ -98,5 +98,31 @@ describe('seekTick is not path dependent (I-D3)', () => {
     const a = await d.seekTick(45)
     const b = await d.seekTick(45)
     expect(b).toEqual(a)
+  })
+})
+
+describe('consumer seeks hold the ribbon window', () => {
+  const targetDay = 200
+  const expectedWindow = ribbonWinStart(TINY, targetDay, null)
+
+  it.each([
+    ['day', (d: ReturnType<typeof driver>) => d.seekDay(targetDay)],
+    ['date', (d: ReturnType<typeof driver>) => d.seekDate('2026-07-20')],
+    [
+      'scrub',
+      async (d: ReturnType<typeof driver>) => {
+        d.scrubTo(targetDay / (TINY.dayCount - 1))
+        return d.inspect()
+      },
+    ],
+  ] as const)('holds the window after a %s seek', async (_, seek) => {
+    const d = driver()
+
+    await seek(d)
+    const held = await d.renderFrame(240)
+
+    expect(held.winStart).toBe(expectedWindow)
+    d.releaseWindow()
+    expect((await d.renderFrame()).winStart).not.toBe(expectedWindow)
   })
 })

@@ -35,7 +35,12 @@ export interface VizDriverSurfaceApi {
   destroy(): void
 }
 
-/** Creates surface delegation without taking animation-frame ownership. */
+/**
+ * @description Creates the driver's surface delegation without animation-frame ownership.
+ * @param controller - Surface storage used by the driver-owned painter.
+ * @param hooks - Driver callbacks for scheduling, pointer intake, and seeking.
+ * @returns The internal and public surface API exposed by the driver.
+ */
 export function createVizDriverSurfaceApi(
   controller: VizSurfaceController,
   hooks: VizSurfaceApiHooks

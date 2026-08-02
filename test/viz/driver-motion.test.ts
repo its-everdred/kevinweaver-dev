@@ -142,6 +142,30 @@ test('does not resume twice after explicit reduced-motion play', () => {
   vi.unstubAllGlobals()
 })
 
+test('does not resume after an explicit reduced-motion pause', () => {
+  const media = new FakeMediaQuery(false)
+  const active = new Set<number>()
+  let nextId = 0
+  stubWindow(media)
+  vi.stubGlobal('requestAnimationFrame', () => {
+    const id = ++nextId
+    active.add(id)
+    return id
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => active.delete(id))
+  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+
+  driver.play()
+  media.setMatches(true)
+  void driver.pause()
+  media.setMatches(false)
+
+  expect(active).toEqual(new Set())
+  expect(driver.inspect()).toMatchObject({ playing: false, reducedMotion: false })
+  driver.destroy()
+  vi.unstubAllGlobals()
+})
+
 test.each(['pause', 'destroy'] as const)(
   'does not resume after a subscriber calls %s',
   (action) => {
