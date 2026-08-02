@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import type { EncodeInput } from './encode-types.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { resolveStages } from './encode-stages.ts'
 
 const schema = z.object({
   events: z.array(
@@ -80,27 +82,10 @@ export async function resolveInput(
   path: string | undefined
 ): Promise<EncodeInput> {
   if (!path) {
-    await loadStage('./extract.ts', 'extractAll')
-    throw new UpstreamUnavailableError('--input')
+    return resolveStages()
   }
   const parsed = schema.safeParse(JSON.parse(await readFile(path, 'utf8')))
   if (!parsed.success)
     throw new Error(`Invalid --input: ${parsed.error.message}`)
   return parsed.data
-}
-async function loadStage(specifier: string, binding: string): Promise<void> {
-  let mod: Record<string, unknown>
-  try {
-    mod = await import(specifier)
-  } catch {
-    throw new UpstreamUnavailableError(specifier)
-  }
-  if (typeof mod[binding] !== 'function')
-    throw new UpstreamUnavailableError(`${specifier}#${binding}`)
-}
-class UpstreamUnavailableError extends Error {
-  constructor(specifier: string) {
-    super(`Upstream pipeline input is unavailable: ${specifier}`)
-    this.name = 'UpstreamUnavailableError'
-  }
 }
