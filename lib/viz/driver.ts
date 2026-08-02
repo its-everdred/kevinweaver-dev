@@ -1,5 +1,4 @@
 import {
-  liveIdsAscending,
   advanceCursor,
   isLive,
   repoPhase,
@@ -7,7 +6,7 @@ import {
 } from './sim/cursor'
 import { packOnce } from './sim/layout'
 import { seedRng } from './sim/rng'
-import { createSimState, digestSimState, resetSimState } from './sim/state'
+import { createSimState, resetSimState } from './sim/state'
 import { step } from './sim/step'
 import {
   ENTITY_REPO,
@@ -25,6 +24,7 @@ import { createVizSurfaceController } from './surface-controller'
 import { paintVizSurfaces } from './surface-painter'
 import { createVizDriverSurfaceApi } from './driver-surface-api'
 import { createVizDriverLifecycle } from './driver-lifecycle'
+import { buildVizDriverInfo } from './driver-info'
 import { createVizDriverRibbon } from './driver-ribbon'
 import {
   createVizDriverRenderLayers,
@@ -315,7 +315,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   const onMediaChange = (event: MediaQueryListEvent): void => {
     const action = lifecycle.mediaChanged(event.matches)
     if (action === 'pause-and-settle') {
-      stop()
+      cancelFrame()
       void seekTick(0)
     } else if (action === 'resume') {
       accumulator = 0
@@ -391,10 +391,13 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     raf = requestAnimationFrame(frame)
   }
   function stop(): void {
-    if (raf !== undefined) cancelAnimationFrame(raf)
-    raf = undefined
+    cancelFrame()
     lifecycle.stop()
     scheduleInvalidatedPaint()
+  }
+  function cancelFrame(): void {
+    if (raf !== undefined) cancelAnimationFrame(raf)
+    raf = undefined
   }
   function cancelInvalidatedPaint(): void {
     if (!invalidationRaf) return
@@ -468,14 +471,16 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     state.beamEnt.fill(-1)
   }
   async function seekTick(tick: number): Promise<VizFrameInfo> {
+    return seekAtTick(tick, null)
+  }
+  function seekAtTick(
+    tick: number,
+    window: number | null
+  ): Promise<VizFrameInfo> {
     assertTick(tick)
     resetSimState(state, seed)
     restorePackedLayout()
-    // I-D3: two seekTick(t) calls must be identical regardless of what happened
-    // between them. seekDay/seekDate latch a ribbon window that paint() resolves
-    // through, so without clearing it the same tick renders differently after a
-    // prior seekDay — exactly the path-dependence this ticket exists to prevent.
-    latchedWindow = null
+    latchedWindow = window
     state.speedIndex = DEFAULT_SPEED_INDEX
     state.playing = false
     anchorTick(tick)
@@ -508,8 +513,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
         ? 0
         : DWELL_TICKS + Math.ceil((mapping.day0 - target) / mapping.daysPerTick)
     const tick = Math.min(mapping.sweepTicks - 1, rewindTick)
-    latchedWindow = ribbonWinStart(options.input, target, null)
-    return seekTick(tick)
+    return seekAtTick(tick, ribbonWinStart(options.input, target, null))
   }
   function seekDate(iso: string): Promise<VizFrameInfo> {
     const start = Date.parse(`${options.input.windowStartISO}T00:00:00Z`)
@@ -607,40 +611,21 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     ribbon.refreshPointer(view)
   }
   function buildInfo(winStart = syncRibbonWindow(), total = 0): VizFrameInfo {
-    const digest = digestSimState(state)
     const pointerHighlight = ribbon.pointerHighlight()
-    const names: string[] = []
-    const ids = new Int32Array(state.entityCount)
-    const count = liveIdsAscending(state, ids)
-    for (let index = 0; index < count; index++) {
-      const id = ids[index]
-      if (id !== undefined && id < state.repoCount)
-        names.push(options.repoNames[id] ?? '')
-    }
-    return {
-      tick: state.tick,
-      cursorDay: state.cursorDay,
-      cursorDayInt: state.cursorDayInt,
+    return buildVizDriverInfo({
+      state,
+      repoNames: options.repoNames,
       date: formatDayISO(options.input.windowStartISO, state.cursorDayInt),
-      speedIndex: state.speedIndex,
-      playing: state.playing,
       reducedMotion: lifecycle.reducedMotion,
       settled,
-      nLive: digest.nLive,
-      liveRepos: names,
-      ghostRepos: digest.ghostRepos,
-      liveHash: digest.liveHash,
-      rngState: digest.rngState,
-      rngDraws: digest.rngDraws,
       winStart,
       highlightCell:
         pointerHighlight === undefined
           ? highlightCellFor(options.input, state.cursorDayInt, winStart)
           : pointerHighlight,
-      beams: state.beamLife.filter((life) => life > 0).length,
-      drawCalls: { graph: 0, ribbon: 0, overview: 0, total },
       qualityTier: quality.tier,
-    }
+      total,
+    })
   }
   function buildRenderView(surface: VizCanvasId = 'graph'): RenderView {
     return surfaceController.buildView(

@@ -13,7 +13,11 @@ const MONTH_NAMES = [
   'dec',
 ] as const
 
-/** Formats an ISO date for the transport's compact display. */
+/**
+ * @description Formats an ISO date for the transport's compact display.
+ * @param iso - UTC calendar date in ISO day form.
+ * @returns A compact day, month, and year label, or an empty string when invalid.
+ */
 export function formatTransportDate(iso: string): string {
   const parts = iso.split('-').map(Number)
   const year = parts[0]

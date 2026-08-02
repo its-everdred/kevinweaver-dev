@@ -50,7 +50,11 @@ export interface VizSurfaceAdapter {
   destroy(): void
 }
 
-/** Creates a lifecycle adapter without taking ownership of animation scheduling. */
+/**
+ * @description Creates a lifecycle adapter without taking animation scheduling ownership.
+ * @param driver - The driver that owns rendering, seeking, and pointer state.
+ * @returns A consumer-facing adapter for canvas lifecycle and scrub input.
+ */
 export function createVizSurfaceAdapter(
   driver: VizSurfaceDriver
 ): VizSurfaceAdapter {

@@ -42,12 +42,20 @@ let activeTransport: BoundTransport | undefined
 let snapshot = INERT_SNAPSHOT
 const listeners = new Set<() => void>()
 
-/** Returns the process-wide inert-or-bound transport external store. */
+/**
+ * @description Returns the process-wide inert-or-bound transport external store.
+ * @returns The stable transport facade for external-store consumers.
+ */
 export function getVizTransport(): VizTransport {
   return transport
 }
 
-/** Binds one driver to the transport facade until the returned cleanup runs. */
+/**
+ * @description Binds one driver to the transport facade until cleanup runs.
+ * @param driver - The deterministic driver providing transport state and controls.
+ * @param metadata - Payload-derived labels and bounds for the transport snapshot.
+ * @returns A cleanup that restores the inert transport when this binding is active.
+ */
 export function bindVizTransport(
   driver: VizTransportDriver,
   metadata: VizTransportMetadata

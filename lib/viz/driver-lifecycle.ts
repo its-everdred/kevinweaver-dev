@@ -49,8 +49,8 @@ class DriverLifecycle implements VizDriverLifecycle {
     return true
   }
   stop(): void {
-    this.#running = false
-    this.state.playing = false
+    this.#resumeAfterReduce = false
+    this.halt()
   }
   destroy(): void {
     this.#destroyed = true
@@ -61,9 +61,13 @@ class DriverLifecycle implements VizDriverLifecycle {
     if (matches) return this.pauseForReducedMotion()
     return this.resumeAfterReducedMotion()
   }
+  private halt(): void {
+    this.#running = false
+    this.state.playing = false
+  }
   private pauseForReducedMotion(): VizMediaAction {
     this.#resumeAfterReduce = this.#running
-    this.stop()
+    this.halt()
     return 'pause-and-settle'
   }
   private resumeAfterReducedMotion(): VizMediaAction {
