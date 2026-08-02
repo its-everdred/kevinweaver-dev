@@ -8,7 +8,7 @@ import { encodeBundle } from './encode.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { validateBundle } from './validate.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { MINI_INPUT } from './encode.test.ts'
+import { MINI_INPUT } from './encode-fixture.ts'
 import type { EncodedBundle } from './encode.ts'
 
 describe('bundle validator', () => {

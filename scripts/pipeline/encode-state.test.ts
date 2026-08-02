@@ -23,6 +23,10 @@ describe('pipeline state encoder', () => {
       'refs/heads/z': 'z'.repeat(40),
       'refs/heads/main': 'm'.repeat(40),
     })
+    expect(state.repos['owner/current']).toMatchObject({
+      databaseId: 1,
+      stargazerCount: 0,
+    })
   })
 
   it('preserves heads when an extracted repository is stale', () => {
@@ -36,6 +40,10 @@ describe('pipeline state encoder', () => {
     expect(state.repos['owner/current']?.heads).toEqual(
       previous.repos['owner/current']?.heads
     )
+    expect(state.repos['owner/current']).toMatchObject({
+      databaseId: 1,
+      stargazerCount: 0,
+    })
   })
 
   it('retains a prior-only repository and marks it gone after seven failures', () => {

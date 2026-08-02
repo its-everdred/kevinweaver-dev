@@ -47,6 +47,8 @@ function repositoryState(
   generatedAt: string
 ): RepoPipelineState {
   const next: RepoPipelineState = {
+    databaseId: repo.databaseId,
+    stargazerCount: repo.stargazerCount,
     heads: repo.heads ?? previous?.heads ?? {},
     events: input.events.filter((event) => event.repo === repo.n).length,
     lastEventDay: repo.last ?? previous?.lastEventDay,

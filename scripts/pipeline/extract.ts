@@ -6,6 +6,8 @@ import * as clone from './clone.ts'
 import type { ActorId } from './identity.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { extractRepo, GitLogError } from './extract-log.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { UpstreamUnavailableError } from './encode-stage-runtime.ts'
 import type { RepoStatus } from '../../lib/bundle/schema.ts'
 
 /** One author-attributed file touch ready for deterministic encoding. */
@@ -34,6 +36,14 @@ export interface RepoExtract {
   heads: Record<string, string>
   events: ExtractedEvent[]
   error: string | null
+}
+
+/** Persisted repository facts needed when a refresh falls back to its cache. */
+export interface ExtractionPrior {
+  n: string
+  consecutiveFailures: number
+  lastOk: string | null
+  heads: Record<string, string>
 }
 
 /** Complete deterministic extraction result. */
@@ -80,19 +90,19 @@ export function compareRawEvents(a: RawEvent, b: RawEvent): number {
 
 function stale(
   repo: string,
-  prior: RepoExtract | undefined,
+  prior: ExtractionPrior | undefined,
   error: string | null
 ): RepoExtract {
   return {
     n: repo,
-    first: prior?.first ?? '',
-    last: prior?.last ?? '',
+    first: '',
+    last: '',
     private: false,
     status: 'stale',
     consecutiveFailures: (prior?.consecutiveFailures ?? 0) + 1,
     lastOk: prior?.lastOk ?? null,
     heads: prior?.heads ?? {},
-    events: prior?.events ?? [],
+    events: [],
     error,
   }
 }
@@ -100,7 +110,7 @@ function stale(
 /** Extracts the requested cache into one canonical author-attributed event stream. */
 export async function extractAll(
   repos: readonly string[],
-  prior: readonly RepoExtract[],
+  prior: readonly ExtractionPrior[],
   opts?: ExtractOptions
 ): Promise<ExtractResult> {
   if (repos.length === 0)
@@ -143,10 +153,12 @@ export async function extractAll(
 
 async function staleFromCache(
   outcome: clone.CloneOutcome,
-  prior: RepoExtract | undefined
+  prior: ExtractionPrior | undefined
 ): Promise<RepoExtract> {
   if (!outcome.cached)
-    throw new GitLogError(outcome.repo, 'preserved bare clone is unavailable')
+    throw new UpstreamUnavailableError(
+      `preserved bare clone is unavailable: ${outcome.repo}`
+    )
   const events = await extractRepo(outcome.repo, outcome.dir)
   const { first, last } = bounds(events)
   return {

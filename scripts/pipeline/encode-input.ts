@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import type { EncodeInput } from './encode-types.ts'
+import type { PipelineState } from './state.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { resolveStages } from './encode-stages.ts'
 
@@ -80,10 +81,12 @@ export function readOptions(argv: readonly string[]): Options {
   return options
 }
 export async function resolveInput(
-  path: string | undefined
+  path: string | undefined,
+  previous: PipelineState | null = null,
+  output: string | undefined = undefined
 ): Promise<EncodeInput> {
   if (!path) {
-    return resolveStages()
+    return resolveStages(previous, output)
   }
   const parsed = schema.safeParse(JSON.parse(await readFile(path, 'utf8')))
   if (!parsed.success)
