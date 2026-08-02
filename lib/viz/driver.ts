@@ -1,9 +1,4 @@
-import {
-  advanceCursor,
-  isLive,
-  repoPhase,
-  seekCursor,
-} from './sim/cursor'
+import { advanceCursor, isLive, repoPhase, seekCursor } from './sim/cursor'
 import { packOnce } from './sim/layout'
 import { seedRng } from './sim/rng'
 import { createSimState, resetSimState } from './sim/state'
@@ -273,6 +268,9 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     state.repoAngle.set(packedLayout.repoAngle)
   }
   const mapping = tickMapping(options.input)
+  let playbackAnchorTick = 0
+  let playbackAnchorDay = mapping.day0
+  let playbackDwellUntilTick = DWELL_TICKS
   const listeners = new Set<(info: VizFrameInfo) => void>()
   const destroyListeners = new Set<() => void>()
   const layers = createVizDriverRenderLayers(options.input)
@@ -439,19 +437,49 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   }
   function advance(): void {
     const tick = state.tick + 1
+    const projection = playbackProjection(tick)
+    const reportedPlaying = state.playing
     state.rngState = rngAnchor(seed, tick)
     state.rngDraws = 0
+    state.playing = projection.moving
     step(state)
-    anchorTick(tick)
+    anchorDay(tick, projection.day)
+    state.playing = reportedPlaying
   }
   function anchorTick(tick: number): void {
-    state.tick = tick
     const day = cursorDayAtTick(mapping, tick)
+    anchorDay(tick, day)
+  }
+  function anchorDay(tick: number, day: number): void {
+    state.tick = tick
     const dayInt = Math.floor(day)
     state.cursorDay = day
     if (dayInt < state.cursorDayInt) advanceCursor(state, dayInt)
     else if (dayInt > state.cursorDayInt) seekCursor(state, dayInt)
     state.cursorDayInt = dayInt
+  }
+  function playbackProjection(tick: number) {
+    if (tick <= playbackDwellUntilTick)
+      return { day: playbackAnchorDay, moving: false } as const
+    const elapsed = tick - Math.max(playbackAnchorTick, playbackDwellUntilTick)
+    const speed = SPEEDS[state.speedIndex]
+    if (speed === undefined)
+      throw new RangeError(`speed index ${state.speedIndex} is invalid`)
+    const day = playbackAnchorDay - speed * FIXED_DT * elapsed
+    if (day > 0) return { day, moving: true } as const
+    playbackAnchorTick = tick
+    playbackAnchorDay = mapping.day0
+    playbackDwellUntilTick = tick + DWELL_TICKS
+    return { day: mapping.day0, moving: true } as const
+  }
+  function syncPlaybackTrajectory(): void {
+    const position =
+      ((state.tick % mapping.sweepTicks) + mapping.sweepTicks) %
+      mapping.sweepTicks
+    playbackAnchorTick = state.tick
+    playbackAnchorDay = state.cursorDay
+    playbackDwellUntilTick =
+      position <= DWELL_TICKS ? state.tick + DWELL_TICKS - position : state.tick
   }
   function settleChannels(): void {
     for (let id = 0; id < state.entityCount; id++) {
@@ -497,6 +525,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     step(state)
     anchorTick(tick)
     settleChannels()
+    syncPlaybackTrajectory()
     settled = true
     paint(true)
     flushRaster()
@@ -520,11 +549,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
         ? 0
         : DWELL_TICKS + Math.ceil((mapping.day0 - target) / mapping.daysPerTick)
     const tick = Math.min(mapping.sweepTicks - 1, rewindTick)
-    return seekAtTick(
-      tick,
-      ribbonWinStart(options.input, target, null),
-      true
-    )
+    return seekAtTick(tick, ribbonWinStart(options.input, target, null), true)
   }
   function seekDate(iso: string): Promise<VizFrameInfo> {
     const start = Date.parse(`${options.input.windowStartISO}T00:00:00Z`)
@@ -540,6 +565,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     restorePackedLayout()
     state.speedIndex = DEFAULT_SPEED_INDEX
     state.playing = false
+    syncPlaybackTrajectory()
     latchedWindow = null
     settled = false
     paint(true)
@@ -550,6 +576,10 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   function setSpeedIndex(index: number): void {
     if (!Number.isInteger(index) || index < 0 || index >= SPEEDS.length)
       throw new RangeError(`speed index ${index} is invalid`)
+    playbackAnchorTick = state.tick
+    playbackAnchorDay = state.cursorDay
+    if (state.tick >= playbackDwellUntilTick)
+      playbackDwellUntilTick = state.tick
     state.speedIndex = index
   }
   function setQuality(mode: 'high' | 'low' | 'auto'): void {
