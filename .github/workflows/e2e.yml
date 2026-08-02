@@ -49,11 +49,9 @@ jobs:
           const triggers = lines.slice(start + 1, end)
             .filter(line => /^ {2}\S/.test(line))
             .map(line => line.trim().replace(/:.*$/, ''))
-          const banned = triggers.filter(trigger =>
-            trigger === 'merge_group' || trigger === 'repository_dispatch',
-          )
-          if (banned.length > 0) {
-            console.error(`::error::e2e.yml must not subscribe to ${banned.join(', ')}`)
+          const expected = ['pull_request', 'push', 'workflow_dispatch']
+          if (JSON.stringify(triggers) !== JSON.stringify(expected)) {
+            console.error(`::error::e2e triggers must be exactly ${expected.join(', ')}`)
             process.exit(1)
           }
           console.log(`e2e triggers: ${triggers.join(', ')}`)

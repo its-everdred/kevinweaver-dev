@@ -3,13 +3,9 @@ import { expect, test, type Page, type Request } from '@playwright/test'
 const EPOCH = new Date('2026-06-01T00:00:00.000Z')
 const PAUSE_AT = new Date('2026-06-01T01:00:00.000Z')
 const ORIGIN = new URL(process.env.BASE_URL ?? 'http://127.0.0.1:3000').origin
-const DATA_FALLBACK_PATH = /\/data\/v1\/(manifest|grid)\.json$/
-const EXPECTED_DATA_FALLBACK_TYPES = new Set([
-  'document',
-  'fetch',
-  'xhr',
-  'eventsource',
-  'websocket',
+const DATA_FALLBACK_PATHS = new Set([
+  '/data/v1/manifest.json',
+  '/data/v1/grid.json',
 ])
 
 declare global {
@@ -18,14 +14,26 @@ declare global {
   }
 }
 
-function isCheckedSubresource(request: Request) {
-  return !EXPECTED_DATA_FALLBACK_TYPES.has(request.resourceType())
+function isExpectedDataFallback(url: URL) {
+  return url.origin === ORIGIN && DATA_FALLBACK_PATHS.has(url.pathname)
 }
 
-async function completeExpectedDataFallback(page: Page) {
-  await page.route(DATA_FALLBACK_PATH, (route) =>
-    route.fulfill({ status: 404 })
+function isCheckedSubresource(request: Request) {
+  const isExpectedFallback =
+    request.resourceType() === 'fetch' &&
+    isExpectedDataFallback(new URL(request.url()))
+  return request.resourceType() !== 'document' && !isExpectedFallback
+}
+
+async function loadFirstVisit(page: Page) {
+  const fallbackResponses = Array.from(DATA_FALLBACK_PATHS, (path) =>
+    page.waitForResponse((response) => new URL(response.url()).pathname === path)
   )
+  await page.route(isExpectedDataFallback, (route) => route.fulfill({ status: 404 }))
+  await page.goto('/', { waitUntil: 'load' })
+  await Promise.all(fallbackResponses)
+  await page.evaluate(() => document.fonts.ready)
+  await expect(page.locator('main')).toBeVisible()
 }
 
 test.describe('smoke', () => {
@@ -40,7 +48,6 @@ test.describe('smoke', () => {
 
   test('no subresource fails to load', async ({ page }) => {
     const broken: string[] = []
-    await completeExpectedDataFallback(page)
     page.on('response', (response) => {
       if (
         isCheckedSubresource(response.request()) &&
@@ -57,14 +64,13 @@ test.describe('smoke', () => {
       }
     })
 
-    await page.goto('/', { waitUntil: 'networkidle' })
+    await loadFirstVisit(page)
 
     expect(broken).toEqual([])
   })
 
   test('the page makes no cross-origin request', async ({ page }) => {
     const external: string[] = []
-    await completeExpectedDataFallback(page)
     page.on('request', (request: Request) => {
       if (
         !request.url().startsWith('data:') &&
@@ -74,7 +80,7 @@ test.describe('smoke', () => {
       }
     })
 
-    await page.goto('/', { waitUntil: 'networkidle' })
+    await loadFirstVisit(page)
 
     expect(external).toEqual([])
   })

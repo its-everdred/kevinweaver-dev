@@ -3,7 +3,6 @@ import { defineConfig, devices } from '@playwright/test'
 const PORT = 3000
 const LOCAL_ORIGIN = `http://127.0.0.1:${PORT}`
 const remoteOrigin = process.env.BASE_URL
-const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
 
 export default defineConfig({
   testDir: './e2e',
@@ -16,8 +15,8 @@ export default defineConfig({
     : [['list'], ['html', { open: 'never' }]],
   expect: {
     timeout: 10_000,
-    // Snapshot follow-up owns the sanctioned container-only update guard, root
-    // snapshotPathTemplate, and comparison keys (threshold, maxDiffPixelRatio).
+    // Snapshot follow-up owns the sanctioned update guard, root snapshotPathTemplate,
+    // and exact threshold, maxDiffPixels, animations, caret, and scale settings.
     toHaveScreenshot: { stylePath: './e2e/screenshot.css' },
   },
   webServer: remoteOrigin
@@ -42,12 +41,6 @@ export default defineConfig({
     timezoneId: 'UTC',
     locale: 'en-US',
     colorScheme: 'dark',
-    extraHTTPHeaders: bypassSecret
-      ? {
-          'x-vercel-protection-bypass': bypassSecret,
-          'x-vercel-set-bypass-cookie': 'true',
-        }
-      : {},
   },
   projects: [
     {
