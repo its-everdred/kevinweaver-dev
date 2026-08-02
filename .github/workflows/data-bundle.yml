@@ -1,0 +1,179 @@
+name: data-bundle
+
+# Scheduled regeneration runs on GitHub Actions, never Vercel Cron.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Regenerate and measure, but do not commit or push'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-bundle
+  cancel-in-progress: false
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  FORCE_COLOR: '1'
+
+jobs:
+  regenerate:
+    if: github.repository == 'its-everdred/kevinweaver-dev' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+
+      # The clone cache stays outside the checkout so it can never be staged.
+      - name: Resolve clone root
+        shell: bash
+        run: echo "KW_CLONE_ROOT=${RUNNER_TEMP}/kw-clones-v1" >> "$GITHUB_ENV"
+
+      - name: Assert contribution token
+        env:
+          CONTRIB_TOKEN: ${{ secrets.CONTRIB_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "${CONTRIB_TOKEN}" ]; then
+            echo "::error::GATE-003 unsatisfied: repository secret CONTRIB_TOKEN is not set."
+            echo "::error::Mint a read:user PAT, authorize it for ethereum-optimism, and store it as CONTRIB_TOKEN."
+            exit 1
+          fi
+
+      - name: Assert pipeline entry point
+        shell: bash
+        run: |
+          entry="$(node -p "require('./package.json').scripts['data:build'].split(' ').pop()")"
+          echo "data:build -> ${entry}"
+          if [ ! -f "${entry}" ]; then
+            echo "::error::${entry} does not exist; package.json is frozen."
+            exit 1
+          fi
+
+      - name: Restore blobless clone cache
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: ${{ env.KW_CLONE_ROOT }}
+          key: clones-v1-${{ github.run_id }}
+          restore-keys: |
+            clones-v1-
+
+      - name: Regenerate bundle
+        env:
+          CONTRIB_TOKEN: ${{ secrets.CONTRIB_TOKEN }}
+        run: npm run data:build
+
+      # Keep advanced clones even when measurement or publication fails.
+      - name: Save blobless clone cache
+        if: always()
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ${{ env.KW_CLONE_ROOT }}
+          key: clones-v1-${{ github.run_id }}
+
+      - name: Measure first-byte budget
+        run: node scripts/pipeline/budget.ts --markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit and push
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --local core.hooksPath /dev/null
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          canonical_origin="https://github.com/${GITHUB_REPOSITORY}"
+          mapfile -t fetch_urls < <(git remote get-url --all origin)
+          mapfile -t push_urls < <(git remote get-url --push --all origin)
+          if [ "${#fetch_urls[@]}" -ne 1 ] || [ "${fetch_urls[0]%.git}" != "${canonical_origin}" ]; then
+            echo "::error::refusing unexpected origin fetch configuration."
+            exit 1
+          fi
+          if [ "${#push_urls[@]}" -ne 1 ] || [ "${push_urls[0]%.git}" != "${canonical_origin}" ]; then
+            echo "::error::refusing unexpected origin push configuration."
+            exit 1
+          fi
+          if [ "${GITHUB_REF}" != 'refs/heads/main' ] || [ "$(git rev-parse HEAD)" != "${GITHUB_SHA}" ]; then
+            echo "::error::refusing publication from outside the dispatched main revision."
+            exit 1
+          fi
+          git fetch origin main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "::error::the dispatched main revision is no longer in main history."
+            exit 1
+          fi
+          if [ "$(git rev-list --count origin/main..HEAD)" -ne 0 ]; then
+            echo "::error::unexpected local commits exist before publication."
+            exit 1
+          fi
+          git reset --quiet
+          git add -- public/data/v1 data/.pipeline-state.json
+          if git diff --cached --quiet; then
+            echo "::error::pipeline promoted nothing; expected a generatedAt update."
+            exit 1
+          fi
+          while IFS= read -r file; do
+            case "${file}" in
+              public/data/v1/*|data/.pipeline-state.json) ;;
+              *) echo "::error::refusing to publish staged path ${file}"; exit 1 ;;
+            esac
+          done < <(git diff --cached --name-only)
+          generated_at="$(node -p "require('./public/data/v1/manifest.json').generatedAt")"
+          git commit -m "Refresh activity data bundle"
+          publish_sha="$(git rev-parse HEAD)"
+          verify_publish_commit() {
+            if [ "$(git rev-list --count origin/main..HEAD)" -ne 1 ]; then
+              echo "::error::publication must add exactly one commit."
+              exit 1
+            fi
+            while IFS= read -r file; do
+              case "${file}" in
+                public/data/v1/*|data/.pipeline-state.json) ;;
+                *) echo "::error::refusing to publish committed path ${file}"; exit 1 ;;
+              esac
+            done < <(git diff-tree --no-commit-id --name-only -r HEAD)
+          }
+          confirm_published() {
+            git fetch origin main:refs/remotes/origin/main \
+              && git merge-base --is-ancestor "${publish_sha}" origin/main
+          }
+          verify_publish_commit
+          gh auth setup-git --hostname github.com
+          if ! git push origin HEAD:main; then
+            if confirm_published; then
+              echo "Push accepted despite a nonzero client result."
+            else
+              git rebase --autostash origin/main
+              verify_publish_commit
+              publish_sha="$(git rev-parse HEAD)"
+              if ! git push origin HEAD:main; then
+                if ! confirm_published; then
+                  echo "::error::publication failed after one rebase retry."
+                  exit 1
+                fi
+              fi
+            fi
+          fi
+          {
+            echo ""
+            echo "generatedAt: \`${generated_at}\`"
+            echo "commit: \`${publish_sha}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
