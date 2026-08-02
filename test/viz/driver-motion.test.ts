@@ -118,6 +118,30 @@ test('replaces a pending invalidation with one resumed animation frame', () => {
   vi.unstubAllGlobals()
 })
 
+test('does not resume twice after explicit reduced-motion play', () => {
+  const media = new FakeMediaQuery(false)
+  const active = new Set<number>()
+  let nextId = 0
+  stubWindow(media)
+  vi.stubGlobal('requestAnimationFrame', () => {
+    const id = ++nextId
+    active.add(id)
+    return id
+  })
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => active.delete(id))
+  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+
+  driver.play()
+  media.setMatches(true)
+  driver.play()
+  media.setMatches(false)
+
+  expect(active).toEqual(new Set([nextId]))
+  driver.destroy()
+  expect(active).toEqual(new Set())
+  vi.unstubAllGlobals()
+})
+
 test.each(['pause', 'destroy'] as const)(
   'does not resume after a subscriber calls %s',
   (action) => {

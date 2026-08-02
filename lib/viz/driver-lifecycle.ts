@@ -43,6 +43,7 @@ class DriverLifecycle implements VizDriverLifecycle {
   }
   start(): boolean {
     if (this.#running || this.#destroyed) return false
+    this.#resumeAfterReduce = false
     this.#running = true
     this.state.playing = true
     return true
