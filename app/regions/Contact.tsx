@@ -34,7 +34,12 @@ function renderNote(note: string | null): ReactNode {
   )
 }
 
-/** Renders the contact links and shell transcript for the site. */
+/**
+ * Renders the contact links and shell transcript for the site.
+ *
+ * @param props - Region identity, class, and style overrides.
+ * @returns The contact region pane.
+ */
 export function Contact({
   id = META.anchorId ?? undefined,
   className,
