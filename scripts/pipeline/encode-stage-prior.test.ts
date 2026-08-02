@@ -8,7 +8,7 @@ import { encodeBundle } from './encode.ts'
 import { validInput } from './encode-fixture.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { calendarFromGrid, extractionNames, extractionPriors, readPriorGrid } from './encode-stage-prior.ts'
+import { calendarFromGrid, extractionNames, extractionPriors, privateFromGrid, readPriorGrid } from './encode-stage-prior.ts'
 
 describe('prior stage inputs', () => {
   it('uses prior public grid data only after a successful state exists', async () => {
@@ -22,6 +22,7 @@ describe('prior stage inputs', () => {
     const prior = await readPriorGrid(directory, { schema: 1, repos: {} })
     expect(prior).toMatchObject({ start: '2026-07-31', e: [40_000] })
     expect(calendarFromGrid(prior!).degraded).toEqual(['calendar'])
+    expect(privateFromGrid(prior!)).toEqual({ p: [0], degraded: ['private'] })
     await expect(readPriorGrid(directory, null)).resolves.toBeUndefined()
   })
 

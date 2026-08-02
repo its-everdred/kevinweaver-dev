@@ -11,7 +11,7 @@ import type { PipelineState } from './state.ts'
 import { loadStage, PipelineAvailabilityError, requiredToken, UpstreamUnavailableError } from './encode-stage-runtime.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { calendarFromGrid, extractionNames, extractionPriors, readPriorGrid } from './encode-stage-prior.ts'
+import { calendarFromGrid, extractionNames, extractionPriors, privateFromGrid, readPriorGrid } from './encode-stage-prior.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import * as stageAdapters from './encode-stage-adapters.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
@@ -80,7 +80,7 @@ async function privateFor(
     )
   } catch (error) {
     if (error instanceof SamlCanaryError) throw calendarRefusal(error)
-    if (fallback) return { p: [...fallback.p], degraded: ['private'] }
+    if (fallback) return privateFromGrid(fallback)
     throw stageFailure('private', error)
   }
 }
