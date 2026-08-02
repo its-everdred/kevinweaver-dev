@@ -1,4 +1,6 @@
 import type { EncodeInput, RawEvent, RepoInput } from './encode-types.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { BAND_LOWER_BOUNDS } from '../../lib/viz/tokens/level.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { currentSecond, loadStage, requiredCommit, requiredToken } from './encode-stage-runtime.ts'
@@ -120,7 +122,7 @@ function assembleInput(
       e: grid.map((day) => day.e),
       a: grid.map((day) => day.a),
       p: privateAggregate.p,
-      bands: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      bands: BAND_LOWER_BOUNDS,
     },
     combinedTotal: grid.reduce((total, day) => total + day.e + day.a, 0),
     generatedAt: currentSecond(),

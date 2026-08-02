@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { BAND_LOWER_BOUNDS } from '../../lib/viz/tokens/level.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { encodeBundle } from './encode-bundle.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { nextState } from './encode-state.ts'
@@ -60,7 +62,7 @@ function fixture(): EncodeInput {
       e: [1],
       a: [0],
       p: [0],
-      bands: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      bands: BAND_LOWER_BOUNDS,
     },
     combinedTotal: 1,
     generatedAt: '2026-07-31T00:00:00Z',
