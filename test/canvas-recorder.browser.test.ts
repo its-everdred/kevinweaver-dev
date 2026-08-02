@@ -1,14 +1,6 @@
 import { expect, test } from 'vitest'
+import { make2d } from './canvas-fixture'
 import { drawCallsUnderFilter, recordContext } from './canvas-recorder'
-
-function make2d(): CanvasRenderingContext2D {
-  const el = document.createElement('canvas')
-  el.width = 8
-  el.height = 8
-  const ctx = el.getContext('2d')
-  if (ctx === null) throw new Error('no 2d context')
-  return ctx
-}
 
 test('the canvas project gets a real 2D context', () => {
   const ctx = make2d()
