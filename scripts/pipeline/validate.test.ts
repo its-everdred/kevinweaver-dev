@@ -11,9 +11,6 @@ describe('pipeline validator', () => {
   it('refuses an empty corpus and a failed SAML canary', () => {
     const bundle = encodeBundle({
       ...input,
-      events: [],
-      repos: [],
-      repoCount: 0,
       samlCanary: { ...input.samlCanary, ok: false },
     })
     expect(codes(bundle)).toEqual(expect.arrayContaining(['E_EMPTY', 'E_SAML']))
@@ -116,8 +113,8 @@ const input: EncodeInput = {
   repos: [
     {
       n: 'aiur-team/aiur',
-      ghId: 1,
-      stars: 10,
+      databaseId: 1,
+      stargazerCount: 10,
       first: '2026-07-31',
       last: '2026-07-31',
       private: false,
