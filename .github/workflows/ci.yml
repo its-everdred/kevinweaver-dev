@@ -50,6 +50,14 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: bundle budgets
+        run: |
+          if [ -f .size-limit.json ]; then npm run size; else echo "no .size-limit.json yet - skipping"; fi
+
+      - name: first-load budget
+        run: |
+          if [ -f scripts/ci/check-first-load.mjs ]; then node scripts/ci/check-first-load.mjs; else echo "no first-load checker yet - skipping"; fi
+
   # Single aggregator so branch protection has exactly one stable required check to
   # name, regardless of how the matrix above evolves. `if: always()` so it still
   # reports when an upstream job is skipped or cancelled.
