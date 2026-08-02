@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { brotliCompressSync, gzipSync } from 'node:zlib'
 
 // prettier-ignore
@@ -54,6 +55,7 @@ export function validateBundle(
     ...slices.map((slice) => gzipSync(slice).byteLength)
   )
   validateJson(files, findings)
+  validateIntegrity(bundle.manifest.integrity, files, findings)
   validateBundleShape(bundle, files, decoded, chunks, slices, findings)
   validateRegression(bundle, prev, decoded?.repos ?? [], findings)
   if (maxDictSliceGzipBytes > MAX_DICT_SLICE_GZIP_BYTES)
@@ -132,6 +134,8 @@ function validateBundleShape(
   )
     add(findings, 'E_CHUNK_COUNT', 'Chunk count or chunk size is invalid.')
   validateColumns(chunks, slices, repos.length, findings)
+  if (bundle.combinedTotal !== sum(grid?.human) + sum(grid?.agent))
+    add(findings, 'E_REGRESSION', 'Combined total does not match the grid.')
 }
 
 function validateColumns(
@@ -158,6 +162,8 @@ function validateColumns(
       add(findings, 'E_COLUMNS', `Chunk ${index} columns differ in length.`)
     if (chunk.d.some((value) => value < 0))
       add(findings, 'E_DELTA', `Chunk ${index} has a negative day delta.`)
+    if (chunk.d.length > 0 && chunk.d[0] !== 0)
+      add(findings, 'E_CHUNK_BASE', `Chunk ${index} base is not its first day.`)
     if (chunk.p.some((value) => value < 0 || value >= dictionaryLength))
       add(
         findings,
@@ -260,6 +266,21 @@ function validateJson(
 ): void {
   if ([...files.values()].some((text) => !recordOrArray(text)))
     add(findings, 'E_JSON', 'A bundle resource is not valid JSON.')
+}
+
+function validateIntegrity(
+  integrity: Readonly<Record<string, string>>,
+  files: ReadonlyMap<string, string>,
+  findings: Finding[]
+): void {
+  Object.entries(integrity).forEach(([path, expected]) => {
+    const text = files.get(path)
+    const actual = text
+      ? `sha256-${createHash('sha256').update(text).digest('hex')}`
+      : undefined
+    if (actual !== expected)
+      add(findings, 'E_ROUNDTRIP', `Integrity mismatch for ${path}.`)
+  })
 }
 function recordOrArray(text: string): boolean {
   try {

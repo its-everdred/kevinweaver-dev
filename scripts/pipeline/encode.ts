@@ -16,10 +16,10 @@ import type {
   RepoRecord,
   SortableEvent,
 } from '../../lib/bundle/schema.ts'
-import type { PipelineState } from './state.ts'
+import type { PipelineState, RepoPipelineState } from './state.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { PipelineStateError, bootstrapState, readState, writeState } from './state.ts'
+import { PipelineStateError, bootstrapState, mergeRepoState, readState, writeState } from './state.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { validateBundle } from './validate.ts'
 
@@ -32,6 +32,8 @@ export interface RawEvent {
 }
 export interface RepoInput {
   n: string
+  ghId: number
+  stars: number
   first: string
   last: string
   private: boolean
@@ -87,6 +89,8 @@ const inputSchema = z.object({
   repos: z.array(
     z.object({
       n: z.string(),
+      ghId: z.number().int().nonnegative(),
+      stars: z.number().int().nonnegative(),
       first: z.string(),
       last: z.string(),
       private: z.boolean(),
@@ -160,7 +164,7 @@ export function encodeBundle(input: EncodeInput): EncodedBundle {
       maxDictSliceGzipBytes: input.dictSliceGuardGzipBytes,
       gzipSize: (text) => gzipSync(`${text}\n`).byteLength,
       sha256: (text) =>
-        `sha256-${createHash('sha256').update(text).digest('hex')}`,
+        `sha256-${createHash('sha256').update(`${text}\n`).digest('hex')}`,
     }
   )
   const manifest = decodeManifest(requiredFile(encoded.files, 'manifest.json'))
@@ -182,6 +186,8 @@ export async function writeBundle(
 ): Promise<void> {
   await Promise.all(
     bundle.files.map(async (file) => {
+      if (!isBundlePath(file.path))
+        throw new BundleWriteError(`Unsafe bundle path: ${file.path}`)
       const path = join(dir, file.path)
       await mkdir(dirname(path), { recursive: true })
       await writeFile(path, file.bytes)
@@ -260,6 +266,12 @@ class UpstreamUnavailableError extends Error {
     this.name = 'UpstreamUnavailableError'
   }
 }
+class BundleWriteError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'BundleWriteError'
+  }
+}
 type Options = {
   input?: string
   out?: string
@@ -277,18 +289,19 @@ function repoRecords(input: EncodeInput): RepoRecord[] {
     .map((repo, id) => {
       if (repo.private)
         throw new Error('Private repositories cannot enter the bundle.')
+      const events = input.events.filter((event) => event.repo === repo.n)
       return {
         id,
-        ghId: id,
+        ghId: repo.ghId,
         name: repo.n,
         short: repo.n.split('/').at(-1) ?? repo.n,
-        actor: 0,
+        actor: dominantActor(events),
         vol: counts.get(repo.n) ?? 0,
-        stars: 0,
+        stars: repo.stars,
         from: repo.first,
         to: repo.last,
         private: false,
-        ext: [],
+        ext: extensions(events),
         status: repo.status,
       }
     })
@@ -313,6 +326,27 @@ function eventCounts(events: readonly RawEvent[]): Map<string, number> {
   for (const event of events)
     counts.set(event.repo, (counts.get(event.repo) ?? 0) + 1)
   return counts
+}
+
+function dominantActor(events: readonly RawEvent[]): 0 | 1 {
+  if (events.length === 0)
+    throw new Error('Repository has no events to establish its dominant actor.')
+  const agentCount = events.filter((event) => event.actor === 1).length
+  return agentCount > events.length - agentCount ? 1 : 0
+}
+
+function extensions(events: readonly RawEvent[]): string[] {
+  return [
+    ...new Set(events.map((event) => extension(event.path)).filter(Boolean)),
+  ]
+    .sort()
+    .slice(0, 8)
+}
+
+function extension(path: string): string {
+  const basename = path.slice(path.lastIndexOf('/') + 1)
+  const dot = basename.lastIndexOf('.')
+  return dot > 0 && dot < basename.length - 1 ? basename.slice(dot + 1) : ''
 }
 
 function dayAt(start: string, offset: number): string {
@@ -340,6 +374,16 @@ function isMissing(error: unknown): boolean {
     error !== null &&
     'code' in error &&
     error.code === 'ENOENT'
+  )
+}
+
+function isBundlePath(path: string): boolean {
+  return (
+    !path.startsWith('/') &&
+    !path.includes('\\') &&
+    path
+      .split('/')
+      .every((segment) => segment !== '' && segment !== '.' && segment !== '..')
   )
 }
 
@@ -415,7 +459,39 @@ function nextState(
     samlCanary: bundle.samlCanary.ok ? 'ok' : 'failed',
     combinedTotal: bundle.combinedTotal,
     events: bundle.manifest.events,
+    repos: Object.fromEntries(
+      input.repos.map((repo) => [
+        repo.n,
+        repositoryState(
+          previous?.repos[repo.n],
+          repo,
+          input,
+          bundle.manifest.generatedAt
+        ),
+      ])
+    ),
   }
+}
+
+function repositoryState(
+  previous: RepoPipelineState | undefined,
+  repo: RepoInput,
+  input: EncodeInput,
+  generatedAt: string
+): RepoPipelineState {
+  const eventCount = input.events.filter(
+    (event) => event.repo === repo.n
+  ).length
+  const next: RepoPipelineState = {
+    heads: previous?.heads ?? {},
+    events: eventCount,
+    lastEventDay: repo.last,
+    status: repo.status,
+    lastOk: repo.status === 'ok' ? generatedAt : (previous?.lastOk ?? null),
+    consecutiveFailures:
+      repo.status === 'ok' ? 0 : (previous?.consecutiveFailures ?? 0),
+  }
+  return mergeRepoState(previous, next)
 }
 
 function report(

@@ -56,6 +56,31 @@ describe('pipeline validator', () => {
         )
       )
     ).toContain('E_PATH_RANGE')
+    expect(
+      codes(
+        withFile(
+          validBundle(),
+          'events/ee-00.json',
+          '{"b":0,"d":[1],"r":[0],"p":[0],"a":[0]}'
+        )
+      )
+    ).toContain('E_CHUNK_BASE')
+  })
+
+  it('rejects parseable resource bytes that fail their integrity hash', () => {
+    const bundle = validBundle()
+    const repos = bundle.files.find((file) => file.path === 'repos.json')
+    if (!repos) throw new Error('Missing repos resource')
+
+    expect(
+      codes(
+        withFile(
+          bundle,
+          'repos.json',
+          `${new TextDecoder().decode(repos.bytes).trimEnd()}\n`
+        )
+      )
+    ).toContain('E_ROUNDTRIP')
   })
 
   it('detects a regression against saved pipeline state', () => {
@@ -91,6 +116,8 @@ const input: EncodeInput = {
   repos: [
     {
       n: 'aiur-team/aiur',
+      ghId: 1,
+      stars: 10,
       first: '2026-07-31',
       last: '2026-07-31',
       private: false,
