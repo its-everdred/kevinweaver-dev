@@ -141,6 +141,17 @@ describe('pipeline encoder', () => {
 
     await expect(main(['--input', input, '--dry-run'])).resolves.toBe(3)
   })
+
+  it('rejects a non-positive discovery database ID', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'kw014-encode-'))
+    const input = join(directory, 'input.json')
+    await writeFile(
+      input,
+      JSON.stringify(MINI_INPUT).replace('"databaseId":1,', '"databaseId":0,')
+    )
+
+    await expect(main(['--input', input, '--dry-run'])).resolves.toBe(3)
+  })
 })
 
 function text(bundle: ReturnType<typeof encodeBundle>, path: string): string {
