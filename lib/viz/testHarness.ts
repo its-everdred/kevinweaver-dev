@@ -1,5 +1,8 @@
 import type { VizDriver, VizFrameInfo } from './driver'
 
+/**
+ * @description Browser-only controls exposed for deterministic visualization integration tests.
+ */
 export interface VizTestHarness {
   pause(): Promise<void>
   play(): void
@@ -17,6 +20,11 @@ declare global {
   }
 }
 
+/**
+ * @description Installs test-only driver controls when the test query flag is present.
+ * @param driver - The driver whose deterministic controls become available to the browser.
+ * @returns A cleanup that removes this harness only when it still owns the global hook.
+ */
 export function installTestHarness(driver: VizDriver): () => void {
   if (typeof window === 'undefined') return () => undefined
   const params = new URLSearchParams(window.location.search)

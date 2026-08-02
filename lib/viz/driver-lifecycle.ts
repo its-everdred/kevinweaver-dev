@@ -1,9 +1,13 @@
 import type { SimState } from './sim/types'
 
-/** The animation action a driver must perform after a media preference change. */
+/**
+ * @description The animation action a driver performs after a media preference change.
+ */
 export type VizMediaAction = 'pause-and-settle' | 'resume' | 'publish'
 
-/** Tracks driver lifecycle state while leaving frame ownership to the driver. */
+/**
+ * @description Tracks lifecycle state while leaving animation-frame ownership to the driver.
+ */
 export interface VizDriverLifecycle {
   readonly running: boolean
   readonly destroyed: boolean
@@ -14,7 +18,12 @@ export interface VizDriverLifecycle {
   mediaChanged(matches: boolean): VizMediaAction
 }
 
-/** Creates lifecycle state for one visualization driver. */
+/**
+ * @description Creates lifecycle state for one visualization driver.
+ * @param state - Mutable simulation state whose playing flag follows the lifecycle.
+ * @param reducedMotion - Initial media preference for animation suppression.
+ * @returns Lifecycle state that distinguishes public stops from automatic media halts.
+ */
 export function createVizDriverLifecycle(
   state: SimState,
   reducedMotion: boolean

@@ -9,14 +9,18 @@ import type { RibbonLayer } from './render/ribbon'
 import type { SimInput } from './sim/types'
 import type { VizPointer } from './surfaces'
 
-/** Resolves pointer highlights while the driver owns ribbon window selection. */
+/**
+ * @description Resolves pointer highlights while the driver owns ribbon window selection.
+ */
 export interface VizDriverRibbon {
   setPointer(point: VizPointer | null, view: RenderView): VizRibbonHighlight
   refreshPointer(view: RenderView): void
   pointerHighlight(): VizRibbonHighlight | undefined
 }
 
-/** Inputs the ribbon coordinator needs from its owning driver. */
+/**
+ * @description Inputs the ribbon coordinator needs from its owning driver.
+ */
 export interface VizDriverRibbonOptions {
   readonly input: SimInput
   readonly layer: RibbonLayer
@@ -27,7 +31,11 @@ export interface VizDriverRibbonOptions {
   ) => VizRibbonHighlight
 }
 
-/** Creates pointer coordination without introducing a second paint owner. */
+/**
+ * @description Creates pointer coordination without introducing a second paint owner.
+ * @param options - Driver-owned ribbon state and highlight callbacks.
+ * @returns A coordinator for ribbon pointer state and window synchronization.
+ */
 export function createVizDriverRibbon(
   options: VizDriverRibbonOptions
 ): VizDriverRibbon {

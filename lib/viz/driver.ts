@@ -249,7 +249,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   // `packOnce` is guarded by a module-level WeakSet keyed on the state object, so
   // it can never run twice for this state. But `resetSimState` zeroes the very
   // arrays it fills (px, py, pr, repoR, repoX, repoY, repoAngle), and `step`
-  // never rewrites them — repoX/repoY are recomputed from repoAngle, which is
+  // never rewrites them. repoX/repoY are recomputed from repoAngle, which is
   // also zeroed. Without this snapshot, every seek-driven frame renders repos at
   // radius 0 stacked at one ring point: the reduced-motion static frame and every
   // screenshot baseline would capture collapsed geometry while CI stayed green.
@@ -316,7 +316,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     const action = lifecycle.mediaChanged(event.matches)
     if (action === 'pause-and-settle') {
       cancelFrame()
-      void seekTick(0)
+      void seekAtTick(0, null, false)
     } else if (action === 'resume') {
       accumulator = 0
       cancelInvalidatedPaint()
@@ -415,6 +415,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     raf = undefined
     if (!lifecycle.running) return
     try {
+      const frameStarted = performance.now()
       const dt = Math.min(
         FRAME_BACKLOG_CAP,
         Math.max(0, (now - previous) / 1000)
@@ -429,7 +430,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       }
       if (count === MAX_STEPS) accumulator = 0
       paint(false)
-      sampleGovernor(now)
+      sampleGovernor(performance.now() - frameStarted)
       armFrame()
     } catch {
       stop()
@@ -471,18 +472,25 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     state.beamEnt.fill(-1)
   }
   async function seekTick(tick: number): Promise<VizFrameInfo> {
-    return seekAtTick(tick, null)
+    stop()
+    cancelInvalidatedPaint()
+    return seekAtTick(tick, null, false)
   }
   function seekAtTick(
     tick: number,
-    window: number | null
+    window: number | null,
+    preserveConsumerState: boolean
   ): Promise<VizFrameInfo> {
+    const speedIndex = preserveConsumerState
+      ? state.speedIndex
+      : DEFAULT_SPEED_INDEX
+    const playing = preserveConsumerState && lifecycle.running
     assertTick(tick)
     resetSimState(state, seed)
     restorePackedLayout()
     latchedWindow = window
-    state.speedIndex = DEFAULT_SPEED_INDEX
-    state.playing = false
+    state.speedIndex = speedIndex
+    state.playing = playing
     anchorTick(tick)
     state.rngState = rngAnchor(seed, tick)
     state.rngDraws = 0
@@ -496,7 +504,6 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   }
   function renderFrame(steps = 1): Promise<VizFrameInfo> {
     const count = Math.max(0, Math.floor(steps))
-    state.playing = true
     for (let index = 0; index < count; index++) advance()
     settled = false
     paint(false)
@@ -513,7 +520,11 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
         ? 0
         : DWELL_TICKS + Math.ceil((mapping.day0 - target) / mapping.daysPerTick)
     const tick = Math.min(mapping.sweepTicks - 1, rewindTick)
-    return seekAtTick(tick, ribbonWinStart(options.input, target, null))
+    return seekAtTick(
+      tick,
+      ribbonWinStart(options.input, target, null),
+      true
+    )
   }
   function seekDate(iso: string): Promise<VizFrameInfo> {
     const start = Date.parse(`${options.input.windowStartISO}T00:00:00Z`)
@@ -522,6 +533,8 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     return seekDay(Number.isFinite(day) ? day : 0)
   }
   function reset(nextSeed = seed): void {
+    stop()
+    cancelInvalidatedPaint()
     seed = nextSeed
     resetSimState(state, seed)
     restorePackedLayout()
@@ -638,9 +651,8 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   function flushRaster(): void {
     surfaceController.flush()
   }
-  function sampleGovernor(now: number): void {
-    const delta =
-      lastFrameMs === 0 ? 0 : Math.max(0, now - (previous - FIXED_DT * 1000))
+  function sampleGovernor(frameMs: number): void {
+    const delta = Math.max(0, frameMs)
     lastFrameMs = delta
     samples = [...samples.slice(-59), delta]
     medianFrameMs =

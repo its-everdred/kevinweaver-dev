@@ -40,8 +40,8 @@ describe('seek preserves the packed layout', () => {
   // Regression: seekTick/reset call resetSimState, which zeroes px/py/pr/repoR/
   // repoX/repoY/repoAngle. packOnce is WeakSet-guarded so it can never rebuild
   // them, and step never rewrites them. Every seek-driven frame therefore drew
-  // repos at radius 0 stacked at one point — including the reduced-motion static
-  // frame and every screenshot baseline — while the whole CI gate stayed green.
+  // repos at radius 0 stacked at one point, including the reduced-motion static
+  // frame and every screenshot baseline, while the whole CI gate stayed green.
   it('keeps non-zero repo radii after seekTick', async () => {
     const d = driver()
     const packedR = Array.from(d.state.repoR)
@@ -74,21 +74,21 @@ describe('seek preserves the packed layout', () => {
 
 describe('seekTick is not path dependent (I-D3)', () => {
   // Regression: seekDay latched a ribbon window that paint() resolved through,
-  // and seekTick did not clear it — so the same tick rendered differently
+  // and seekTick did not clear it, so the same tick rendered differently
   // depending on whether a date seek happened first.
   it('produces an identical frame for the same tick after an intervening seekDay', async () => {
     const d = driver()
 
     const first = await d.seekTick(30)
-    await d.seekDay(340)
+    const interveningDay = [0, TINY.dayCount - 1].find(
+      (day) => ribbonWinStart(TINY, day, null) !== first.winStart
+    )
+    if (interveningDay === undefined)
+      throw new Error('Fixture needs a distinct ribbon window.')
+    await d.seekDay(interveningDay)
+    expect(d.inspect().winStart).not.toBe(first.winStart)
     const second = await d.seekTick(30)
 
-    // Honest limitation: on this small fixture seekDay(340) happens to latch the
-    // same winStart as tick 30 (the cursor walks backwards, so a high day index
-    // maps near the same window), so this assertion does not currently
-    // distinguish latched from unlatched. It still pins the I-D3 invariant, and
-    // on the real 1826-day payload — which KW-029 drives by date — the windows
-    // do differ. Verified by hand that seekTick clears `latchedWindow`.
     expect(second).toEqual(first)
     expect(second.winStart).toBe(first.winStart)
   })

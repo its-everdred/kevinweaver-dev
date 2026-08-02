@@ -3,6 +3,9 @@ import { digestSimState } from './sim/state'
 import type { VizFrameInfo, VizQualityTier } from './driver'
 import type { SimState } from './sim/types'
 
+/**
+ * @description Inputs used to publish an immutable visualization frame projection.
+ */
 export interface VizDriverInfoOptions {
   readonly state: SimState
   readonly repoNames: readonly string[]
@@ -26,6 +29,33 @@ export function buildVizDriverInfo(
   const { state } = options
   const digest = digestSimState(state)
   return {
+    ...simulationProjection(options, digest),
+    ...renderProjection(options, state),
+  }
+}
+
+function simulationProjection(
+  options: VizDriverInfoOptions,
+  digest: ReturnType<typeof digestSimState>
+): Pick<
+  VizFrameInfo,
+  | 'tick'
+  | 'cursorDay'
+  | 'cursorDayInt'
+  | 'date'
+  | 'speedIndex'
+  | 'playing'
+  | 'reducedMotion'
+  | 'settled'
+  | 'nLive'
+  | 'liveRepos'
+  | 'ghostRepos'
+  | 'liveHash'
+  | 'rngState'
+  | 'rngDraws'
+> {
+  const { state } = options
+  return {
     tick: state.tick,
     cursorDay: state.cursorDay,
     cursorDayInt: state.cursorDayInt,
@@ -40,6 +70,17 @@ export function buildVizDriverInfo(
     liveHash: digest.liveHash,
     rngState: digest.rngState,
     rngDraws: digest.rngDraws,
+  }
+}
+
+function renderProjection(
+  options: VizDriverInfoOptions,
+  state: SimState
+): Pick<
+  VizFrameInfo,
+  'winStart' | 'highlightCell' | 'beams' | 'drawCalls' | 'qualityTier'
+> {
+  return {
     winStart: options.winStart,
     highlightCell: options.highlightCell,
     beams: activeBeams(state),
