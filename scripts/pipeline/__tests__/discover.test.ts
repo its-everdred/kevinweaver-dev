@@ -5,6 +5,7 @@ import { DISCOVERY_QUERY, REPO_COUNT_QUERY, discoverRepos } from '../discover'
 
 const repository = (nameWithOwner: string, isPrivate = false) => ({
   nameWithOwner,
+  databaseId: 123,
   isPrivate,
   isFork: false,
   isArchived: false,
@@ -118,6 +119,11 @@ describe('repository discovery', () => {
       issue: 168,
       pullRequestReview: 120,
     })
+    expect(first.repos[0]).toMatchObject({
+      databaseId: 123,
+      stargazerCount: 2,
+      createdAt: '2026-05-18T00:26:04Z',
+    })
     expect(first.repos.some(({ isPrivate }) => isPrivate)).toBe(false)
     expect(first.repoCountDefinition).toEqual({
       definition: 'ownerPublicNonFork',
@@ -199,6 +205,38 @@ describe('repository discovery', () => {
       })
     ).rejects.toThrow('malformed or incomplete')
   })
+
+  it.each([
+    ['missing', { ...repository('owner/repo'), databaseId: undefined }],
+    ['negative', { ...repository('owner/repo'), databaseId: -1 }],
+    ['fractional', { ...repository('owner/repo'), databaseId: 1.5 }],
+  ])(
+    'rejects a repository with a %s database ID',
+    async (_, invalidRepository) => {
+      const client: GraphQlClient = async <T>() =>
+        ({
+          ...discoveryResponse,
+          user: {
+            contributionsCollection: {
+              ...discoveryResponse.user.contributionsCollection,
+              commitContributionsByRepository: [
+                {
+                  repository: invalidRepository,
+                  contributions: { totalCount: 1 },
+                },
+              ],
+            },
+          },
+        }) as T
+      await expect(
+        discoverRepos(client, {
+          logins: ['its-everdred'],
+          fromYear: 2026,
+          toYear: 2026,
+        })
+      ).rejects.toThrow('malformed or incomplete')
+    }
+  )
 
   it('exports the injected query documents without importing a transport', () => {
     expect(DISCOVERY_QUERY).toContain('contributionsCollection')
