@@ -152,6 +152,10 @@ export interface TickMapping {
   readonly rewindTicks: number
   readonly sweepTicks: number
 }
+interface SeekPolicy {
+  readonly preserveSpeed: boolean
+  readonly preservePlayback: boolean
+}
 export function tickMapping(input: SimInput): TickMapping {
   const daysPerTick = SPEEDS[DEFAULT_SPEED_INDEX] * FIXED_DT
   const day0 = input.dayCount - 1
@@ -314,7 +318,10 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     const action = lifecycle.mediaChanged(event.matches)
     if (action === 'pause-and-settle') {
       cancelFrame()
-      void seekAtTick(0, null, false)
+      void seekAtTick(0, null, {
+        preserveSpeed: true,
+        preservePlayback: false,
+      })
     } else if (action === 'resume') {
       accumulator = 0
       cancelInvalidatedPaint()
@@ -502,17 +509,20 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   async function seekTick(tick: number): Promise<VizFrameInfo> {
     stop()
     cancelInvalidatedPaint()
-    return seekAtTick(tick, null, false)
+    return seekAtTick(tick, null, {
+      preserveSpeed: false,
+      preservePlayback: false,
+    })
   }
   function seekAtTick(
     tick: number,
     window: number | null,
-    preserveConsumerState: boolean
+    policy: SeekPolicy
   ): Promise<VizFrameInfo> {
-    const speedIndex = preserveConsumerState
+    const speedIndex = policy.preserveSpeed
       ? state.speedIndex
       : DEFAULT_SPEED_INDEX
-    const playing = preserveConsumerState && lifecycle.running
+    const playing = policy.preservePlayback && lifecycle.running
     assertTick(tick)
     resetSimState(state, seed)
     restorePackedLayout()
@@ -549,7 +559,10 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
         ? 0
         : DWELL_TICKS + Math.ceil((mapping.day0 - target) / mapping.daysPerTick)
     const tick = Math.min(mapping.sweepTicks - 1, rewindTick)
-    return seekAtTick(tick, ribbonWinStart(options.input, target, null), true)
+    return seekAtTick(tick, ribbonWinStart(options.input, target, null), {
+      preserveSpeed: true,
+      preservePlayback: true,
+    })
   }
   function seekDate(iso: string): Promise<VizFrameInfo> {
     const start = Date.parse(`${options.input.windowStartISO}T00:00:00Z`)

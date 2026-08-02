@@ -55,13 +55,20 @@ test('publishes reduced-motion removal without starting animation', () => {
   stubWindow(media)
   vi.stubGlobal('requestAnimationFrame', () => ++requests)
   vi.stubGlobal('cancelAnimationFrame', () => undefined)
-  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+  const driver = createVizDriver({
+    input: INPUT,
+    repoNames: ['alpha'],
+    seed: 1,
+  })
   const unbind = bindVizTransport(driver, { dayCount: INPUT.dayCount })
   const cursor = driver.inspect().cursorDayInt
 
   media.setMatches(false)
 
-  expect(driver.inspect()).toMatchObject({ reducedMotion: false, cursorDayInt: cursor })
+  expect(driver.inspect()).toMatchObject({
+    reducedMotion: false,
+    cursorDayInt: cursor,
+  })
   expect(getVizTransport().getSnapshot().reducedMotion).toBe(false)
   expect(requests).toBe(0)
 
@@ -76,7 +83,11 @@ test('suppresses automatic start but permits explicit reduced-motion play', () =
   stubWindow(media)
   vi.stubGlobal('requestAnimationFrame', () => ++requests)
   vi.stubGlobal('cancelAnimationFrame', () => undefined)
-  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+  const driver = createVizDriver({
+    input: INPUT,
+    repoNames: ['alpha'],
+    seed: 1,
+  })
 
   driver.start()
   expect(requests).toBe(0)
@@ -98,16 +109,26 @@ test('replaces a pending invalidation with one resumed animation frame', () => {
     return id
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => active.delete(id))
-  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+  const driver = createVizDriver({
+    input: INPUT,
+    repoNames: ['alpha'],
+    seed: 1,
+  })
 
   driver.invalidate('ribbon')
   driver.play()
+  driver.setSpeedIndex(4)
   const unbind = bindVizTransport(driver, { dayCount: INPUT.dayCount })
   media.setMatches(true)
+  expect(driver.inspect()).toMatchObject({ playing: false, speedIndex: 4 })
   media.setMatches(false)
 
   expect(active).toEqual(new Set([nextId]))
-  expect(driver.inspect()).toMatchObject({ playing: true, reducedMotion: false })
+  expect(driver.inspect()).toMatchObject({
+    playing: true,
+    reducedMotion: false,
+    speedIndex: 4,
+  })
   expect(getVizTransport().getSnapshot()).toMatchObject({
     playing: true,
     reducedMotion: false,
@@ -129,7 +150,11 @@ test('does not resume twice after explicit reduced-motion play', () => {
     return id
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => active.delete(id))
-  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+  const driver = createVizDriver({
+    input: INPUT,
+    repoNames: ['alpha'],
+    seed: 1,
+  })
 
   driver.play()
   media.setMatches(true)
@@ -153,7 +178,11 @@ test('does not resume after an explicit reduced-motion pause', () => {
     return id
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => active.delete(id))
-  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+  const driver = createVizDriver({
+    input: INPUT,
+    repoNames: ['alpha'],
+    seed: 1,
+  })
 
   driver.play()
   media.setMatches(true)
@@ -161,7 +190,10 @@ test('does not resume after an explicit reduced-motion pause', () => {
   media.setMatches(false)
 
   expect(active).toEqual(new Set())
-  expect(driver.inspect()).toMatchObject({ playing: false, reducedMotion: false })
+  expect(driver.inspect()).toMatchObject({
+    playing: false,
+    reducedMotion: false,
+  })
   driver.destroy()
   vi.unstubAllGlobals()
 })
@@ -174,7 +206,11 @@ test.each(['pause', 'destroy'] as const)(
     stubWindow(media)
     vi.stubGlobal('requestAnimationFrame', () => ++requests)
     vi.stubGlobal('cancelAnimationFrame', () => undefined)
-    const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+    const driver = createVizDriver({
+      input: INPUT,
+      repoNames: ['alpha'],
+      seed: 1,
+    })
     driver.subscribe((info) => {
       if (!info.reducedMotion) driver[action]()
     })
