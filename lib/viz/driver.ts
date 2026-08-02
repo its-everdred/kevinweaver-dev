@@ -321,7 +321,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       accumulator = 0
       cancelInvalidatedPaint()
       publishFrameInfo()
-      if (lifecycle.running) scheduleFrame()
+      if (lifecycle.running) resetFrameClock()
     } else paint(settled)
   }
   media?.addEventListener('change', onMediaChange)
@@ -380,11 +380,14 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   function schedule(): void {
     if (!lifecycle.start()) return
     cancelInvalidatedPaint()
-    scheduleFrame()
+    resetFrameClock()
   }
-  function scheduleFrame(): void {
-    if (raf !== undefined || lifecycle.destroyed || !lifecycle.running) return
+  function resetFrameClock(): void {
     previous = performance.now()
+    armFrame()
+  }
+  function armFrame(): void {
+    if (raf !== undefined || lifecycle.destroyed || !lifecycle.running) return
     raf = requestAnimationFrame(frame)
   }
   function stop(): void {
@@ -424,7 +427,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       if (count === MAX_STEPS) accumulator = 0
       paint(false)
       sampleGovernor(now)
-      scheduleFrame()
+      armFrame()
     } catch {
       stop()
       listeners.forEach((listener) => listener(lastInfo))
