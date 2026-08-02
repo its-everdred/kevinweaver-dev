@@ -24,25 +24,46 @@ export function assembleInput(
   const known = new Map(
     discovery.repos.map((repo) => [repo.nameWithOwner, repo])
   )
-  const grid = calendar.combined
   return {
     events: extraction.events,
     repos: extraction.repos.flatMap((repo) =>
       publicRepo(repo.n, known.get(repo.n), repo, previous?.repos[repo.n])
     ),
-    grid: {
-      start: calendar.windowStart,
-      e: grid.map((day) => day.e),
-      a: grid.map((day) => day.a),
-      p: privateAggregate.p,
-      bands: BAND_LOWER_BOUNDS,
-    },
-    combinedTotal: grid.reduce((total, day) => total + day.e + day.a, 0),
+    grid: inputGrid(calendar, privateAggregate),
+    combinedTotal: combinedTotal(calendar),
+    ...inputMeta(calendar, discovery),
+    degraded: degraded(
+      calendar.degraded,
+      privateAggregate.degraded,
+      extraction.repos
+    ),
+  }
+}
+
+function inputGrid(
+  calendar: CalendarBundle,
+  privateAggregate: Private
+): EncodeInput['grid'] {
+  return {
+    start: calendar.windowStart,
+    e: calendar.combined.map((day) => day.e),
+    a: calendar.combined.map((day) => day.a),
+    p: privateAggregate.p,
+    bands: BAND_LOWER_BOUNDS,
+  }
+}
+
+function combinedTotal(calendar: CalendarBundle): number {
+  return calendar.combined.reduce((total, day) => total + day.e + day.a, 0)
+}
+
+function inputMeta(calendar: CalendarBundle, discovery: DiscoveryResult) {
+  return {
     generatedAt: currentSecond(),
     commit: requiredCommit(),
     repoCount: discovery.repoCountDefinition.count,
     repoCountDefinition: discovery.repoCountDefinition.definition,
-    refs: 'all',
+    refs: 'all' as const,
     chunkSize: 1500,
     dictSliceGuardGzipBytes: 12_288,
     samlCanary: {
@@ -50,11 +71,6 @@ export function assembleInput(
       org: 'ethereum-optimism',
       checkedAt: calendar.canary.checkedAt,
     },
-    degraded: degraded(
-      calendar.degraded,
-      privateAggregate.degraded,
-      extraction.repos
-    ),
   }
 }
 
