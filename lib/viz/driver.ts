@@ -279,7 +279,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   const surfaceController = createVizSurfaceController(layers.budget)
   let quality = qualityForTier(0)
   let qualityMode: 'high' | 'low' | 'auto' = 'auto'
-  let raf = 0
+  let raf: number | undefined
   let invalidationRaf = 0
   let previous = 0
   let accumulator = 0
@@ -383,12 +383,13 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     scheduleFrame()
   }
   function scheduleFrame(): void {
+    if (raf !== undefined || lifecycle.destroyed || !lifecycle.running) return
     previous = performance.now()
     raf = requestAnimationFrame(frame)
   }
   function stop(): void {
-    if (raf) cancelAnimationFrame(raf)
-    raf = 0
+    if (raf !== undefined) cancelAnimationFrame(raf)
+    raf = undefined
     lifecycle.stop()
     scheduleInvalidatedPaint()
   }
@@ -405,6 +406,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     return Promise.resolve()
   }
   function frame(now: number): void {
+    raf = undefined
     if (!lifecycle.running) return
     try {
       const dt = Math.min(
@@ -422,7 +424,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       if (count === MAX_STEPS) accumulator = 0
       paint(false)
       sampleGovernor(now)
-      if (lifecycle.running) raf = requestAnimationFrame(frame)
+      scheduleFrame()
     } catch {
       stop()
       listeners.forEach((listener) => listener(lastInfo))
@@ -697,6 +699,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     process.env.NEXT_PUBLIC_TEST_HOOKS === '1'
   if (buildHooks)
     void import('./testHarness').then((module) => {
+      if (lifecycle.destroyed) return
       uninstallHarness = module.installTestHarness(driver)
     })
   return driver
