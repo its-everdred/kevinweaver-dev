@@ -4,6 +4,8 @@ import type { PipelineState } from './state.ts'
 import type { Finding, ValidationResources } from './validate-types.ts'
 import type { RepoInput } from './encode-types.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { BAND_LOWER_BOUNDS } from '../../lib/viz/tokens/level.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { add, sum } from './validate-types.ts'
 // prettier-ignore
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
@@ -66,6 +68,14 @@ function validateGrid(
       monthCount(bundle.manifest.windowStart, bundle.manifest.windowEnd)
   )
     add(findings, 'E_GRID_MONTHS', 'Private aggregate month count is invalid.')
+  if (!bandsMatch(grid?.bands))
+    add(findings, 'E_GRID_BANDS', 'Grid contribution bands are invalid.')
+}
+
+function bandsMatch(bands: readonly number[] | undefined): boolean {
+  return (
+    bands?.every((value, index) => value === BAND_LOWER_BOUNDS[index]) ?? false
+  )
 }
 
 function gridLengthMatches(
