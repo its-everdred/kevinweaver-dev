@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 import { createVizDriver } from '../../lib/viz/driver'
 import { DAY_ALIVE, ENTITY_FILE, ENTITY_REPO } from '../../lib/viz/sim/types'
 import type { SimInput } from '../../lib/viz/sim/types'
+import { createDriverOptions } from './driver-render-fixture'
 
 const INPUT: SimInput = {
   dayCount: 12,
@@ -39,7 +40,7 @@ function createTimedDriver(paintCost: number) {
     return id
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => callbacks.delete(id))
-  const driver = createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 1 })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
   driver.subscribe(() => {
     clock += paintCost
   })

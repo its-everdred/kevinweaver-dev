@@ -8,6 +8,10 @@ import {
 } from '../../lib/viz/driver'
 import { DAY_ALIVE, ENTITY_FILE, ENTITY_REPO } from '../../lib/viz/sim/types'
 import type { SimInput } from '../../lib/viz/sim/types'
+import {
+  createDriverOptions,
+  createDriverRenderData,
+} from './driver-render-fixture'
 import { recordContext } from '../canvas-recorder'
 
 vi.mock('../../lib/viz/render/budget', async (importOriginal) => {
@@ -49,7 +53,7 @@ function createContext(width: number, height: number) {
 }
 
 function createDriver() {
-  return createVizDriver({ input: INPUT, repoNames: ['alpha'], seed: 12345 })
+  return createVizDriver(createDriverOptions(INPUT, ['alpha'], 12345))
 }
 
 test('renders a ribbon using attached device geometry and fonts', async () => {
@@ -90,6 +94,38 @@ test('renders a ribbon using attached device geometry and fonts', async () => {
     highlightCellFor(INPUT, 31, 31)
   )
 
+  driver.destroy()
+})
+
+test('renders supplied file labels', async () => {
+  const graph = createContext(530, 300)
+  const base = createDriverRenderData(INPUT, ['alpha'])
+  const driver = createVizDriver({
+    input: INPUT,
+    render: {
+      grid: base.grid,
+      meta: { ...base.meta, fileLabel: () => 'src/index.ts' },
+    },
+    seed: 12345,
+  })
+
+  driver.attach({
+    id: 'gource',
+    ctx: graph.ctx,
+    geometry: {
+      ...PUBLISHED_RIBBON_GEOMETRY,
+      cssHeight: 300,
+      deviceHeight: 300,
+    },
+  })
+  driver.state.heat[1] = 1
+  await driver.renderFrame(0)
+
+  expect(
+    graph.calls.some(
+      ([name, label]) => name === 'fillText' && label === 'src/index.ts'
+    )
+  ).toBe(true)
   driver.destroy()
 })
 

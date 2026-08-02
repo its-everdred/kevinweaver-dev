@@ -10,6 +10,7 @@ import {
   MOTION_INPUT as INPUT,
   stubMotionWindow,
 } from './driver-motion-fixture'
+import { createDriverOptions } from './driver-render-fixture'
 
 test('publishes reduced-motion removal without starting animation', () => {
   const media = new FakeMediaQuery()
@@ -17,11 +18,7 @@ test('publishes reduced-motion removal without starting animation', () => {
   stubMotionWindow(media)
   vi.stubGlobal('requestAnimationFrame', () => ++requests)
   vi.stubGlobal('cancelAnimationFrame', () => undefined)
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
   const unbind = bindVizTransport(driver, { dayCount: INPUT.dayCount })
   const cursor = driver.inspect().cursorDayInt
 
@@ -45,11 +42,7 @@ test('suppresses automatic start but permits explicit reduced-motion play', () =
   stubMotionWindow(media)
   vi.stubGlobal('requestAnimationFrame', () => ++requests)
   vi.stubGlobal('cancelAnimationFrame', () => undefined)
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
 
   driver.start()
   expect(requests).toBe(0)
@@ -71,11 +64,7 @@ test('does not resume twice after explicit reduced-motion play', () => {
     return id
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => active.delete(id))
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
 
   driver.play()
   media.setMatches(true)
@@ -99,11 +88,7 @@ test('does not resume after an explicit reduced-motion pause', () => {
     return id
   })
   vi.stubGlobal('cancelAnimationFrame', (id: number) => active.delete(id))
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 1))
 
   driver.play()
   media.setMatches(true)

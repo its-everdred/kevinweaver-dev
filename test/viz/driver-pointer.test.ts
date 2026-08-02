@@ -3,6 +3,7 @@ import { expect, test, vi } from 'vitest'
 import { createVizDriver, highlightCellFor } from '../../lib/viz/driver'
 import { DAY_ALIVE, ENTITY_FILE, ENTITY_REPO } from '../../lib/viz/sim/types'
 import type { SimInput } from '../../lib/viz/sim/types'
+import { createDriverOptions } from './driver-render-fixture'
 
 const INPUT: SimInput = {
   dayCount: 12,
@@ -24,11 +25,7 @@ test('coalesces pointer invalidation through the driver', () => {
     return requests
   })
   vi.stubGlobal('cancelAnimationFrame', () => undefined)
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 12345,
-  })
+  const driver = createVizDriver(createDriverOptions(INPUT, ['alpha'], 12345))
   let paints = 0
   const unsubscribe = driver.subscribe(() => {
     paints += 1
