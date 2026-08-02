@@ -1,4 +1,5 @@
-import { frontCode, frontDecode } from './frontcode'
+// @ts-expect-error Node type stripping requires explicit TypeScript extensions.
+import { frontCode, frontDecode } from './frontcode.ts'
 import {
   BAND_COUNT,
   BUNDLE_VERSION,
@@ -6,7 +7,8 @@ import {
   DEFAULT_CHUNK_SIZE,
   dictFileName,
   MAX_DICT_SLICE_GZIP_BYTES,
-} from './schema'
+  // @ts-expect-error Node type stripping requires explicit TypeScript extensions.
+} from './schema.ts'
 import type {
   Actor,
   ActorId,
@@ -22,7 +24,7 @@ import type {
   RepoStatus,
   RepoWire,
   SortableEvent,
-} from './schema'
+} from './schema.ts'
 
 export interface BundleInput {
   meta: BundleMeta
@@ -136,6 +138,7 @@ export function decodeBundle(
   const manifest = decodeManifest(requiredFile(files, 'manifest.json'))
   const repos = decodeRepos(requiredFile(files, 'repos.json'))
   const grid = decodeGrid(requiredFile(files, 'grid.json'))
+  const eventDayCount = eventSpanDayCount(manifest)
   assert(
     manifest.repoCount === repos.length,
     'Manifest repo count does not match repos.'
@@ -164,8 +167,8 @@ export function decodeBundle(
         'Chunk references an unknown repository.'
       )
       assert(
-        event.day < manifest.dayCount,
-        'Chunk event falls outside the window.'
+        event.day < eventDayCount,
+        'Chunk event falls outside the event span.'
       )
     })
     previousDay = expanded.at(-1)?.day ?? previousDay
@@ -175,6 +178,7 @@ export function decodeBundle(
     events.length === manifest.events,
     'Manifest event count does not match chunks.'
   )
+  if (events.length > 0) validateEventExtrema(events, manifest)
   return { manifest, repos, grid, paths, events }
 }
 
@@ -185,6 +189,8 @@ export function decodeManifest(text: string): Manifest {
     v: readVersion(value, 'v'),
     generatedAt: readString(value, 'generatedAt'),
     commit: readString(value, 'commit'),
+    days: readEventSpan(value, 'days'),
+    refs: readRefs(value, 'refs'),
     windowStart: readIsoDay(value, 'windowStart'),
     windowEnd: readIsoDay(value, 'windowEnd'),
     dayCount: readPositiveInteger(value, 'dayCount'),
@@ -330,11 +336,19 @@ function validateInput(input: BundleInput): void {
     'Grid day count must equal meta.'
   )
   for (const event of input.events) validateEvent(event, input)
+  if (input.events.length > 0) {
+    validateEventExtrema(input.events, input.meta)
+  }
 }
 
 function validateMeta(meta: BundleMeta): void {
   assert(meta.v === BUNDLE_VERSION, 'Unsupported bundle version.')
   isoSecondMs(meta.generatedAt)
+  assert(meta.days.length === 2, 'Event span must contain two days.')
+  const newest = isoDayMs(meta.days[0])
+  const oldest = isoDayMs(meta.days[1])
+  assert(newest >= oldest, 'Invalid event span.')
+  assert(meta.refs === 'all' || meta.refs === 'head', 'Invalid refs mode.')
   assert(
     isoDayMs(meta.windowStart) <= isoDayMs(meta.windowEnd),
     'Invalid bundle window.'
@@ -420,8 +434,8 @@ function validateEvent(event: SortableEvent, input: BundleInput): void {
   assert(
     Number.isInteger(event.day) &&
       event.day >= 0 &&
-      event.day < input.meta.dayCount,
-    'Event falls outside the bundle window.'
+      event.day < eventSpanDayCount(input.meta),
+    'Event falls outside the event span.'
   )
   assert(
     event.repo === Math.floor(event.repo) &&
@@ -436,6 +450,26 @@ function validateEvent(event: SortableEvent, input: BundleInput): void {
   assert(
     event.path.length > 0 && !event.path.includes('\n'),
     'Event path is invalid.'
+  )
+}
+
+function eventSpanDayCount(meta: BundleMeta): number {
+  return dayIndex(meta.days[1], meta.days[0]) + 1
+}
+
+function validateEventExtrema(
+  events: readonly Pick<BundleEvent, 'day'>[],
+  meta: BundleMeta
+): void {
+  const expectedOldest = eventSpanDayCount(meta) - 1
+  const hasNewest = events.some((event) => event.day === 0)
+  const oldest = events.reduce(
+    (maximum, event) => Math.max(maximum, event.day),
+    -1
+  )
+  assert(
+    hasNewest && oldest === expectedOldest,
+    'Event extrema do not match the event span.'
   )
 }
 
@@ -646,6 +680,30 @@ function recordFromValue(value: unknown): Record<string, unknown> {
 function readString(record: Record<string, unknown>, key: string): string {
   const value = record[key]
   assert(typeof value === 'string', `Expected ${key} to be a string.`)
+  return value
+}
+
+function readEventSpan(
+  record: Record<string, unknown>,
+  key: string
+): [IsoDay, IsoDay] {
+  const values = readArray(record, key)
+  assert(values.length === 2, `Expected ${key} to contain two days.`)
+  return [readIsoDayValue(values[0], key), readIsoDayValue(values[1], key)]
+}
+
+function readIsoDayValue(value: unknown, key: string): IsoDay {
+  assert(typeof value === 'string', `Expected ${key} entries to be strings.`)
+  isoDayMs(value)
+  return value
+}
+
+function readRefs(
+  record: Record<string, unknown>,
+  key: string
+): 'all' | 'head' {
+  const value = readString(record, key)
+  assert(value === 'all' || value === 'head', `Invalid ${key} mode.`)
   return value
 }
 
