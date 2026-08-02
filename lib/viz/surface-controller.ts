@@ -35,85 +35,70 @@ export interface VizSurfaceController {
 export function createVizSurfaceController(
   budget: FrameBudget
 ): VizSurfaceController {
-  const contexts = new Map<VizCanvasId, Ctx2D>()
-  const views = createVizSurfaceViews()
-  const dirty = new Set<VizCanvasId>()
+  return new SurfaceController(budget)
+}
 
-  function setCanvas(
-    id: VizCanvasId,
-    ctx: CanvasRenderingContext2D | null
-  ): void {
-    if (ctx) contexts.set(id, instrumentContext(ctx, budget))
-    else contexts.delete(id)
+class SurfaceController implements VizSurfaceController {
+  readonly #contexts = new Map<VizCanvasId, Ctx2D>()
+  readonly #views = createVizSurfaceViews()
+  readonly #dirty = new Set<VizCanvasId>()
+
+  constructor(private readonly budget: FrameBudget) {}
+
+  setCanvas(id: VizCanvasId, ctx: CanvasRenderingContext2D | null): void {
+    if (ctx) this.#contexts.set(id, instrumentContext(ctx, this.budget))
+    else this.#contexts.delete(id)
   }
-  function setViewport(id: VizCanvasId, viewport: VizViewport): void {
-    views.setViewport(id, viewport)
+  setViewport(id: VizCanvasId, viewport: VizViewport): void {
+    this.#views.setViewport(id, viewport)
   }
-  function setGeometry(id: VizCanvasId, geometry: VizSurfaceGeometry): void {
-    views.setGeometry(id, geometry)
+  setGeometry(id: VizCanvasId, geometry: VizSurfaceGeometry): void {
+    this.#views.setGeometry(id, geometry)
   }
-  function buildView(
+  buildView(
     id: VizCanvasId,
     quality: Quality,
     meta: RenderMeta,
     focusedDay: number
   ): RenderView {
-    return views.build(id, quality, meta, budget, focusedDay)
+    return this.#views.build(id, quality, meta, this.budget, focusedDay)
   }
-  function context(id: VizCanvasId): Ctx2D | undefined {
-    return contexts.get(id)
+  context(id: VizCanvasId): Ctx2D | undefined {
+    return this.#contexts.get(id)
   }
-  function detach(id: VizCanvasId): void {
-    contexts.delete(id)
-    views.delete(id)
-    dirty.delete(id)
+  detach(id: VizCanvasId): void {
+    this.#contexts.delete(id)
+    this.#views.delete(id)
+    this.#dirty.delete(id)
   }
-  function markDirty(id: VizCanvasId): void {
-    dirty.add(id)
+  markDirty(id: VizCanvasId): void {
+    this.#dirty.add(id)
   }
-  function hasDirty(): boolean {
-    return dirty.size > 0
+  hasDirty(): boolean {
+    return this.#dirty.size > 0
   }
-  function drainDirty(): ReadonlySet<VizCanvasId> {
-    const targets = new Set(dirty)
-    dirty.clear()
+  drainDirty(): ReadonlySet<VizCanvasId> {
+    const targets = new Set(this.#dirty)
+    this.#dirty.clear()
     return targets
   }
-  function clearDirty(): void {
-    dirty.clear()
+  clearDirty(): void {
+    this.#dirty.clear()
   }
-  function flush(): void {
-    for (const [id, ctx] of contexts) flushContext(contexts, id, ctx)
+  flush(): void {
+    for (const [id, ctx] of this.#contexts) this.flushContext(id, ctx)
   }
-  function destroy(): void {
-    contexts.clear()
-    dirty.clear()
-    for (const id of ['graph', 'ribbon', 'overview'] as const) views.delete(id)
+  destroy(): void {
+    this.#contexts.clear()
+    this.#dirty.clear()
+    for (const id of ['graph', 'ribbon', 'overview'] as const)
+      this.#views.delete(id)
   }
-  return {
-    setCanvas,
-    setViewport,
-    setGeometry,
-    buildView,
-    context,
-    detach,
-    markDirty,
-    hasDirty,
-    drainDirty,
-    clearDirty,
-    flush,
-    destroy,
-  }
-}
-
-function flushContext(
-  contexts: Map<VizCanvasId, Ctx2D>,
-  id: VizCanvasId,
-  ctx: Ctx2D
-): void {
-  try {
-    ctx.getImageData(0, 0, 1, 1)
-  } catch {
-    contexts.delete(id)
+  private flushContext(id: VizCanvasId, ctx: Ctx2D): void {
+    try {
+      ctx.getImageData(0, 0, 1, 1)
+    } catch {
+      this.#contexts.delete(id)
+    }
   }
 }

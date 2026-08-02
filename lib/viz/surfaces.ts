@@ -54,42 +54,44 @@ export interface VizSurfaceAdapter {
 export function createVizSurfaceAdapter(
   driver: VizSurfaceDriver
 ): VizSurfaceAdapter {
-  const attached = new Set<VizSurfaceId>()
-  function invalidate(id: VizSurfaceId): void {
-    driver.invalidateCanvas(canvasIdForSurface(id))
-  }
-  function detach(id: VizSurfaceId): void {
-    driver.setSurfacePointer(id, null)
-    driver.detachCanvas(canvasIdForSurface(id))
-    attached.delete(id)
-  }
+  return new SurfaceAdapter(driver)
+}
 
-  return {
-    attach(attachment) {
-      const id = canvasIdForSurface(attachment.id)
-      driver.setCanvas(id, attachment.ctx)
-      driver.setSurfaceGeometry(id, attachment.geometry)
-      attached.add(attachment.id)
-      invalidate(attachment.id)
-    },
-    detach,
-    resize(id, geometry) {
-      driver.setSurfaceGeometry(canvasIdForSurface(id), geometry)
-      invalidate(id)
-    },
-    invalidate,
-    setPointer(id, point) {
-      driver.setSurfacePointer(id, point)
-    },
-    scrubTo(fraction) {
-      const day = Math.round(
-        clampFraction(fraction) * Math.max(0, driver.state.dayCount - 1)
-      )
-      void driver.seekDay(day)
-    },
-    destroy() {
-      for (const id of [...attached]) detach(id)
-    },
+class SurfaceAdapter implements VizSurfaceAdapter {
+  readonly #attached = new Set<VizSurfaceId>()
+
+  constructor(private readonly driver: VizSurfaceDriver) {}
+
+  attach(attachment: VizSurfaceAttachment): void {
+    const id = canvasIdForSurface(attachment.id)
+    this.driver.setCanvas(id, attachment.ctx)
+    this.driver.setSurfaceGeometry(id, attachment.geometry)
+    this.#attached.add(attachment.id)
+    this.invalidate(attachment.id)
+  }
+  detach(id: VizSurfaceId): void {
+    this.driver.setSurfacePointer(id, null)
+    this.driver.detachCanvas(canvasIdForSurface(id))
+    this.#attached.delete(id)
+  }
+  resize(id: VizSurfaceId, geometry: VizSurfaceGeometry): void {
+    this.driver.setSurfaceGeometry(canvasIdForSurface(id), geometry)
+    this.invalidate(id)
+  }
+  invalidate(id: VizSurfaceId): void {
+    this.driver.invalidateCanvas(canvasIdForSurface(id))
+  }
+  setPointer(id: VizSurfaceId, point: VizPointer | null): void {
+    this.driver.setSurfacePointer(id, point)
+  }
+  scrubTo(fraction: number): void {
+    const day = Math.round(
+      clampFraction(fraction) * Math.max(0, this.driver.state.dayCount - 1)
+    )
+    void this.driver.seekDay(day)
+  }
+  destroy(): void {
+    for (const id of [...this.#attached]) this.detach(id)
   }
 }
 

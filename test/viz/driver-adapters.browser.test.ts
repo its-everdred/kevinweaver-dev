@@ -61,7 +61,7 @@ test('renders a ribbon using attached device geometry and fonts', async () => {
     ctx: recorded.ctx,
     geometry: PUBLISHED_RIBBON_GEOMETRY,
   })
-  driver.setViewport('graph', { cssWidth: 80, cssHeight: 80, dpr: 1 })
+  driver.setViewport('ribbon', { cssWidth: 530, cssHeight: 140, dpr: 1 })
   await driver.renderFrame(0)
   driver.setPointer('ribbon', { x: 42, y: 22 })
 
@@ -178,8 +178,12 @@ test('coalesces invalidation into the dirty surface paint', () => {
 
   driver.play()
   driver.invalidate('ribbon')
-  runPaint?.(16)
   driver.pause()
+  ribbon.calls.length = 0
+  overview.calls.length = 0
+  runPaint?.(0)
+  expect(ribbon.calls.some(([name]) => name === 'clearRect')).toBe(true)
+  expect(overview.calls).toEqual([])
   ribbon.calls.length = 0
   overview.calls.length = 0
   driver.invalidate('overview')
