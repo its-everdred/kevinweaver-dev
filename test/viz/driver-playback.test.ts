@@ -59,6 +59,22 @@ test('advances farther at faster playback speeds', async () => {
   fast.destroy()
 })
 
+test('changes speed without jumping the cursor', async () => {
+  const driver = createVizDriver({
+    input: INPUT,
+    repoNames: ['alpha'],
+    seed: 1,
+  })
+  const before = await driver.renderFrame(DWELL_TICKS + 60)
+
+  driver.setSpeedIndex(4)
+  expect(driver.inspect().cursorDay).toBe(before.cursorDay)
+  const after = await driver.renderFrame(120)
+
+  expect(after.cursorDay).toBeCloseTo(before.cursorDay - 32)
+  driver.destroy()
+})
+
 test.each(['seek', 'reset'] as const)(
   'stops active playback after a direct %s',
   async (action) => {

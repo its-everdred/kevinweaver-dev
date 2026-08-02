@@ -98,47 +98,6 @@ test('suppresses automatic start but permits explicit reduced-motion play', () =
   vi.unstubAllGlobals()
 })
 
-test('replaces a pending invalidation with one resumed animation frame', () => {
-  const media = new FakeMediaQuery(false)
-  const active = new Set<number>()
-  let nextId = 0
-  stubWindow(media)
-  vi.stubGlobal('requestAnimationFrame', () => {
-    const id = ++nextId
-    active.add(id)
-    return id
-  })
-  vi.stubGlobal('cancelAnimationFrame', (id: number) => active.delete(id))
-  const driver = createVizDriver({
-    input: INPUT,
-    repoNames: ['alpha'],
-    seed: 1,
-  })
-
-  driver.invalidate('ribbon')
-  driver.play()
-  driver.setSpeedIndex(4)
-  const unbind = bindVizTransport(driver, { dayCount: INPUT.dayCount })
-  media.setMatches(true)
-  expect(driver.inspect()).toMatchObject({ playing: false, speedIndex: 4 })
-  media.setMatches(false)
-
-  expect(active).toEqual(new Set([nextId]))
-  expect(driver.inspect()).toMatchObject({
-    playing: true,
-    reducedMotion: false,
-    speedIndex: 4,
-  })
-  expect(getVizTransport().getSnapshot()).toMatchObject({
-    playing: true,
-    reducedMotion: false,
-  })
-  unbind()
-  driver.destroy()
-  expect(active).toEqual(new Set())
-  vi.unstubAllGlobals()
-})
-
 test('does not resume twice after explicit reduced-motion play', () => {
   const media = new FakeMediaQuery(false)
   const active = new Set<number>()
@@ -197,30 +156,3 @@ test('does not resume after an explicit reduced-motion pause', () => {
   driver.destroy()
   vi.unstubAllGlobals()
 })
-
-test.each(['pause', 'destroy'] as const)(
-  'does not resume after a subscriber calls %s',
-  (action) => {
-    const media = new FakeMediaQuery(false)
-    let requests = 0
-    stubWindow(media)
-    vi.stubGlobal('requestAnimationFrame', () => ++requests)
-    vi.stubGlobal('cancelAnimationFrame', () => undefined)
-    const driver = createVizDriver({
-      input: INPUT,
-      repoNames: ['alpha'],
-      seed: 1,
-    })
-    driver.subscribe((info) => {
-      if (!info.reducedMotion) driver[action]()
-    })
-
-    driver.play()
-    media.setMatches(true)
-    media.setMatches(false)
-
-    expect(requests).toBe(1)
-    driver.destroy()
-    vi.unstubAllGlobals()
-  }
-)

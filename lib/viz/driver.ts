@@ -1,4 +1,4 @@
-import { advanceCursor, isLive, repoPhase, seekCursor } from './sim/cursor'
+import { isLive, repoPhase } from './sim/cursor'
 import { packOnce } from './sim/layout'
 import { seedRng } from './sim/rng'
 import { createSimState, resetSimState } from './sim/state'
@@ -20,6 +20,12 @@ import { paintVizSurfaces } from './surface-painter'
 import { createVizDriverSurfaceApi } from './driver-surface-api'
 import { createVizDriverLifecycle } from './driver-lifecycle'
 import { buildVizDriverInfo } from './driver-info'
+import {
+  anchorVizPlaybackDay,
+  createVizPlaybackTrajectory,
+  resolveVizSeekState,
+  type VizSeekMode,
+} from './driver-playback'
 import { createVizDriverRibbon } from './driver-ribbon'
 import {
   createVizDriverRenderLayers,
@@ -152,10 +158,6 @@ export interface TickMapping {
   readonly rewindTicks: number
   readonly sweepTicks: number
 }
-interface SeekPolicy {
-  readonly preserveSpeed: boolean
-  readonly preservePlayback: boolean
-}
 export function tickMapping(input: SimInput): TickMapping {
   const daysPerTick = SPEEDS[DEFAULT_SPEED_INDEX] * FIXED_DT
   const day0 = input.dayCount - 1
@@ -272,9 +274,11 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     state.repoAngle.set(packedLayout.repoAngle)
   }
   const mapping = tickMapping(options.input)
-  let playbackAnchorTick = 0
-  let playbackAnchorDay = mapping.day0
-  let playbackDwellUntilTick = DWELL_TICKS
+  const playback = createVizPlaybackTrajectory(
+    mapping.day0,
+    mapping.sweepTicks,
+    DWELL_TICKS
+  )
   const listeners = new Set<(info: VizFrameInfo) => void>()
   const destroyListeners = new Set<() => void>()
   const layers = createVizDriverRenderLayers(options.input)
@@ -318,10 +322,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     const action = lifecycle.mediaChanged(event.matches)
     if (action === 'pause-and-settle') {
       cancelFrame()
-      void seekAtTick(0, null, {
-        preserveSpeed: true,
-        preservePlayback: false,
-      })
+      void seekAtTick(0, null, 'motion')
     } else if (action === 'resume') {
       accumulator = 0
       cancelInvalidatedPaint()
@@ -444,49 +445,14 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   }
   function advance(): void {
     const tick = state.tick + 1
-    const projection = playbackProjection(tick)
+    const projection = playback.project(tick, state.speedIndex)
     const reportedPlaying = state.playing
     state.rngState = rngAnchor(seed, tick)
     state.rngDraws = 0
     state.playing = projection.moving
     step(state)
-    anchorDay(tick, projection.day)
+    anchorVizPlaybackDay(state, tick, projection.day)
     state.playing = reportedPlaying
-  }
-  function anchorTick(tick: number): void {
-    const day = cursorDayAtTick(mapping, tick)
-    anchorDay(tick, day)
-  }
-  function anchorDay(tick: number, day: number): void {
-    state.tick = tick
-    const dayInt = Math.floor(day)
-    state.cursorDay = day
-    if (dayInt < state.cursorDayInt) advanceCursor(state, dayInt)
-    else if (dayInt > state.cursorDayInt) seekCursor(state, dayInt)
-    state.cursorDayInt = dayInt
-  }
-  function playbackProjection(tick: number) {
-    if (tick <= playbackDwellUntilTick)
-      return { day: playbackAnchorDay, moving: false } as const
-    const elapsed = tick - Math.max(playbackAnchorTick, playbackDwellUntilTick)
-    const speed = SPEEDS[state.speedIndex]
-    if (speed === undefined)
-      throw new RangeError(`speed index ${state.speedIndex} is invalid`)
-    const day = playbackAnchorDay - speed * FIXED_DT * elapsed
-    if (day > 0) return { day, moving: true } as const
-    playbackAnchorTick = tick
-    playbackAnchorDay = mapping.day0
-    playbackDwellUntilTick = tick + DWELL_TICKS
-    return { day: mapping.day0, moving: true } as const
-  }
-  function syncPlaybackTrajectory(): void {
-    const position =
-      ((state.tick % mapping.sweepTicks) + mapping.sweepTicks) %
-      mapping.sweepTicks
-    playbackAnchorTick = state.tick
-    playbackAnchorDay = state.cursorDay
-    playbackDwellUntilTick =
-      position <= DWELL_TICKS ? state.tick + DWELL_TICKS - position : state.tick
   }
   function settleChannels(): void {
     for (let id = 0; id < state.entityCount; id++) {
@@ -509,33 +475,32 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   async function seekTick(tick: number): Promise<VizFrameInfo> {
     stop()
     cancelInvalidatedPaint()
-    return seekAtTick(tick, null, {
-      preserveSpeed: false,
-      preservePlayback: false,
-    })
+    return seekAtTick(tick, null, 'direct')
   }
   function seekAtTick(
     tick: number,
     window: number | null,
-    policy: SeekPolicy
+    mode: VizSeekMode
   ): Promise<VizFrameInfo> {
-    const speedIndex = policy.preserveSpeed
-      ? state.speedIndex
-      : DEFAULT_SPEED_INDEX
-    const playing = policy.preservePlayback && lifecycle.running
+    const seekState = resolveVizSeekState(
+      mode,
+      state.speedIndex,
+      lifecycle.running,
+      DEFAULT_SPEED_INDEX
+    )
     assertTick(tick)
     resetSimState(state, seed)
     restorePackedLayout()
     latchedWindow = window
-    state.speedIndex = speedIndex
-    state.playing = playing
-    anchorTick(tick)
+    state.speedIndex = seekState.speedIndex
+    state.playing = seekState.playing
+    anchorVizPlaybackDay(state, tick, cursorDayAtTick(mapping, tick))
     state.rngState = rngAnchor(seed, tick)
     state.rngDraws = 0
     step(state)
-    anchorTick(tick)
+    anchorVizPlaybackDay(state, tick, cursorDayAtTick(mapping, tick))
     settleChannels()
-    syncPlaybackTrajectory()
+    playback.syncCanonical(state.tick, state.cursorDay)
     settled = true
     paint(true)
     flushRaster()
@@ -559,10 +524,11 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
         ? 0
         : DWELL_TICKS + Math.ceil((mapping.day0 - target) / mapping.daysPerTick)
     const tick = Math.min(mapping.sweepTicks - 1, rewindTick)
-    return seekAtTick(tick, ribbonWinStart(options.input, target, null), {
-      preserveSpeed: true,
-      preservePlayback: true,
-    })
+    return seekAtTick(
+      tick,
+      ribbonWinStart(options.input, target, null),
+      'consumer'
+    )
   }
   function seekDate(iso: string): Promise<VizFrameInfo> {
     const start = Date.parse(`${options.input.windowStartISO}T00:00:00Z`)
@@ -578,7 +544,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     restorePackedLayout()
     state.speedIndex = DEFAULT_SPEED_INDEX
     state.playing = false
-    syncPlaybackTrajectory()
+    playback.syncCanonical(state.tick, state.cursorDay)
     latchedWindow = null
     settled = false
     paint(true)
@@ -589,10 +555,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   function setSpeedIndex(index: number): void {
     if (!Number.isInteger(index) || index < 0 || index >= SPEEDS.length)
       throw new RangeError(`speed index ${index} is invalid`)
-    playbackAnchorTick = state.tick
-    playbackAnchorDay = state.cursorDay
-    if (state.tick >= playbackDwellUntilTick)
-      playbackDwellUntilTick = state.tick
+    playback.rebase(state.tick, state.cursorDay)
     state.speedIndex = index
   }
   function setQuality(mode: 'high' | 'low' | 'auto'): void {
