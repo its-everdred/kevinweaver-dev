@@ -158,7 +158,7 @@ export function encodeBundle(input: EncodeInput): EncodedBundle {
     {
       chunkSize: input.chunkSize,
       maxDictSliceGzipBytes: input.dictSliceGuardGzipBytes,
-      gzipSize: (text) => gzipSync(text).byteLength,
+      gzipSize: (text) => gzipSync(`${text}\n`).byteLength,
       sha256: (text) =>
         `sha256-${createHash('sha256').update(text).digest('hex')}`,
     }
@@ -201,7 +201,12 @@ export async function promoteBundle(
   } catch (error: unknown) {
     if (!isMissing(error)) throw error
   }
-  await rename(tempDir, targetDir)
+  try {
+    await rename(tempDir, targetDir)
+  } catch (error: unknown) {
+    await restorePrevious(previous, targetDir)
+    throw error
+  }
   await rm(previous, { recursive: true, force: true })
 }
 
@@ -336,6 +341,17 @@ function isMissing(error: unknown): boolean {
     'code' in error &&
     error.code === 'ENOENT'
   )
+}
+
+async function restorePrevious(
+  previous: string,
+  target: string
+): Promise<void> {
+  try {
+    await rename(previous, target)
+  } catch (error: unknown) {
+    if (!isMissing(error)) throw error
+  }
 }
 
 function readOptions(argv: readonly string[]): Options {
