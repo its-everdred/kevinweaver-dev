@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { FileOperations } from './encode-promote.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { promoteWith, recoverWith } from './encode-promote.ts'
+import { promoteWith, recoverWith, rollbackWith } from './encode-promote.ts'
 
 describe('bundle promotion', () => {
   it('recovers a prior generation before promotion', async () => {
@@ -58,6 +58,16 @@ describe('bundle promotion', () => {
     await recoverWith(disk.operations, hash, 'target', 'old')
 
     expect(disk.paths()).toEqual(['target'])
+  })
+
+  it('retains both generations when rollback restoration fails', async () => {
+    const disk = fakeDisk(['target', 'target.previous'], 'target.previous')
+
+    await expect(rollbackWith(disk.operations, 'target')).rejects.toThrow(
+      'rename failed'
+    )
+
+    expect(disk.paths()).toEqual(['target', 'target.previous'])
   })
 })
 

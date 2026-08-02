@@ -68,6 +68,47 @@ export function extraction() {
   }
 }
 
+/** Produces stage data large enough to satisfy the production corpus floor. */
+export function successfulStages() {
+  const names = Array.from({ length: 40 }, (_, index) => `owner/repo-${index}`)
+  return {
+    calendar: {
+      ...calendar(),
+      combined: [{ date: '2026-07-31', e: 40_000, a: 0 }],
+      combinedTotalNaive: 40_000,
+    },
+    discovery: {
+      ...discovery(),
+      repos: names.map((name, index) => discovered(name, index)),
+      repoCountDefinition: {
+        ...discovery().repoCountDefinition,
+        count: names.length,
+      },
+    },
+    extraction: {
+      ...extraction(),
+      events: names.flatMap((name, index) => events(name, index)),
+      repos: names.map((name) => repo(name, '2026-07-31', 'ok', 0)),
+    },
+  }
+}
+
+function discovered(nameWithOwner: string, databaseId: number) {
+  return {
+    ...discovery().repos[0]!,
+    nameWithOwner,
+    databaseId: databaseId + 1,
+  }
+}
+
+function events(repoName: string, index: number) {
+  return Array.from({ length: 1000 }, (_, eventIndex) => ({
+    ...event(repoName, '2026-07-31'),
+    sha: `${index.toString(16)}${eventIndex.toString(16)}`.padStart(40, '0'),
+    path: `src/${index}.ts`,
+  }))
+}
+
 function event(repo: string, day: string) {
   return {
     day,

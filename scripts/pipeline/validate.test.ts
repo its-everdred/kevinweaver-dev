@@ -51,6 +51,67 @@ describe('bundle validator', () => {
     expect(findings.map((finding) => finding.code)).toContain('E_REGRESSION')
   })
 
+  it('reports the empty-corpus floor independently of parse validity', () => {
+    const findings = validateBundle(encodeBundle(MINI_INPUT), null).findings
+
+    expect(findings.map((finding) => finding.code)).toContain('E_EMPTY')
+  })
+
+  it('requires a prior stale repository to retain its history', () => {
+    const findings = validateBundle(encodeBundle(validInput()), {
+      schema: 1,
+      events: 40_000,
+      combinedTotal: 40_000,
+      repos: {
+        'owner/repo-00': {
+          heads: {},
+          events: 1_001,
+          status: 'stale',
+          lastOk: '2026-07-31T00:00:00Z',
+          consecutiveFailures: 1,
+        },
+      },
+    }).findings
+
+    expect(findings.map((finding) => finding.code)).toContain('E_REPO_STATUS')
+  })
+
+  it('allows omitted never-observed stale repositories', () => {
+    const findings = validateBundle(encodeBundle(validInput()), {
+      schema: 1,
+      events: 40_000,
+      combinedTotal: 40_000,
+      repos: {
+        'owner/never-observed': {
+          heads: {},
+          events: 0,
+          status: 'stale',
+          lastOk: null,
+          consecutiveFailures: 1,
+        },
+      },
+    }).findings
+
+    expect(findings.map((finding) => finding.code)).not.toContain(
+      'E_REPO_STATUS'
+    )
+  })
+
+  it.each([
+    ['E_DICT_GUARD', 'paths/pd-00.json'],
+    ['E_FIRST_BYTE', 'repos.json'],
+  ])(
+    'reports %s when a resource exceeds its compressed budget',
+    (code, path) => {
+      const findings = validateBundle(
+        replaceFile(encodeBundle(validInput()), path, oversizedJson()),
+        null
+      ).findings
+
+      expect(findings.map((finding) => finding.code)).toContain(code)
+    }
+  )
+
   it.each([
     ['E_COLUMNS', '{"b":0,"d":[0],"r":[],"p":[0],"a":[0]}\n'],
     ['E_DELTA', '{"b":0,"d":[-1],"r":[0],"p":[0],"a":[0]}\n'],
@@ -95,4 +156,13 @@ function text(bundle: EncodedBundle, path: string): string {
   const file = bundle.files.find((entry) => entry.path === path)
   if (!file) throw new Error(`Missing ${path}`)
   return new TextDecoder().decode(file.bytes)
+}
+
+function oversizedJson(): string {
+  let state = 17
+  const text = Array.from({ length: 30_000 }, () => {
+    state = (state * 16_807) % 2_147_483_647
+    return String.fromCharCode(33 + (state % 90))
+  }).join('')
+  return `${JSON.stringify({ from: 0, n: 1, fc: `#${text}` })}\n`
 }

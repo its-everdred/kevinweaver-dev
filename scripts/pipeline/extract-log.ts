@@ -117,7 +117,11 @@ function consumeLine(state: LogState, line: string): void {
   if (line.startsWith('\x01')) {
     flush(state)
     state.record = recordFrom(state.repo, line)
-  } else if (line !== '' && state.record) state.record.paths.push(line)
+    return
+  }
+  if (line === '') return
+  if (!state.record) throw new GitLogError(state.repo, 'malformed log preamble')
+  state.record.paths.push(line)
 }
 
 function finishLog(

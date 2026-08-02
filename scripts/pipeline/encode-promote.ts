@@ -46,9 +46,19 @@ export async function finalizePromotion(targetDir: string): Promise<void> {
 }
 
 export async function rollbackPromotion(targetDir: string): Promise<void> {
-  const previous = previousPath(targetDir)
-  await files.remove(targetDir)
-  if (await files.exists(previous)) await files.rename(previous, targetDir)
+  await rollbackWith(files, targetDir)
+}
+
+/** Restores the previous generation without deleting it before replacement. */
+export async function rollbackWith(
+  operations: FileOperations,
+  target: string
+): Promise<void> {
+  const previous = previousPath(target)
+  if (!(await operations.exists(previous))) return
+  if (!(await operations.exists(target)))
+    return operations.rename(previous, target)
+  await restorePrevious(operations, target, previous)
 }
 
 /** Resolves an interrupted promotion using the persisted generation digest. */
@@ -106,8 +116,24 @@ async function settleGenerations(
     throw new PromotionRecoveryError(
       'No bundle generation matches pipeline state.'
     )
-  await operations.remove(target)
-  await operations.rename(previous, target)
+  await restorePrevious(operations, target, previous)
+}
+
+async function restorePrevious(
+  operations: FileOperations,
+  target: string,
+  previous: string
+): Promise<void> {
+  const displaced = `${target}.rollback`
+  await operations.remove(displaced)
+  await operations.rename(target, displaced)
+  try {
+    await operations.rename(previous, target)
+  } catch (error) {
+    await operations.rename(displaced, target)
+    throw error
+  }
+  await operations.remove(displaced)
 }
 
 async function matchesHash(

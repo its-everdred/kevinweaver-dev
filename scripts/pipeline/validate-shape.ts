@@ -163,18 +163,21 @@ function validateStaleHistory(
   repos: readonly Repository[],
   findings: Finding[]
 ): void {
-  if (!prev || repos.every((repo) => !staleRepositoryLostHistory(repo, prev)))
-    return
+  if (!prev || !hasLostStaleHistory(prev, repos)) return
   add(findings, 'E_REPO_STATUS', 'A stale repository lost event history.')
 }
 
-function staleRepositoryLostHistory(
-  repo: Repository,
-  prev: PipelineState
+function hasLostStaleHistory(
+  previous: PipelineState,
+  repos: readonly Repository[]
 ): boolean {
-  return (
-    repo.status === 'stale' && repo.vol < (prev.repos[repo.name]?.events ?? 0)
-  )
+  const current = new Map(repos.map((repo) => [repo.name, repo]))
+  return Object.entries(previous.repos).some(([name, repo]) => {
+    if (repo.events === 0) return false
+    if (repo.status !== 'stale' && repo.status !== 'gone') return false
+    const retained = current.get(name)
+    return !retained || retained.vol < repo.events
+  })
 }
 
 function gridTotal(grid: DecodedBundle['grid'] | undefined): number {

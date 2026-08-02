@@ -25,4 +25,27 @@ describe('git log parsing', () => {
       rmSync(bin, { recursive: true, force: true })
     }
   })
+
+  it('rejects nonempty output before the first log header', async () => {
+    await expect(extract('preamble\n')).rejects.toThrow(
+      'Could not extract owner/repo: malformed log preamble'
+    )
+  })
 })
+
+async function extract(output: string): Promise<unknown> {
+  const directory = mkdtempSync(join(tmpdir(), 'kw014-log-'))
+  const bin = mkdtempSync(join(tmpdir(), 'kw014-bin-'))
+  const fakeGit = join(bin, 'git')
+  const originalPath = process.env.PATH
+  writeFileSync(fakeGit, `#!/bin/sh\nprintf '${output}'\n`)
+  chmodSync(fakeGit, 0o755)
+  process.env.PATH = `${bin}${delimiter}${originalPath ?? ''}`
+  try {
+    return await extractRepo('owner/repo', directory)
+  } finally {
+    process.env.PATH = originalPath
+    rmSync(directory, { recursive: true, force: true })
+    rmSync(bin, { recursive: true, force: true })
+  }
+}

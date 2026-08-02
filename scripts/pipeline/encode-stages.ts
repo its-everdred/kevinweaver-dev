@@ -63,6 +63,7 @@ async function calendarFor(
     )
   } catch (error) {
     if (error instanceof SamlCanaryError) throw calendarRefusal(error)
+    if (error instanceof stageAdapters.StageDataError) throw error
     if (fallback) return calendarFromGrid(fallback)
     throw stageFailure('calendar', error)
   }
@@ -80,6 +81,7 @@ async function privateFor(
     )
   } catch (error) {
     if (error instanceof SamlCanaryError) throw calendarRefusal(error)
+    if (error instanceof stageAdapters.StageDataError) throw error
     if (fallback) return privateFromGrid(fallback)
     throw stageFailure('private', error)
   }
