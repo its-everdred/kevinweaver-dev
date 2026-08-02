@@ -100,6 +100,12 @@
   color: var(--purple);
 }
 
+.jumpBirth {
+  background: var(--bg-h);
+  border-radius: var(--r-chip);
+  padding: 2px 4px;
+}
+
 .jumpLive {
   color: var(--aqua);
 }
@@ -109,6 +115,10 @@
   min-width: 82px;
   justify-content: flex-end;
   text-align: right;
+}
+
+.shortLabel {
+  display: none;
 }
 
 .pill {
@@ -139,4 +149,43 @@
 
 .dim {
   background: var(--fg3);
+}
+
+@media (max-width: 600px) {
+  .bar {
+    gap: 5px;
+    padding: 0 8px;
+  }
+
+  .seekWrap {
+    flex-basis: 72px;
+    min-width: 72px;
+  }
+
+  .jump,
+  .jumpLive {
+    gap: 0;
+    padding: 0 1px;
+  }
+
+  .longLabel {
+    display: none;
+  }
+
+  .freshLabel {
+    display: block;
+    max-width: 40px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .speed {
+    min-width: 24px;
+    justify-content: center;
+  }
+
+  .shortLabel {
+    display: inline;
+  }
 }

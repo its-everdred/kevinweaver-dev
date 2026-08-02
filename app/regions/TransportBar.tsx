@@ -1,5 +1,4 @@
 'use client'
-
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties, KeyboardEvent } from 'react'
 import {
@@ -12,19 +11,26 @@ import { getVizTransport } from '@/lib/viz/driver'
 import { SPEEDS } from '@/lib/viz/sim/types'
 import type { TransportBarProps } from './_contract'
 import styles from './TransportBar.module.css'
-
 const transport = getVizTransport()
 const HOUR_MS = 3_600_000
 const DAY_MS = 86_400_000
-
+interface SeekStyle extends CSSProperties {
+  readonly '--kw-seek-pct'?: string
+  readonly '--kw-seek-birth-pct'?: string
+}
 export type FreshnessTone = 'ok' | 'warn' | 'dim'
-
 export interface FreshnessReadout {
   readonly label: string
   readonly tone: FreshnessTone
   readonly title: string
 }
-
+function readout(
+  label: string,
+  tone: FreshnessTone,
+  title: string
+): FreshnessReadout {
+  return { label, tone, title }
+}
 /**
  * Calculates a deterministic freshness label from the payload timestamp.
  * @param generatedAtISO RFC3339 timestamp from the payload manifest.
@@ -39,25 +45,21 @@ export function freshness(
   const generatedMs = Date.parse(generatedAtISO)
   if (Number.isNaN(generatedMs)) return null
   const title = `data generated ${generatedAtISO}`
-  if (nowMs === null) {
-    return {
-      label: `generated ${generatedAtISO.slice(0, 10)}`,
-      tone: 'ok',
-      title,
-    }
-  }
+  if (nowMs === null)
+    return readout(`generated ${generatedAtISO.slice(0, 10)}`, 'ok', title)
   const age = Math.max(0, nowMs - generatedMs)
-  if (age < HOUR_MS) return { label: 'fresh · <1h ago', tone: 'ok', title }
-  if (age < DAY_MS) {
-    return {
-      label: `fresh · ${Math.floor(age / HOUR_MS)}h ago`,
-      tone: 'ok',
-      title,
-    }
-  }
+  if (age < HOUR_MS) return readout('fresh · <1h ago', 'ok', title)
+  if (age < DAY_MS)
+    return readout(`fresh · ${Math.floor(age / HOUR_MS)}h ago`, 'ok', title)
   const days = Math.floor(age / DAY_MS)
-  if (days < 7) return { label: `${days}d ago`, tone: 'warn', title }
-  return { label: `stale · ${days}d ago`, tone: 'dim', title }
+  if (days < 7) return readout(`${days}d ago`, 'warn', title)
+  return readout(`stale · ${days}d ago`, 'dim', title)
+}
+
+function subscribeToClock(setNowMs: (nowMs: number) => void) {
+  setNowMs(Date.now())
+  const handle = setInterval(() => setNowMs(Date.now()), 60_000)
+  return () => clearInterval(handle)
 }
 
 /**
@@ -65,30 +67,20 @@ export function freshness(
  * @param props Region envelope used by the page composer.
  * @returns The transport bar subtree.
  */
-export default function TransportBar({
-  id,
-  className,
-  style,
-}: TransportBarProps) {
+export default function TransportBar(props: TransportBarProps) {
   const snap = useSyncExternalStore(
     transport.subscribe,
     transport.getSnapshot,
     transport.getServerSnapshot
   )
   const [nowMs, setNowMs] = useState<number | null>(null)
-
-  useEffect(() => {
-    const handle = setInterval(() => setNowMs(Date.now()), 60_000)
-    return () => clearInterval(handle)
-  }, [])
-
+  useEffect(() => subscribeToClock(setNowMs), [])
   const onKeyDown = useCallback((event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== ' ' && event.key !== 'Spacebar') return
-    if (event.target instanceof HTMLButtonElement) return
+    if (event.repeat || event.target instanceof HTMLButtonElement) return
     event.preventDefault()
     transport.toggle()
   }, [])
-
   const maxDay = Math.max(0, snap.dayCount - 1)
   const pct = maxDay === 0 ? 0 : (snap.dayIndex / maxDay) * 100
   const birthPct =
@@ -96,14 +88,19 @@ export default function TransportBar({
       ? null
       : (snap.birthDayIndex / maxDay) * 100
   const speed = SPEEDS[snap.speedIndex] ?? SPEEDS[0]
+  const nextSpeed = (snap.speedIndex + 1) % SPEEDS.length
   const fresh = freshness(snap.generatedAt, nowMs)
   const idle = !snap.ready || undefined
-
+  const startLabel = snap.ready
+    ? `Jump to the start of the window, ${snap.windowStartLabel}`
+    : 'Jump to the start of the contribution history'
+  const seekCss: SeekStyle = { '--kw-seek-pct': `${pct}%` }
+  const birthCss: SeekStyle = { '--kw-seek-birth-pct': `${birthPct}%` }
   return (
     <div
-      id={id}
-      className={[styles.bar, className].filter(Boolean).join(' ')}
-      style={style}
+      id={props.id}
+      className={[styles.bar, props.className].filter(Boolean).join(' ')}
+      style={props.style}
       onKeyDown={onKeyDown}
     >
       <button
@@ -116,7 +113,6 @@ export default function TransportBar({
       >
         {snap.playing ? <PauseIcon size={11} /> : <PlayIcon size={11} />}
       </button>
-
       <div className={styles.seekWrap}>
         <input
           type="range"
@@ -135,28 +131,22 @@ export default function TransportBar({
           onChange={(event) =>
             transport.seekToDay(event.currentTarget.valueAsNumber)
           }
-          style={{ '--kw-seek-pct': `${pct}%` } as CSSProperties}
+          style={seekCss}
         />
         {birthPct !== null && (
-          <span
-            aria-hidden="true"
-            className={styles.birth}
-            style={{ '--kw-seek-birth-pct': `${birthPct}%` } as CSSProperties}
-          />
+          <span aria-hidden="true" className={styles.birth} style={birthCss} />
         )}
       </div>
-
       <button
         type="button"
         className={styles.jump}
-        aria-label={`Jump to the start of the window, ${snap.windowStartLabel}`}
+        aria-label={startLabel}
         aria-disabled={idle}
         onClick={() => snap.ready && transport.seekToDay(0)}
       >
         <SkipStartIcon size={11} />
-        {snap.windowStartLabel}
+        <span className={styles.longLabel}>{snap.windowStartLabel}</span>
       </button>
-
       {snap.birthDayIndex >= 0 && (
         <button
           type="button"
@@ -171,7 +161,6 @@ export default function TransportBar({
           init
         </button>
       )}
-
       <button
         type="button"
         className={styles.jumpLive}
@@ -180,29 +169,27 @@ export default function TransportBar({
         onClick={() => snap.ready && transport.seekToDay(maxDay)}
       >
         <SkipEndIcon size={11} />
-        live
+        <span className={styles.longLabel}>live</span>
       </button>
-
       <button
         type="button"
         className={styles.speed}
         aria-label={`Playback speed: ${speed} days per second. Activate to change.`}
         aria-disabled={idle}
-        onClick={() =>
-          snap.ready &&
-          transport.setSpeedIndex((snap.speedIndex + 1) % SPEEDS.length)
-        }
+        onClick={() => snap.ready && transport.setSpeedIndex(nextSpeed)}
       >
-        {speed} days/sec
+        <span className={styles.longLabel}>{speed} days/sec</span>
+        <span aria-hidden="true" className={styles.shortLabel}>
+          {speed}×
+        </span>
       </button>
-
       {fresh !== null && (
         <span className={styles.pill} title={fresh.title}>
           <span
             aria-hidden="true"
             className={`${styles.dot} ${styles[fresh.tone]}`}
           />
-          {fresh.label}
+          <span className={styles.freshLabel}>{fresh.label}</span>
         </span>
       )}
     </div>
