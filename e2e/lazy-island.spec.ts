@@ -1,13 +1,22 @@
 import { test, expect, type Page } from '@playwright/test'
 
 /**
- * Proves the canvas island is lazy: no chunk outside the set the document for
- * `/` declares is fetched while the instrument region is out of view, and
- * scrolling it into view fetches at least one chunk that was never declared.
+ * Proves the canvas island is lazy: the deferred gource island chunk is not
+ * fetched while the instrument region is out of view, and scrolling it into
+ * view fetches exactly that island chunk.
  *
- * Deliberately name-free. Turbopack chunk basenames are content hashes, so the
- * only stable way to say "the island chunk" is "a chunk the document did not
- * declare". That definition also survives a bundler change.
+ * Deliberately name-free: Turbopack chunk basenames are content hashes, so the
+ * only stable identifiers are the content markers KW-025 and KW-024 compile
+ * into their deferred modules. Classification is by role, never by chunk name.
+ *
+ * One documented exception. The e2e build always sets NEXT_PUBLIC_TEST_HOOKS=1
+ * (KW-023's e2e.yml job env and playwright.config.ts webServer env), which
+ * makes KW-024's driver `void import('./testHarness')` fire at hydration,
+ * before the island is in view. The test-harness chunk is therefore a
+ * legitimate eager fetch under the test-hooks build; it is not the island and
+ * it is excluded from the "nothing undeclared before intersection" check. Any
+ * OTHER undeclared chunk fetched early - in particular the island itself - is
+ * a laziness regression and fails.
  */
 
 const CHUNK_PATH_RE = /^\/_next\/static\/chunks\/.+\.js$/
@@ -15,6 +24,21 @@ const HTML_ASSET_RE = /\/_next\/static\/chunks\/[^"'\\\s)]+?\.js/g
 
 /** KW-020's once-per-session guard. Set before load so the overlay never mounts. */
 const BOOT_SESSION_KEY = 'kw.boot.v1'
+
+/**
+ * KW-025's GOURCE_CHUNK_MARKER, set as `data-chunk` on the graph canvas
+ * (`components/viz/Gource.tsx`) and present verbatim in the island chunk's
+ * compiled source. The stable way to say "the island chunk".
+ */
+const GOURCE_ISLAND_MARKER = 'kw-gource-island'
+
+/**
+ * KW-024's `installTestHarness` export name (`lib/viz/testHarness.ts`), present
+ * verbatim in the deferred test-harness chunk's compiled source. It also
+ * appears in the first-load chunk that hosts the driver's import site, but that
+ * chunk is document-declared and never reaches the undeclared check.
+ */
+const TEST_HARNESS_MARKER = 'installTestHarness'
 
 function trackChunkRequests(page: Page): Set<string> {
   const seen = new Set<string>()
@@ -33,6 +57,30 @@ async function declaredChunks(page: Page): Promise<Set<string>> {
   const declared = new Set([...html.matchAll(HTML_ASSET_RE)].map((m) => m[0]))
   expect(declared.size).toBeGreaterThan(0)
   return declared
+}
+
+/**
+ * The served source of a chunk, or null when it cannot be fetched. Uses the API
+ * request context so inspection never pollutes the browser request tally.
+ */
+async function chunkSource(page: Page, path: string): Promise<string | null> {
+  const res = await page.request.get(path)
+  if (!res.ok()) return null
+  return res.text()
+}
+
+/** The KW-024 test-harness chunk, which the e2e build legitimately fetches at hydration. */
+function isTestHarnessChunk(source: string | null): boolean {
+  return (
+    source !== null &&
+    source.includes(TEST_HARNESS_MARKER) &&
+    !source.includes(GOURCE_ISLAND_MARKER)
+  )
+}
+
+/** The deferred gource island chunk, which must never arrive before intersection. */
+function isGourceIslandChunk(source: string | null): boolean {
+  return source !== null && source.includes(GOURCE_ISLAND_MARKER)
 }
 
 /** KW-005 guarantees this id on the instrument region's title element. */
@@ -63,7 +111,7 @@ test.beforeEach(async ({ page }) => {
   }, BOOT_SESSION_KEY)
 })
 
-test('no undeclared chunk is fetched while the instrument region is out of view', async ({
+test('no deferred island chunk is fetched while the instrument region is out of view', async ({
   page,
 }) => {
   const declared = await declaredChunks(page)
@@ -82,10 +130,18 @@ test('no undeclared chunk is fetched while the instrument region is out of view'
       'if the page layout changed, fix this spec deliberately rather than deleting it'
   ).not.toBeInViewport()
 
+  // Every chunk fetched before intersection must be declared by the document
+  // for `/`, or be KW-024's test harness (see the header note). Anything else
+  // arrived early - and if it is the island, that is a laziness regression.
   const undeclared = [...requested].filter((p) => !declared.has(p))
+  const unexpected: string[] = []
+  for (const path of undeclared) {
+    if (!isTestHarnessChunk(await chunkSource(page, path))) unexpected.push(path)
+  }
   expect(
-    undeclared,
-    `undeclared chunks fetched before intersection: ${undeclared.join(', ')}`
+    unexpected,
+    `undeclared chunks fetched before intersection (other than the KW-024 test harness): ` +
+      unexpected.join(', ')
   ).toEqual([])
 })
 
@@ -105,10 +161,15 @@ test('scrolling the instrument region into view fetches the deferred island chun
   await page.waitForLoadState('networkidle')
 
   const arrived = [...requested].filter((p) => !before.has(p))
+  const islandChunks: string[] = []
+  for (const path of arrived) {
+    if (isGourceIslandChunk(await chunkSource(page, path))) islandChunks.push(path)
+  }
   expect(
-    arrived.length,
-    'intersecting the instrument region fetched no new chunk: the island is either eagerly ' +
-      'bundled into the first load or is not mounted behind an IntersectionObserver'
+    islandChunks.length,
+    'intersecting the instrument region did not fetch the deferred gource island chunk: ' +
+      'the island is either eagerly bundled into the first load or is not mounted behind ' +
+      'an IntersectionObserver'
   ).toBeGreaterThan(0)
-  for (const p of arrived) expect(declared.has(p)).toBe(false)
+  for (const path of islandChunks) expect(declared.has(path)).toBe(false)
 })
