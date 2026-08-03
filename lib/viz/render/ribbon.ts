@@ -336,7 +336,7 @@ function drawWeekdayLabels(
   for (let day = 0; day < labels.length; day += 1) {
     const label = labels[day]
     if (!label) continue
-    ctx.fillStyle = theme.token.bg4
+    ctx.fillStyle = theme.token.fg4
     ctx.fillText(
       label,
       0,
@@ -356,7 +356,7 @@ function drawMonthLabels(
   layer.calendar = markers
   ctx.font = `600 ${theme.fontPx.micro}px ${theme.fontFamily}`
   ctx.textAlign = 'left'
-  ctx.fillStyle = theme.token.gray
+  ctx.fillStyle = theme.token.fg4
   let lastLabelX = Number.NEGATIVE_INFINITY
   for (const marker of markers) {
     const offset = marker.day - layer.winStartDay
