@@ -1,23 +1,25 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { PANE_SURFACE } from './ramp'
+import { AG, LV, PANE_SURFACE } from './ramp'
 
 /**
- * Canvas-painted text contrast policy (Invariant 3).
+ * Canvas-painted text contrast gate (Invariant 3 + Executor requirement 6).
  *
  * `ctx.fillText` glyphs carry no computed CSS, so axe's `color-contrast`
  * cannot see them. This unit test pins the WCAG 2.x relative-luminance
- * formula and the permitted canvas-text colour pairs against the pane
- * surface (`--bg-h #1d2021`), both clean and under the measured scanline
+ * formula, the permitted canvas-text colour pairs against the pane surface
+ * (`--bg-h #1d2021`), and — crucially — the ACTUAL ramp values the renderer
+ * paints its text with, both clean and under the measured scanline
  * darkening (`design-comp-spec` §9.2).
  *
- * The *actual* recorded `fillText` fills of the renderer are inspected by
- * KW-029's upstream prerequisite KW-022 / issue #110
- * (`test/viz/render-text-contrast.browser.test.ts`), which renders through
- * the real recorder — a unit test cannot reach a real CanvasRenderingContext2D.
- * The three negative controls here pin the forbidden fills below AA so a
- * loosened `contrastRatio` turns this suite red.
+ * NOTE (post-merge finding): KW-022/#110's `test/viz/render-text-contrast.browser.test.ts`
+ * builds its fixture theme from the gruvbox `TOKEN_HEXES` map (fg4 = #a89984)
+ * rather than the runtime `surface-view.ts` `SURFACE_TOKEN` (fg4 = LV[5] =
+ * #83881b), so it reports a false green. The renderer's real text fills use
+ * `theme.token.fg4` = #83881b, which is 4.296:1 on the pane surface — below
+ * AA. The assertions below inspect the actual ramp values and FAIL until the
+ * renderer's text fills are repaired.
  */
 
 const AA_NORMAL = 4.5
@@ -182,6 +184,63 @@ const CANVAS_TEXT: readonly CanvasTextPair[] = [
     where: 'agent init subline',
   },
 ]
+
+describe('the renderer’s actual text fills (what the canvas paints)', () => {
+  /** Mirrors lib/viz/surface-view.ts SURFACE_TOKEN for the text-fill tokens. */
+  const TOKEN: Readonly<Record<string, string>> = {
+    fg4: LV[5],
+    fg2: LV[7],
+    fg0: LV[9],
+    purple: AG[7],
+    aqua: AG[8],
+    bgH: PANE_SURFACE,
+  }
+
+  // Audited post-KW-022/#120 fillText sites: these are the tokens the
+  // renderer paints normal-size (9-13px) text with on the pane surface.
+  const RENDER_TEXT_ON_PANE: readonly { id: string; token: string }[] = [
+    {
+      id: 'fg4 — year / weekday / month / star / ghost-repo / birth-sublabel / cluster',
+      token: 'fg4',
+    },
+    { id: 'fg2 — file + live repo labels', token: 'fg2' },
+    { id: 'purple — agent markers + init banner', token: 'purple' },
+  ]
+  const RENDER_DISC_TEXT: readonly { id: string; disc: string }[] = [
+    { id: 'bgH on aqua — human actor disc', disc: 'aqua' },
+    { id: 'bgH on purple — agent actor disc', disc: 'purple' },
+  ]
+
+  it.each(RENDER_TEXT_ON_PANE)(
+    '$id clears AA on the pane surface',
+    ({ token }) => {
+      expect(
+        contrastRatio(TOKEN[token]!, PANE_SURFACE),
+        `${token} = ${TOKEN[token]}`
+      ).toBeGreaterThanOrEqual(AA_NORMAL)
+    }
+  )
+
+  it.each(RENDER_TEXT_ON_PANE)(
+    '$id clears AA under the scanline',
+    ({ token }) => {
+      expect(
+        contrastRatio(
+          underScanline(TOKEN[token]!),
+          underScanline(PANE_SURFACE)
+        ),
+        `${token} = ${TOKEN[token]}`
+      ).toBeGreaterThanOrEqual(AA_NORMAL)
+    }
+  )
+
+  it.each(RENDER_DISC_TEXT)('$id clears AA', ({ disc }) => {
+    expect(
+      contrastRatio(PANE_SURFACE, TOKEN[disc]!),
+      `bgH on ${disc} = ${TOKEN[disc]}`
+    ).toBeGreaterThanOrEqual(AA_NORMAL)
+  })
+})
 
 describe('canvas text contrast (axe cannot see any of this)', () => {
   it.each(CANVAS_TEXT)(
