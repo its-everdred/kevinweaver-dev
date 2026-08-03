@@ -277,6 +277,9 @@ test('boot overlay dialog semantics @a11y', async ({ page }, testInfo) => {
   await expect(dialog).toHaveAccessibleName(/cold start/i)
   const skip = page.getByRole('button', { name: /skip/i })
   await expect(skip).toBeFocused()
+  // Let every boot line reveal and its kw-logIn animation settle before axe
+  // samples, so no mid-opacity text is measured against a blended color.
+  await page.clock.runFor(5_000)
   const results = await runAxe(page, { type: 'tag', values: WCAG_TAGS })
   await testInfo.attach('axe-boot', {
     body: JSON.stringify(results, null, 2),
