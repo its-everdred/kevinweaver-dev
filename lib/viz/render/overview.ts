@@ -172,7 +172,7 @@ function drawYearMarkers(
     ctx.fillRect(x, geom.labelStripPx - 2, 1, geom.chPx * 7 + 2)
     ctx.font = `700 ${theme.fontPx.micro}px ${theme.fontFamily}`
     ctx.textAlign = 'left'
-    ctx.fillStyle = theme.token.gray
+    ctx.fillStyle = theme.token.fg4
     ctx.fillText(String(marker.year), x + 4, geom.labelStripPx - 3)
   }
 }

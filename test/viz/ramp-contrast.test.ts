@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { BAND_LABELS, BAND_LOWER_BOUNDS, bandLabel, level } from '../../lib/viz/tokens/level'
 import { AG, AG_SEMANTIC_MAX, LV, PANE_SURFACE } from '../../lib/viz/tokens/ramp'
+import { contrastRatio } from './contrast-fixture'
 
 type Lab = [number, number, number]
 const DS_TOKENS = 'docs/design/_ds/swe-rts-terminal-design-system-583945d5-2203-4320-8a4e-b30afe61181d/tokens/colors.css'
@@ -46,11 +47,6 @@ export function ciede2000Lab(L1: number, a1: number, b1: number, L2: number, a2:
 }
 
 function distance(a: string, b: string): number { const [L1, a1, b1] = lab(a); const [L2, a2, b2] = lab(b); return ciede2000Lab(L1, a1, b1, L2, a2, b2) }
-function contrast(a: string, b: string): number {
-  const channel = (v: string) => { const c = Number.parseInt(v, 16) / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
-  const l = (hex: string) => { const values = hex.slice(1).match(/../g)?.map((v) => channel(v)) ?? []; return 0.2126 * at(values, 0) + 0.7152 * at(values, 1) + 0.0722 * at(values, 2) }
-  const x = l(a); const y = l(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05)
-}
 function readTokens(file: string): Record<string, string> {
   const out: Record<string, string> = {}
   for (const match of readFileSync(file, 'utf8').matchAll(/--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{3,8})/g)) {
@@ -73,7 +69,7 @@ describe('contribution ramp', () => {
     expect(new Set(LV).size).toBe(10)
     const tokens = readTokens(DS_TOKENS)
     expect(LV[0]).toBe(tokens.bg1); expect(LV[6]).toBe(tokens['green-d']); expect(LV[7]).toBe(tokens.green); expect(PANE_SURFACE).toBe(tokens['bg-h'])
-    const contrasts = LV.map((v) => contrast(v, PANE_SURFACE))
+    const contrasts = LV.map((v) => contrastRatio(v, PANE_SURFACE))
     const steps = LV.slice(1).map((v, i) => distance(at(LV, i), v))
     expect(contrasts).toEqual([1.41, 1.74, 2.21, 2.78, 3.47, 4.3, 5.29, 7.94, 10.44, 13.44].map((v) => expect.closeTo(v, 2)))
     expect(steps).toEqual([16.61, 8.45, 6.25, 6.43, 6.49, 6.06, 10.58, 6.85, 6.68].map((v) => expect.closeTo(v, 2)))
