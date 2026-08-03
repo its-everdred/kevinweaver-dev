@@ -55,6 +55,7 @@ beforeAll(() => {
     '2026-01-03T04:00:00+00:00'
   )
   commit(work, 'unknown.ts', 'kevin@example.com', '2026-01-04T04:00:00+00:00')
+  commit(work, 'empty-email.ts', '', '2026-01-05T04:00:00+00:00')
   git(fixtureRoot, [
     'clone',
     '--filter=blob:none',
@@ -107,6 +108,23 @@ describe('extractAll', () => {
     })
 
     expect(JSON.stringify(first.events)).toBe(JSON.stringify(second.events))
+  })
+
+  it('tolerates commits with an empty author email instead of aborting', async () => {
+    // Several corpus repos contain commits authored with an empty email
+    // (`git commit --author="Name <>"`), which makes `%ae` render as an empty
+    // field in the log header. Such a commit is unclassifiable and must be
+    // skipped, not treated as a malformed header that aborts extraction.
+    const result = await extractAll(['fixture/repo'], [], {
+      cloneRoot,
+      exec: cachedFetch(),
+    })
+
+    expect(result.repos[0]).toMatchObject({ status: 'ok' })
+    expect(result.events).toHaveLength(2)
+    expect(result.events.some((event) => event.path === 'empty-email.ts')).toBe(
+      false
+    )
   })
 
   it('reuses the preserved bare clone after a fetch failure', async () => {
