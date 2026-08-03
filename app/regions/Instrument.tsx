@@ -1,7 +1,12 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { ContributionTable } from '@/components/viz/ContributionTable'
 import { Pane } from '@/components/ds/Pane'
 import { GourceIsland } from '@/components/viz/GourceIsland'
 import { GraphDate, Overview } from '@/components/viz/Overview'
 import { Ribbon } from '@/components/viz/Ribbon'
+import { decodeGrid, decodeManifest } from '@/lib/bundle/codec'
+import type { GridSeries, Manifest } from '@/lib/bundle/schema'
 import { REGION_META, type InstrumentProps } from './_contract'
 
 /**
@@ -13,14 +18,36 @@ function TransportSlot() {
 }
 
 const META = REGION_META.instrument
+const TABLE_ID = 'kw-contribution-table'
+
+/**
+ * @description Reads and decodes the committed payload at build/prerender time.
+ * @returns The decoded head (grid + manifest), or null when the payload is not
+ * present — fail closed, so a missing bundle renders no table rather than a
+ * partial one.
+ */
+function readCommittedHead(): { grid: GridSeries; manifest: Manifest } | null {
+  try {
+    const base = join(process.cwd(), 'public/data/v1')
+    const manifest = decodeManifest(
+      readFileSync(join(base, 'manifest.json'), 'utf8')
+    )
+    const grid = decodeGrid(readFileSync(join(base, 'grid.json'), 'utf8'))
+    return { grid, manifest }
+  } catch {
+    return null
+  }
+}
 
 /**
  * @description Renders server-owned pane chrome around isolated client visualization leaves.
  * @param props Region identity and layout overrides.
- * @returns The complete instrument region.
+ * @returns The complete instrument region, including the server-rendered
+ * DEC-011 contribution table (the canvas text equivalent + no-JS fallback).
  */
 export function Instrument({ id, className, style }: InstrumentProps) {
   const instrumentClassName = ['kw-instr', className].filter(Boolean).join(' ')
+  const head = readCommittedHead()
 
   return (
     <section
@@ -46,6 +73,13 @@ export function Instrument({ id, className, style }: InstrumentProps) {
         <Overview />
         <Ribbon />
       </Pane>
+      {head ? (
+        <ContributionTable
+          id={TABLE_ID}
+          grid={head.grid}
+          meta={head.manifest}
+        />
+      ) : null}
       <div className="kw-lower">
         <Pane
           as="section"

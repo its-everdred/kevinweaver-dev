@@ -2,8 +2,6 @@
 
 import { memo } from 'react'
 import type { ReactNode } from 'react'
-import type { GridSeries } from '@/lib/bundle/schema'
-import { formatDayISO } from '@/lib/viz/driver'
 import {
   useInstrumentRuntime,
   type InstrumentRuntimeState,
@@ -15,7 +13,8 @@ const TABLE_ID = 'kw-contribution-table'
 
 /**
  * @description Renders the independently observed 53-week contribution surface.
- * @returns The interactive ribbon and its DOM text alternative.
+ * @returns The interactive ribbon canvas, described by the server-rendered
+ * DEC-011 contribution table (mounted in the Instrument region).
  */
 export const Ribbon = memo(function Ribbon(): ReactNode {
   const runtime = useInstrumentRuntime()
@@ -25,6 +24,7 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
     id: 'ribbon',
     driver: viz?.driver ?? null,
     label,
+    describedById: TABLE_ID,
   })
   const interaction = useRibbonInteraction({ viz, geometry, toLocal })
 
@@ -68,13 +68,6 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
           boxShadow: 'var(--shadow-focus)',
         }}
       />
-      {viz ? (
-        <ContributionTableInline
-          grid={viz.head.grid}
-          id={TABLE_ID}
-          levels={viz.render.grid.level}
-        />
-      ) : null}
     </div>
   )
 })
@@ -84,42 +77,3 @@ function ribbonLabel(runtime: InstrumentRuntimeState): string {
   if (runtime.status === 'loading') return 'Contribution grid loading'
   return `Contribution grid, 53 weeks ending ${runtime.viz.head.manifest.windowEnd}. Full daily figures follow in the adjacent table.`
 }
-
-const ContributionTableInline = memo(function ContributionTableInline({
-  grid,
-  id,
-  levels,
-}: {
-  readonly grid: GridSeries
-  readonly id: string
-  readonly levels: Uint8Array
-}): ReactNode {
-  return (
-    <div className="sr-only" id={id}>
-      <table>
-        <caption>
-          Daily contributions from {grid.start} across {grid.dayCount} days
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">date</th>
-            <th scope="col">contributions</th>
-            <th scope="col">level</th>
-          </tr>
-        </thead>
-        <tbody>
-          {grid.human.map((human, day) => {
-            const total = human + (grid.agent[day] ?? 0)
-            return (
-              <tr key={day}>
-                <th scope="row">{formatDayISO(grid.start, day)}</th>
-                <td>{total}</td>
-                <td>{levels[day] ?? 0}</td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-    </div>
-  )
-})
