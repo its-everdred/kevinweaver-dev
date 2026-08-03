@@ -1,0 +1,26 @@
+[
+  {
+    "name": "first-byte data payload (manifest + repos + grid + newest event chunk + newest dictionary slice)",
+    "path": [
+      "public/data/v1/manifest.json",
+      "public/data/v1/repos.json",
+      "public/data/v1/grid.json",
+      "public/data/v1/events/ee-00.json",
+      "public/data/v1/paths/pd-00.json"
+    ],
+    "limit": "12 KiB",
+    "brotli": true
+  },
+  {
+    "name": "client CSS",
+    "path": ".next/static/chunks/**/*.css",
+    "limit": "24 kB",
+    "brotli": true
+  },
+  {
+    "name": "total client JavaScript (first load + deferred + noModule polyfills)",
+    "path": ".next/static/chunks/**/*.js",
+    "limit": "295 kB",
+    "brotli": true
+  }
+]
