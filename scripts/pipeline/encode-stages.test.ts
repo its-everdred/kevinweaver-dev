@@ -143,6 +143,18 @@ describe('live stage boundary taxonomy', () => {
     ).resolves.toBe(code)
     await expect(tree(target)).resolves.toEqual(before)
   })
+
+  it('preserves the underlying cause when an extraction stage fails', async () => {
+    const underlying = new Error('git log failed on a corpus repo')
+    stages.extraction.mockRejectedValueOnce(underlying)
+
+    await expect(resolveStages(null, undefined)).rejects.toMatchObject({
+      name: 'UpstreamUnavailableError',
+      message:
+        'Upstream pipeline input is unavailable: extraction stage failed',
+      cause: underlying,
+    })
+  })
 })
 
 async function refusalTarget(): Promise<string> {

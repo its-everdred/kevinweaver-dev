@@ -131,7 +131,11 @@ function stageFailure(stage: string, error: unknown): Error {
     error instanceof stageAdapters.StageDataError
   )
     return error
-  return new UpstreamUnavailableError(`${stage} stage failed`)
+  // Keep the underlying error as the cause so a workflow log can name the
+  // real reason a stage failed instead of only the stage name.
+  return new UpstreamUnavailableError(`${stage} stage failed`, {
+    cause: error,
+  })
 }
 
 function calendarRefusal(error: SamlCanaryError): PipelineAvailabilityError {

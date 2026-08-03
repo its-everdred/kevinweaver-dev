@@ -37,8 +37,8 @@ function isStageFunction(value: unknown): value is StageFunction {
 }
 
 export class UpstreamUnavailableError extends Error {
-  constructor(specifier: string) {
-    super(`Upstream pipeline input is unavailable: ${specifier}`)
+  constructor(specifier: string, options?: { cause?: unknown }) {
+    super(`Upstream pipeline input is unavailable: ${specifier}`, options)
     this.name = 'UpstreamUnavailableError'
   }
 }
