@@ -25,7 +25,7 @@ const COMMIT_LOG_CSS = `
 .kw-clog { --cl-graph-w: 1.125rem; --cl-marker-w: 0.9em; display: flex; flex-direction: column; }
 .kw-clog-rows { list-style: none; margin: 0; padding-left: var(--cl-marker-w); }
 .kw-clog-rows > li { list-style: none; }
-.kw-clog summary { cursor: pointer; list-style: none; position: relative; }
+.kw-clog summary { cursor: pointer; list-style: none; position: relative; min-height: 24px; display: flex; align-items: center; }
 .kw-clog summary::-webkit-details-marker { display: none; }
 .kw-clog summary::before {
   border-bottom: .28em solid transparent;
