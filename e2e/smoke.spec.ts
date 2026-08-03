@@ -128,4 +128,43 @@ test.describe('smoke', () => {
     const second = await countFrames()
     expect(second).toEqual(first)
   })
+
+  test('the skip link is the first tab stop and reveals above the chrome', async ({
+    page,
+  }) => {
+    await loadFirstVisit(page)
+
+    const skip = page.locator('a.skip')
+    const clipPath = () => skip.evaluate((el) => getComputedStyle(el).clipPath)
+    const box = async () => skip.boundingBox()
+
+    // Expected target, unchanged.
+    await expect(skip).toHaveAttribute('href', '#whoami')
+
+    // Hidden at rest (negative control): the sr-only clip leaves a ~1x1 box.
+    expect(await clipPath()).toBe('inset(50%)')
+    const atRest = await box()
+    expect(atRest).not.toBeNull()
+    expect(atRest?.width).toBeLessThanOrEqual(2)
+    expect(atRest?.height).toBeLessThanOrEqual(2)
+
+    // First tab stop lands on the skip link and reveals it as a control.
+    await page.keyboard.press('Tab')
+    await expect(skip).toBeFocused()
+    expect(await clipPath()).toBe('none')
+    const focused = await box()
+    expect(focused).not.toBeNull()
+    expect(focused?.width).toBeGreaterThan(40)
+    expect(focused?.height).toBeGreaterThan(12)
+    expect(focused?.x).toBeGreaterThanOrEqual(0)
+    expect(focused?.y).toBeGreaterThanOrEqual(0)
+
+    // Leaving focus returns the link to its hidden-at-rest state.
+    await page.keyboard.press('Tab')
+    await expect(skip).not.toBeFocused()
+    const after = await box()
+    expect(after).not.toBeNull()
+    expect(after?.width).toBeLessThanOrEqual(2)
+    expect(after?.height).toBeLessThanOrEqual(2)
+  })
 })

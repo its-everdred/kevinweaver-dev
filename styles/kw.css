@@ -143,6 +143,22 @@ body {
   border: 0;
 }
 
+.skip:focus {
+  position: absolute;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  z-index: 100;
+  width: auto;
+  height: auto;
+  padding: var(--sp-1) var(--sp-2);
+  margin: 0;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+  background: var(--bg0);
+  color: var(--fg0);
+}
+
 @media (max-width: 1080px) {
   .kw-instr {
     height: auto;
