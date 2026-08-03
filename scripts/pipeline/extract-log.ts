@@ -161,8 +161,14 @@ function addEvent(state: LogState, path: string): void {
 }
 
 function recordFrom(repo: string, line: string): LogRecord {
-  const [sha, authorDate, authorEmail, ...rest] = line.slice(1).split('\x1f')
-  if (!sha || !authorDate || !authorEmail || rest.length > 0)
+  const [sha, authorDate, authorEmail = '', ...rest] = line
+    .slice(1)
+    .split('\x1f')
+  // A missing sha/date or an extra separator field means the header is
+  // structurally broken. An empty author email is a legitimate git state
+  // (`git commit --author="Name <>"`), not a malformed header: such a commit
+  // is simply unclassifiable and is filtered out later, never a fatal error.
+  if (!sha || !authorDate || rest.length > 0)
     throw new GitLogError(repo, 'malformed log header')
   return { sha, authorDate, authorEmail, paths: [] }
 }
