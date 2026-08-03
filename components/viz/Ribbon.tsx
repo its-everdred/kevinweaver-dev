@@ -9,12 +9,13 @@ import {
 import { useCanvasSurface } from './useCanvasSurface'
 import { useRibbonInteraction } from './useRibbonInteraction'
 
-const TABLE_ID = 'kw-contribution-table'
-
 /**
  * @description Renders the independently observed 53-week contribution surface.
- * @returns The interactive ribbon canvas, described by the server-rendered
- * DEC-011 contribution table (mounted in the Instrument region).
+ * @returns The interactive ribbon canvas. The DEC-011 contribution table
+ * (mounted in the Instrument region) is a sibling in the accessibility tree —
+ * the canvas is deliberately not wired to it via aria-describedby (KW-025
+ * note 4: the accessible-description algorithm would flatten every table row
+ * into one enormous string).
  */
 export const Ribbon = memo(function Ribbon(): ReactNode {
   const runtime = useInstrumentRuntime()
@@ -24,7 +25,6 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
     id: 'ribbon',
     driver: viz?.driver ?? null,
     label,
-    describedById: TABLE_ID,
   })
   const interaction = useRibbonInteraction({ viz, geometry, toLocal })
 
