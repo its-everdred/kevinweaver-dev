@@ -25,7 +25,7 @@ const SURFACE_TOKEN: Readonly<Record<TokenName, string>> = {
   fg1: LV[8],
   fg2: LV[7],
   fg3: LV[6],
-  fg4: LV[5],
+  fg4: '#a89984',
   gray: LV[4],
   green: LV[8],
   greenD: LV[6],
