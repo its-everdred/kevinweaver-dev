@@ -80,7 +80,7 @@ export function renderCluster(
   if (labelledBy.length === 0) return
   ctx.font = `700 ${view.theme.fontPx.micro}px ${view.theme.fontFamily}`
   ctx.textAlign = 'center'
-  ctx.fillStyle = view.theme.token.bg4
+  ctx.fillStyle = view.theme.token.fg4
   ctx.fillText(
     labelledBy,
     xPx + tile.sizePx / 2,
