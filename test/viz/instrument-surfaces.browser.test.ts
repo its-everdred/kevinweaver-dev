@@ -5,10 +5,10 @@ import Gource, { GOURCE_CHUNK_MARKER } from '@/components/viz/Gource'
 import { Overview } from '@/components/viz/Overview'
 import { Ribbon } from '@/components/viz/Ribbon'
 // prettier-ignore
-import { createInstrumentViz, useInstrumentRuntime } from '@/components/viz/instrumentRuntime'
+import { BOOT_PROBE_FILES, createInstrumentViz, useInstrumentRuntime } from '@/components/viz/instrumentRuntime'
 import { useCanvasSurface as useSurface } from '@/components/viz/useCanvasSurface'
 import { encodeBundle } from '@/lib/bundle/codec'
-import { FIRST_BYTE_FILE_COUNT, type BundleHead } from '@/lib/bundle/loader'
+import type { BundleHead } from '@/lib/bundle/loader'
 import type { RepoRecord } from '@/lib/bundle/schema'
 import { getVizTransport, type VizSurfaceGeometry } from '@/lib/viz/driver'
 import { AG, LV } from '@/lib/viz/tokens/ramp'
@@ -86,7 +86,10 @@ function stubPayload(): () => void {
   let attempts = 0
   const gate = new Promise<void>((resolve) => (release = resolve))
   vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
-    if (attempts++ < FIRST_BYTE_FILE_COUNT)
+    // Fail the first probe round so the runtime's retry is exercised; the
+    // instrument boot probes BOOT_PROBE_FILES with one fetch each before the
+    // loader's full five-file boot, so one round is exactly that many fetches.
+    if (attempts++ < BOOT_PROBE_FILES.length)
       throw new TypeError('transient fixture failure')
     await gate
     const name = input.toString().split('/data/v1/')[1] ?? ''

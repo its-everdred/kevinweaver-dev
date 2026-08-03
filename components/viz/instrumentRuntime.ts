@@ -1,7 +1,11 @@
 'use client'
 import { useEffect, useSyncExternalStore } from 'react'
 import { dayIndex } from '@/lib/bundle/codec'
-import { createBundleLoader, type BundleHead } from '@/lib/bundle/loader'
+import {
+  createBundleLoader,
+  DEFAULT_BASE_URL,
+  type BundleHead,
+} from '@/lib/bundle/loader'
 import {
   bindVizTransport,
   createVizDriver,
@@ -23,6 +27,13 @@ const LOADING: InstrumentRuntimeState = { status: 'loading' }
 const UNAVAILABLE: InstrumentRuntimeState = { status: 'unavailable' }
 const MAX_BOOT_ATTEMPTS = 2
 const RETRY_DELAY_MS = 100
+/**
+ * The first-byte files probed (with bodies consumed) before the loader's full
+ * five-file boot is engaged. Mirrors lib/bundle/loader.ts `loadBoot()`'s probe
+ * order; KW-023's smoke spec waits for exactly these two requests and routes
+ * them to 404 to simulate a data-less first visit.
+ */
+export const BOOT_PROBE_FILES = ['manifest.json', 'grid.json'] as const
 const listeners = new Set<() => void>()
 let state: InstrumentRuntimeState = LOADING
 let loading: Promise<void> | undefined
@@ -69,8 +80,7 @@ function ensureRuntime(): void {
     notify()
   }
   attempts += 1
-  loading = createBundleLoader()
-    .boot()
+  loading = bootRuntime()
     .then((head) => {
       state = { status: 'ready', viz: createInstrumentViz(head) }
       notify()
@@ -82,6 +92,31 @@ function ensureRuntime(): void {
       if (attempts < MAX_BOOT_ATTEMPTS)
         window.setTimeout(ensureRuntime, RETRY_DELAY_MS)
     })
+}
+/**
+ * @description Engages the loader's full boot only when the first-byte payload
+ * exists. The probe fetches consume their response bodies, so a data-less
+ * environment settles cleanly instead of leaving the loader's parallel 404s
+ * holding connections open (which blocks Playwright's `networkidle`).
+ * @returns The validated first-byte payload.
+ */
+async function bootRuntime(): Promise<BundleHead> {
+  const present = await Promise.all(
+    BOOT_PROBE_FILES.map((name) => probeFile(name))
+  )
+  if (!present.every(Boolean)) throw new Error('payload unavailable')
+  return createBundleLoader().boot()
+}
+async function probeFile(name: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${DEFAULT_BASE_URL}/${name}`, {
+      credentials: 'omit',
+    })
+    await response.text()
+    return response.ok
+  } catch {
+    return false
+  }
 }
 function buildFiles(head: BundleHead): FileEntity[] {
   const newest = dayIndex(head.manifest.windowStart, head.manifest.days[0])
