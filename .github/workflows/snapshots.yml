@@ -1,0 +1,133 @@
+name: snapshots
+
+on:
+  pull_request:
+    branches: [main]
+  issue_comment:
+    types: [created]
+
+# No merge_group (C-21: no merge queue exists on a User-owned repo).
+# No repository_dispatch (C-22: baselines never come from a preview).
+# No pull_request_target: the update job checks out and RUNS pull-request code.
+
+concurrency:
+  group: snapshots-${{ github.event.pull_request.number || github.event.issue.number || github.ref }}
+  cancel-in-progress: false        # never cancel a job that is mid-push
+
+permissions:
+  contents: read
+
+jobs:
+  # Hygiene. Fails a PR whose baseline change did not come from the update job.
+  # The repository commits subjects only, so provenance is the exact subject
+  # `Regenerate visual baselines in container` (Executor preflight ruling).
+  guard:
+    if: github.event_name == 'pull_request'
+    name: snapshot-provenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          # The exact head SHA with full history: never the synthetic merge
+          # commit (Executor preflight ruling).
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Every baseline commit must carry the container subject
+        shell: bash
+        run: |
+          set -euo pipefail
+          SUBJECT='Regenerate visual baselines in container'
+          base=$(git merge-base origin/${{ github.base_ref }} HEAD)
+          touched=$(git diff --name-only "$base"...HEAD -- 'e2e/__screenshots__/**')
+          if [ -z "$touched" ]; then echo 'no baseline change'; exit 0; fi
+          bad=0
+          for sha in $(git rev-list "$base"..HEAD -- 'e2e/__screenshots__/**'); do
+            subject=$(git show -s --format=%s "$sha")
+            if [ "$subject" != "$SUBJECT" ]; then
+              echo "::error::commit $sha changes a baseline without subject '$SUBJECT'."
+              echo "::error::Regenerate by commenting /update-snapshots on this pull request."
+              bad=1
+            fi
+          done
+          [ "$bad" = 0 ]
+
+  # The agent's regeneration path. Owner comments /update-snapshots on the PR.
+  update:
+    if: >-
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request != null &&
+      github.event.comment.body == '/update-snapshots' &&
+      github.event.comment.author_association == 'OWNER'
+    name: update-snapshots
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble
+      options: --user root --ipc=host
+    env:
+      HOME: /root
+      KW_IN_CONTAINER: '1'
+      NEXT_TELEMETRY_DISABLED: '1'
+      NEXT_PUBLIC_TEST_HOOKS: '1'
+    steps:
+      - name: Require the push credential up front
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.SNAPSHOT_PUSH_TOKEN }}
+        run: |
+          if [ -z "${TOKEN:-}" ]; then
+            echo '::error::SNAPSHOT_PUSH_TOKEN is not configured. A GITHUB_TOKEN push does'
+            echo '::error::NOT re-run e2e, so the PR would sit on a stale red check forever.'
+            echo '::error::Mint a fine-grained PAT with contents:write on this repository.'
+            exit 1
+          fi
+
+      - uses: actions/github-script@v9.0.0
+        id: pr
+        with:
+          script: |
+            const { data } = await github.rest.pulls.get({
+              ...context.repo, pull_number: context.issue.number });
+            if (data.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed('Refusing to build a fork head with a write credential.');
+              return;
+            }
+            core.setOutput('ref', data.head.ref);
+            core.setOutput('sha', data.head.sha);
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          # PAT: a GITHUB_TOKEN push never re-runs e2e, which would leave the PR
+          # on a stale red check forever (ci-testing §10.5).
+          ref: ${{ steps.pr.outputs.ref }}
+          token: ${{ secrets.SNAPSHOT_PUSH_TOKEN }}
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      # The image ships the browsers; never run `playwright install` here.
+      # No continue-on-error: a semantic, browser, server or determinism failure
+      # must fail the job rather than commit a partial baseline set.
+      - run: npx playwright test --project=desktop-2x --update-snapshots=changed
+      # Rerun every comparison against the freshly generated set in the same
+      # pinned container before anything is committed.
+      - run: npx playwright test --project=desktop-2x
+
+      - name: Commit and push with provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name  'its-everdred'
+          git config user.email 'its-everdred@users.noreply.github.com'
+          git add -A e2e/__screenshots__
+          if git diff --cached --quiet; then echo 'baselines already current'; exit 0; fi
+          git commit -m 'Regenerate visual baselines in container'
+          git push
