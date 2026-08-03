@@ -7,7 +7,7 @@ import { bandLabel, level } from '@/lib/viz/tokens/level'
  * canvases: a server-rendered, visually hidden `<table>` with one `<td>` per
  * day in the published window. One artefact, three jobs — the screen-reader
  * text equivalent, the no-JS fallback, and the indexable content surface
- * (`viz-runtime` §9.4). Synchronous server component: no `'use client'`, no
+ * (`viz-runtime` §9.4). Synchronous server component: no client directive, no
  * hooks, no fetch. Hidden visually by KW-003's `.sr-only` and nothing else.
  */
 
