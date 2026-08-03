@@ -1,0 +1,129 @@
+name: data-bundle
+
+# Scheduled regeneration runs on GitHub Actions, never Vercel Cron.
+# 06:17 UTC, deliberately off the hour: GitHub documents that scheduled runs can
+# be delayed and that some queued jobs may be dropped during high-load windows,
+# and the start of every hour is the highest-load window there is.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Regenerate and measure, but do not commit or push'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-bundle
+  cancel-in-progress: false
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  FORCE_COLOR: '1'
+
+jobs:
+  regenerate:
+    # Never let a fork's scheduled copy of this workflow run.
+    if: github.repository == 'its-everdred/kevinweaver-dev'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci --no-audit --fund=false
+
+      # The blobless clone cache must live OUTSIDE the git working tree so no
+      # clone artifact can ever be staged. RUNNER_TEMP is absolute and stable for
+      # the whole job. It has to be published through $GITHUB_ENV rather than a
+      # workflow-level env: block because the `runner` context is not available
+      # at that level.
+      - name: resolve clone root
+        run: echo "KW_CLONE_ROOT=${RUNNER_TEMP}/kw-clones-v1" >> "$GITHUB_ENV"
+
+      # Without the SSO-authorized PAT the GraphQL half publishes numbers roughly
+      # 3,299 low across 2025-26. The default token cannot substitute: it is an
+      # installation token scoped to this repository and cannot carry a
+      # third-party organization's SAML grant. Fail here, with a readable
+      # message, rather than letting the SAML canary produce an opaque exit code.
+      - name: assert CONTRIB_TOKEN is present
+        env:
+          CONTRIB_TOKEN: ${{ secrets.CONTRIB_TOKEN }}
+        run: |
+          if [ -z "${CONTRIB_TOKEN}" ]; then
+            echo "::error::GATE-003 unsatisfied: repository secret CONTRIB_TOKEN is not set."
+            echo "::error::Mint a PAT with read:user, authorize it for ethereum-optimism, store it as CONTRIB_TOKEN."
+            exit 1
+          fi
+
+      # package.json is frozen, so the pipeline entry point is whatever the
+      # data:build script already points at. Resolve it and fail readably if the
+      # file is absent, rather than surfacing an opaque resolution error at
+      # 06:17 UTC.
+      - name: assert pipeline entry point exists
+        run: |
+          entry="$(node -p "require('./package.json').scripts['data:build'].split(' ').pop()")"
+          echo "data:build -> ${entry}"
+          test -f "${entry}" || { echo "::error::${entry} does not exist; package.json is frozen, report upstream"; exit 1; }
+
+      - name: restore blobless clone cache
+        id: clones
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: ${{ env.KW_CLONE_ROOT }}
+          key: clones-v1-${{ github.run_id }}
+          restore-keys: |
+            clones-v1-
+
+      - name: regenerate bundle
+        env:
+          CONTRIB_TOKEN: ${{ secrets.CONTRIB_TOKEN }}
+        run: npm run data:build
+
+      # Saved even when a later step fails: actions/cache's combined form
+      # declares post-if: success() and would discard an advanced cache on any
+      # red run.
+      - name: save blobless clone cache
+        if: always()
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ${{ env.KW_CLONE_ROOT }}
+          key: clones-v1-${{ github.run_id }}
+
+      # Independent post-promotion measurement of the five first-byte resources.
+      # stdout goes to the job summary; the verdict line goes to stderr and so
+      # stays visible in the log. Exiting non-zero stops the commit step.
+      - name: first-byte budget
+        run: node scripts/pipeline/budget.ts --markdown >> "$GITHUB_STEP_SUMMARY"
+
+      # Always commit: the encoder always rewrites manifest.generatedAt, so an
+      # empty staged diff means nothing was promoted - that is a failure, not a
+      # no-op, because a silent no-op is how the 60-day auto-disable clock
+      # restarts. A dry_run run regenerates and measures without committing.
+      - name: commit and push
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        run: |
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- public/data/v1 data/.pipeline-state.json
+          if git diff --cached --quiet; then
+            echo "::error::pipeline promoted nothing; expected at least a manifest.generatedAt bump"
+            exit 1
+          fi
+          generated_at="$(node -p "require('./public/data/v1/manifest.json').generatedAt")"
+          git commit -m "Refresh activity data bundle"
+          git push origin HEAD:main \
+            || { git pull --rebase --autostash origin main && git push origin HEAD:main; }
+          {
+            echo ""
+            echo "generatedAt: \`${generated_at}\`"
+            echo "commit: \`$(git rev-parse HEAD)\`"
+          } >> "$GITHUB_STEP_SUMMARY"
