@@ -1,65 +1,77 @@
 # kevinweaver.dev
 
-Dashboard of what Kevin Weaver is
-working on right now.
+Personal site: a terminal-styled dashboard built around a reverse-time visualization of
+public GitHub activity, alongside a man page, a career git log, and a contact pane.
 
-Next.js (App Router) on Vercel. gruvbox dark medium, terminal/tmux visual language,
-JetBrains Mono throughout.
+Production: <https://www.kevinweaver.dev> (the apex 308-redirects to `www`).
 
-## Quick start
+## Stack
 
-```bash
-npm ci
-npm run dev
-```
+Next.js App Router on React, Tailwind CSS v4 via `@tailwindcss/postcss`, TypeScript, and a
+canvas visualization with no runtime chart dependency. Every version is pinned exactly in
+`package.json`, the single source of truth — no floating tag and no range.
 
-## Commands
+npm only, one lockfile: `package-lock.json`. No `yarn.lock`, `pnpm-lock.yaml`, or
+`packageManager` field.
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | dev server |
-| `npm run build` | production build |
-| `npm start` | serve the production build |
-| `npm run lint` | ESLint |
-| `npm run format` | Prettier, write |
-| `npm run format:check` | Prettier, check only |
-| `npm run typegen` | generate Next route types |
-| `npm run typecheck` | `next typegen` then `tsc --noEmit` |
-| `npm test` / `npm run test:unit` | Vitest |
-| `npm run test:watch` | Vitest, watch |
-| `npm run test:e2e` | Playwright |
-| `npm run data:build` | regenerate the GitHub activity payload |
-| `npm run size` | bundle size budget |
+## Local development
 
-If a command is not in that table, it does not exist.
+    npm ci
+    npm run dev            # http://localhost:3000
 
-The gate that must be green before any PR opens:
+The full verification chain, which is what CI runs:
 
-```bash
-npm ci && npm run typecheck && npm run lint && npm test && npm run build
-```
+    npm run typegen && npm run typecheck && npm run lint && npm run build
+
+Tests:
+
+    npm run test:unit      # Vitest: node / dom / browser projects
+    npm run test:e2e       # Playwright; see e2e/README notes in the workflow
 
 ## Layout
 
-```text
-app/            App Router — layout, page, route handlers, region components
-lib/            pure, DOM-free logic (encoding, binning, sim state) — unit tested
-docs/design/    the gruvbox design system + the Claude Design comp (reference)
-docs/research/  measured research; (M) = measured, (I) = inferred
-docs/build-orders/  the ticket graph driving the rewrite
-.aiur/          autonomous fleet config
-```
+| Path                 | Contents                                                        |
+| -------------------- | --------------------------------------------------------------- |
+| `app/`               | App Router shell, one file per page region under `app/regions/` |
+| `components/ds/`     | design-system chrome primitives (pane, bar, meter, scanline)    |
+| `components/viz/`    | canvas surfaces for the instrument pane                         |
+| `components/icons/`  | inline SVG control icons                                        |
+| `content/`           | every rendered string, as typed data                            |
+| `lib/viz/`           | the deterministic simulation and renderer                       |
+| `lib/bundle/`        | payload wire format, encoder, client loader                     |
+| `scripts/pipeline/`  | the data pipeline that produces the payload                     |
+| `public/data/v1/`    | the generated payload, committed by the scheduled workflow      |
+| `e2e/`, `test/`      | Playwright and Vitest suites                                    |
+| `docs/design/`       | the design comp and the vendored design system                  |
+| `docs/build-orders/` | the planning pack this rebuild was executed from                |
 
-## Notes
+## Data
 
-- **npm only.** Exactly one lockfile. The repo once shipped both `yarn.lock` and
-  `package-lock.json`, which made package-manager detection ambiguous — never reintroduce it.
-- **ESLint is pinned to 9.x, not 10.x.** `eslint-config-next@16.2.12` claims
-  `eslint: ">=9.0.0"` but depends on `eslint-plugin-react@^7.37.0`, which peers at `^9.7`
-  and calls the `context.getFilename()` API ESLint 10 removed. ESLint 10 installs cleanly
-  and then throws at lint time.
-- **TypeScript is capped at 6.0.x.** `typescript-eslint@8` peers `<6.1.0`; TS 7 has no
-  typescript-eslint support at any published version.
+The activity payload under `public/data/v1/` is generated, not hand-written. It is rebuilt
+daily by `.github/workflows/data-bundle.yml`, which commits the result; the commit triggers
+a production deployment through the Vercel Git integration. It can also be run on demand
+from the Actions tab.
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md) for engineering conventions and
-[AGENTS.md](./AGENTS.md) for the autonomous-agent contract.
+Two halves with different auth: an anonymous `git clone` pass driving the animation, and a
+GraphQL pass driving the contribution grid, which needs an SSO-authorized token in the
+`CONTRIB_TOKEN` repository secret. Without that secret the grid under-reports.
+
+Regenerate locally:
+
+    npm run data:build
+
+No figure the site displays is a literal in code or copy; every one is read from the
+generated payload, which carries its own `generatedAt` and window fields.
+
+## CI and deployment
+
+`ci-ok` is the aggregated required status on every pull request; `e2e-ok` publishes the
+containerized browser run. Size budgets and the first-load assertion run inside `ci-ok`;
+screenshot baselines come only from the snapshots workflow, never locally.
+
+Deployment is Vercel via the Git integration: a push to `main` becomes a production
+deployment, every other branch and pull request a preview. Nothing to run by hand.
+
+## Conventions
+
+See `AGENTS.md` for contributor conventions and `.github/CODEOWNERS` for review routing.
