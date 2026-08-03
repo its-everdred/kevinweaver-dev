@@ -99,7 +99,6 @@ export function formatText(report: BudgetReport): string {
   return [
     `dir:   ${report.dir}`,
     `limit: ${report.limitBytes} B`,
-    '',
     `${pad('file')}  ${'raw B'.padStart(8)}  ${'brotli B'.padStart(8)}`,
     ...rows,
     `${pad('first byte total')}  ${String(report.totalRawBytes).padStart(8)}  ${String(
@@ -126,7 +125,6 @@ export function formatMarkdown(report: BudgetReport): string {
 }
 
 type OutputFormat = 'text' | 'json' | 'markdown'
-
 interface Options {
   dir?: string
   limit?: number
