@@ -171,7 +171,10 @@ test('canvas exposes a name and a real text equivalent @a11y', async ({
   )
   expect(new Set(names).size).toBe(3)
 
-  // DEC-011 table: one cell per day; every date/count/level payload-accurate.
+  // DEC-011 table: exactly one canonical table (Executor preflight: "a count
+  // proving exactly one table"), with one cell per day; every date/count/level
+  // is payload-accurate.
+  await expect(page.getByTestId('contribution-table')).toHaveCount(1)
   const table = page.getByTestId('contribution-table')
   await expect(table.locator('caption')).toContainText(/contributions by day/i)
   const cells = await table.locator('td[data-day]').evaluateAll((nodes) =>
@@ -203,9 +206,11 @@ test('canvas exposes a name and a real text equivalent @a11y', async ({
   }
   expect(mismatches, mismatches.join('\n')).toEqual([])
 
-  // Server-rendered with zero client JavaScript: the raw HTML carries the table.
+  // Server-rendered with zero client JavaScript: the raw HTML carries exactly
+  // one `data-day=` per day — the canonical server component, not a hydrated
+  // or duplicated copy (Executor preflight: "the exact SSR cell count").
   const html = await (await page.request.get('/')).text()
-  expect(html).toContain('data-day=')
+  expect(html.match(/data-day=/g) ?? []).toHaveLength(manifest.dayCount)
 })
 
 test('reduced motion halts the simulation @a11y', async ({ page }) => {
