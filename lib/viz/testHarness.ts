@@ -1,5 +1,8 @@
 import type { VizDriver, VizFrameInfo } from './driver'
 
+/**
+ * @description Browser-only controls exposed for deterministic visualization integration tests.
+ */
 export interface VizTestHarness {
   pause(): Promise<void>
   play(): void
@@ -17,6 +20,11 @@ declare global {
   }
 }
 
+/**
+ * @description Installs test-only driver controls when the test query flag is present.
+ * @param driver - The driver whose deterministic controls become available to the browser.
+ * @returns A cleanup that removes this harness only when it still owns the global hook.
+ */
 export function installTestHarness(driver: VizDriver): () => void {
   if (typeof window === 'undefined') return () => undefined
   const params = new URLSearchParams(window.location.search)
@@ -24,7 +32,18 @@ export function installTestHarness(driver: VizDriver): () => void {
   const seed = params.get('seed')
   if (seed !== null) driver.reset(Number(seed))
   driver.setQuality('high')
-  window.__viz = {
+  const harness = createHarness(driver)
+  window.__viz = harness
+  const remove = () => removeHarness(harness)
+  const unsubscribe = driver.onDestroy(remove)
+  return () => {
+    unsubscribe()
+    remove()
+  }
+}
+
+function createHarness(driver: VizDriver): VizTestHarness {
+  return {
     pause: () => driver.pause(),
     play: () => driver.play(),
     reset: (nextSeed) => driver.reset(nextSeed),
@@ -34,7 +53,8 @@ export function installTestHarness(driver: VizDriver): () => void {
     inspect: () => driver.inspect(),
     setQuality: (quality) => driver.setQuality(quality),
   }
-  return () => {
-    delete window.__viz
-  }
+}
+
+function removeHarness(harness: VizTestHarness): void {
+  if (window.__viz === harness) delete window.__viz
 }
