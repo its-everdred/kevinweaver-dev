@@ -13,13 +13,12 @@ import { AG, LV, PANE_SURFACE } from './ramp'
  * paints its text with, both clean and under the measured scanline
  * darkening (`design-comp-spec` §9.2).
  *
- * NOTE (post-merge finding): KW-022/#110's `test/viz/render-text-contrast.browser.test.ts`
- * builds its fixture theme from the gruvbox `TOKEN_HEXES` map (fg4 = #a89984)
- * rather than the runtime `surface-view.ts` `SURFACE_TOKEN` (fg4 = LV[5] =
- * #83881b), so it reports a false green. The renderer's real text fills use
- * `theme.token.fg4` = #83881b, which is 4.296:1 on the pane surface — below
- * AA. The assertions below inspect the actual ramp values and FAIL until the
- * renderer's text fills are repaired.
+ * NOTE (resolved by #133): `lib/viz/surface-view.ts` `SURFACE_TOKEN.fg4` was
+ * `LV[5]` = #83881b (4.296:1 on the pane surface — below AA) while
+ * `test/viz/render-text-contrast.browser.test.ts` built its fixture from the
+ * gruvbox `TOKEN_HEXES` map (fg4 = #a89984), reporting a false green. #133
+ * changed `SURFACE_TOKEN.fg4` to `#a89984` (5.898:1); the mirror below is
+ * kept in lockstep so a future regression of that token turns this suite red.
  */
 
 const AA_NORMAL = 4.5
@@ -188,7 +187,7 @@ const CANVAS_TEXT: readonly CanvasTextPair[] = [
 describe('the renderer’s actual text fills (what the canvas paints)', () => {
   /** Mirrors lib/viz/surface-view.ts SURFACE_TOKEN for the text-fill tokens. */
   const TOKEN: Readonly<Record<string, string>> = {
-    fg4: LV[5],
+    fg4: '#a89984',
     fg2: LV[7],
     fg0: LV[9],
     purple: AG[7],
