@@ -72,9 +72,23 @@ export async function main(
     await publish(run, options.out)
     return 0
   } catch (error) {
-    console.error(error instanceof Error ? error.message : 'Pipeline failed')
+    console.error(formatFailure(error))
     return exitCode(error)
   }
+}
+
+/** Prints an error and its whole cause chain so the root reason is not buried. */
+function formatFailure(error: unknown): string {
+  const lines: string[] = []
+  const seen = new Set<object>()
+  let current: unknown = error
+  while (current instanceof Error && !seen.has(current)) {
+    seen.add(current)
+    lines.push(current.message)
+    current = current.cause
+  }
+  if (lines.length === 0) return 'Pipeline failed'
+  return lines.join('\n  caused by: ')
 }
 
 function exitCode(error: unknown): number {
