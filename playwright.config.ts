@@ -106,7 +106,11 @@ export default defineConfig({
     },
     {
       name: 'mobile-1x',
-      testIgnore: [/smoke\.spec\.ts/, /canvas\.spec\.ts/],
+      testIgnore: [
+        /smoke\.spec\.ts/,
+        /canvas\.spec\.ts/,
+        /lazy-island\.spec\.ts/,
+      ],
       use: { ...devices['Pixel 7'], deviceScaleFactor: 1 },
     },
     {

@@ -233,7 +233,9 @@ test('a pause control exists and stops the animation @a11y', async ({
   await page.goto('/?viz-test=1')
   await page.evaluate(() => document.fonts.ready)
   await expect.poll(() => page.evaluate(() => Boolean(window.__viz))).toBe(true)
-  const control = page.getByRole('button', { name: /pause|play/i })
+  const control = page.getByRole('button', {
+    name: /^(pause|resume) playback$/i,
+  })
   await expect(control).toBeVisible()
   await page.clock.runFor(2000)
   const moving = await page.evaluate(() => window.__viz!.inspect())
