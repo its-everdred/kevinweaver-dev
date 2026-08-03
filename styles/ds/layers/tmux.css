@@ -19,7 +19,7 @@
 /* session — accent block, the head of the chain */
 .tmux .session{background:var(--accent);color:var(--bg-h);font-weight:var(--fw-black);padding-left:22px;}
 /* window list — one raised block, arrow-fed from the session */
-.tmux .wins{background:var(--surface-raised);gap:0;padding-left:calc(var(--pl-w) + 14px);padding-right:0;}
+.tmux .wins{background:var(--surface-raised);gap:2px;padding-left:calc(var(--pl-w) + 14px);padding-right:0;}
 .tmux .win{color:var(--text-dim);padding:0 16px;align-self:stretch;display:flex;align-items:center;}
 .tmux .win.active{background:var(--bg3);color:var(--text-strong);font-weight:var(--fw-black);}
 /* right side — host then clock, arrows pointing back up the bar */

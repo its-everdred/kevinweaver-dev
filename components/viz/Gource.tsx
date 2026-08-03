@@ -59,7 +59,7 @@ const Gource = memo(function Gource(): ReactNode {
           gap: 13,
           padding: '5px 9px',
           borderRadius: 4,
-          color: 'var(--fg4)',
+          color: 'var(--fg3)',
           background: 'var(--surface-bar)',
           fontSize: 'var(--fs-micro)',
           letterSpacing: '.05em',

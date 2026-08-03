@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
 import Gource, { GOURCE_CHUNK_MARKER } from '@/components/viz/Gource'
+import { ContributionTable } from '@/components/viz/ContributionTable'
 import { Overview } from '@/components/viz/Overview'
 import { Ribbon } from '@/components/viz/Ribbon'
 // prettier-ignore
@@ -157,7 +158,31 @@ async function expectRibbonAlternativeAndIsolation(): Promise<void> {
   // the accessible-description algorithm would flatten all dayCount rows into
   // one enormous string. The hidden table is a sibling in the accessibility tree.
   expect(canvas).not.toHaveAttribute('aria-describedby')
-  expect(view.container.querySelectorAll('tbody tr')).toHaveLength(3)
+  // KW-029: the DEC-011 contribution table moved out of the ribbon into the
+  // extracted ContributionTable; the ribbon itself must not inline it.
+  expect(view.container.querySelectorAll('tbody tr')).toHaveLength(0)
+  const tableView = render(
+    createElement(ContributionTable, {
+      id: 'kw-contribution-table',
+      grid: {
+        start: '2026-02-01',
+        dayCount: 21,
+        human: Array(21).fill(0),
+        agent: Array(21).fill(0),
+        privateMonthly: [],
+        privateStart: '2026-02',
+        bands: [],
+      },
+      meta: {
+        windowStart: '2026-02-01',
+        windowEnd: '2026-02-21',
+        dayCount: 21,
+        generatedAt: '2026-02-21T12:00:00Z',
+      },
+    })
+  )
+  expect(tableView.container.querySelectorAll('tbody tr')).toHaveLength(3)
+  tableView.unmount()
   const transport = getVizTransport()
   if (transport.getSnapshot().playing) transport.toggle()
   const clear = vi.spyOn(CanvasRenderingContext2D.prototype, 'clearRect')
