@@ -4,8 +4,33 @@ const PORT = 3000
 const LOCAL_ORIGIN = `http://127.0.0.1:${PORT}`
 const remoteOrigin = process.env.BASE_URL
 
+// C-23 / ci-testing verifier C4b. `process.argv.includes('--update-snapshots')` is a
+// no-op for three of the four documented spellings (program.js:226): `-u`,
+// `--update-snapshots=all` and `--update-snapshots=changed` must all be caught.
+const UPDATING = process.argv.some(
+  (a) => a === '-u' || a === '--update-snapshots' || a.startsWith('--update-snapshots='),
+)
+
+if (UPDATING && process.env.KW_IN_CONTAINER !== '1') {
+  throw new Error(
+    'Refusing to write screenshots outside the pinned container.\n' +
+      'Exactly one image produces baselines. Run:\n' +
+      '  docker run --rm --ipc=host -v "$PWD":/w -w /w -e KW_IN_CONTAINER=1 \\\n' +
+      '    mcr.microsoft.com/playwright:v1.62.1-noble \\\n' +
+      '    sh -c "npm ci --no-audit --no-fund && npm run build && npx playwright test --project=desktop-2x -u"\n' +
+      'or comment /update-snapshots on the pull request.',
+  )
+}
+
 export default defineConfig({
   testDir: './e2e',
+
+  // KW-031. No OS/arch segment: there is exactly one legal producer of these bytes. The
+  // 1.62.1 default partitions by platform through {-snapshotSuffix} (index.js:345 sets
+  // snapshotSuffix = process.platform), not through a {platform} token.
+  // Do NOT also set expect.toHaveScreenshot.pathTemplate: it wins over this key (1257).
+  snapshotPathTemplate: '{testDir}/__screenshots__/{projectName}/{testFilePath}/{arg}{ext}',
+
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: 0,
@@ -15,9 +40,18 @@ export default defineConfig({
     : [['list'], ['html', { open: 'never' }]],
   expect: {
     timeout: 10_000,
-    // Snapshot follow-up owns the sanctioned update guard, root snapshotPathTemplate,
-    // and exact threshold, maxDiffPixels, animations, caret, and scale settings.
-    toHaveScreenshot: { stylePath: './e2e/screenshot.css' },
+    toHaveScreenshot: {
+      // KW-031, measured — see "The comparison settings". 0.2 is blind to a full
+      // aqua->green beam recolour; AA pixels are excluded from the count (6665).
+      threshold: 0,
+      // Already the default (7562), stated so a future edit has to argue with it.
+      // Do NOT add maxDiffPixelRatio: 0.002 — that RAISES the budget from 0 to ~2048 pixels.
+      maxDiffPixels: 0,
+      animations: 'disabled',
+      caret: 'hide',
+      scale: 'css',
+      stylePath: './e2e/screenshot.css',   // KW-023 owns the file
+    },
   },
   webServer: remoteOrigin
     ? undefined
