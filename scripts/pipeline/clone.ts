@@ -1,7 +1,10 @@
-import { spawn } from 'node:child_process'
-import { access, mkdir, rm } from 'node:fs/promises'
+import { mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import * as cache from './clone-cache.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { runGit } from './clone-runner.ts'
 
 /** Runs git with an injectable boundary for deterministic tests. */
 export type GitExec = (
@@ -58,73 +61,6 @@ function wait(ms: number): Promise<void> {
   return new Promise((done) => setTimeout(done, ms))
 }
 
-function childEnvironment(): NodeJS.ProcessEnv {
-  const environment = { ...process.env }
-  const githubToken = 'GITHUB' + '_TOKEN'
-  const ghToken = 'GH' + '_TOKEN'
-  const contribToken = 'CONTRIB' + '_TOKEN'
-  delete environment[githubToken]
-  delete environment[ghToken]
-  delete environment[contribToken]
-  return {
-    ...environment,
-    GIT_CONFIG_GLOBAL: '/dev/null',
-    GIT_CONFIG_SYSTEM: '/dev/null',
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_ASKPASS: '/bin/false',
-  }
-}
-
-const runGit: GitExec = async (args, cwd) =>
-  new Promise((done) => {
-    const child = spawn('git', args, { cwd, env: childEnvironment() })
-    let stdout = ''
-    let stderr = ''
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString()
-    })
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-    })
-    child.on('error', (error) =>
-      done({ code: -1, stdout, stderr: error.message })
-    )
-    child.on('close', (code) => done({ code: code ?? -1, stdout, stderr }))
-  })
-
-async function exists(dir: string): Promise<boolean> {
-  try {
-    await access(dir)
-    return true
-  } catch {
-    return false
-  }
-}
-
-async function cacheIsValid(dir: string, exec: GitExec): Promise<boolean> {
-  const result = await exec(
-    ['-C', dir, 'config', '--get', 'remote.origin.url'],
-    undefined
-  )
-  return result.code === 0 && result.stdout.trim() !== ''
-}
-
-function readHeads(stdout: string): Record<string, string> {
-  const entries = stdout
-    .trim()
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => line.split(' '))
-  const heads: Record<string, string> = {}
-  for (const [ref, sha] of entries) {
-    if (ref && sha) heads[ref] = sha
-  }
-  return Object.fromEntries(
-    Object.entries(heads).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-  )
-}
-
 function optionsFor(
   opts: CloneOptions | undefined
 ): Required<Pick<CloneOptions, 'retries' | 'backoffMs'>> {
@@ -154,8 +90,8 @@ export async function syncRepo(
     throw new RangeError('retries must be a positive integer')
   if (backoffMs < 0) throw new RangeError('backoffMs must be non-negative')
 
-  let cached = await exists(dir)
-  if (cached && !(await cacheIsValid(dir, exec))) {
+  let cached = await cache.cacheExists(dir)
+  if (cached && !(await cache.cacheIsValid(dir, repo, exec))) {
     await rm(dir, { recursive: true, force: true })
     cached = false
   }
@@ -206,7 +142,7 @@ export async function syncRepo(
           dir,
           ok: true,
           cached,
-          heads: readHeads(heads.stdout),
+          heads: cache.headsFrom(heads.stdout),
           attempts: attempt,
           error: null,
         }
@@ -224,7 +160,7 @@ export async function syncRepo(
     dir,
     ok: false,
     cached,
-    heads: {},
+    heads: cached ? await cache.cachedHeads(dir, exec) : {},
     attempts: retries,
     error: lastError,
   }
