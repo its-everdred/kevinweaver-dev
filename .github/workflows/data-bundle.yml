@@ -15,7 +15,10 @@ on:
         default: false
 
 permissions:
+  # contents: write to push the data/bundle-* branch; pull-requests: write so
+  # the workflow can open and update the data-bundle PR via gh.
   contents: write
+  pull-requests: write
 
 concurrency:
   group: data-bundle
@@ -99,17 +102,33 @@ jobs:
           key: clones-v1-${{ github.run_id }}
 
       # Independent post-promotion measurement of the five first-byte resources.
-      # stdout goes to the job summary; the verdict line goes to stderr and so
-      # stays visible in the log. Exiting non-zero stops the commit step.
+      # The markdown report is appended to the job summary and saved to a temp
+      # file so the commit-and-PR step can quote it in the PR body; the verdict
+      # line goes to stderr and so stays visible in the log. Exiting non-zero
+      # stops the commit step.
       - name: first-byte budget
-        run: node scripts/pipeline/budget.ts --markdown >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          node scripts/pipeline/budget.ts --markdown \
+            | tee -a "$GITHUB_STEP_SUMMARY" > "$RUNNER_TEMP/budget-report.md"
 
-      # Always commit: the encoder always rewrites manifest.generatedAt, so an
-      # empty staged diff means nothing was promoted - that is a failure, not a
-      # no-op, because a silent no-op is how the 60-day auto-disable clock
-      # restarts. A dry_run run regenerates and measures without committing.
-      - name: commit and push
+      # Always commit and open a PR: the encoder always rewrites
+      # manifest.generatedAt, so an empty staged diff means nothing was promoted
+      # - that is a failure, not a no-op, because a silent no-op is how the
+      # 60-day auto-disable clock restarts. A dry_run run regenerates and
+      # measures without committing.
+      #
+      # Cadence: the main ruleset (PR + ci-ok) rejects direct pushes to main, so
+      # the bundle lands on a data/bundle-<generatedAt> branch and a PR is opened
+      # against main. Each scheduled run gets a fresh branch and PR; a re-run
+      # that reaches an existing branch force-pushes it and edits the existing PR
+      # instead of duplicating. The first landing is reviewed and merged by the
+      # Executor, and every later daily refresh follows the same PR cadence -
+      # each PR must pass ci-ok and a code-owner review before a maintainer
+      # squashes it onto main.
+      - name: commit and open pull request
         if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -120,10 +139,38 @@ jobs:
           fi
           generated_at="$(node -p "require('./public/data/v1/manifest.json').generatedAt")"
           git commit -m "Refresh activity data bundle"
-          git push origin HEAD:main \
-            || { git pull --rebase --autostash origin main && git push origin HEAD:main; }
+          commit_sha="$(git rev-parse HEAD)"
+          # ISO second timestamps contain ':' and '.' which are not valid in git
+          # refs; render data/bundle-<generatedAt> with both replaced by '-'.
+          branch="data/bundle-${generated_at//[.:]/-}"
+          git push --force origin "HEAD:$branch"
+          budget_md="$(cat "$RUNNER_TEMP/budget-report.md")"
+          body="$(cat <<EOF
+          Automated refresh of the activity data bundle.
+
+          - generatedAt: \`${generated_at}\`
+          - commit: \`${commit_sha}\`
+          - branch: \`${branch}\`
+
+          ### First-byte budget
+
+          ${budget_md}
+
+          > Pushed by the scheduled \`data-bundle\` workflow. The main ruleset requires
+          > changes to land through a pull request with the \`ci-ok\` check passing;
+          > merge the bundle once CI is green.
+          EOF
+          )"
+          if gh pr view "$branch" --json url --jq .url >/dev/null 2>&1; then
+            gh pr edit "$branch" --title "Refresh activity data bundle" --body "$body"
+          else
+            gh pr create --base main --head "$branch" --title "Refresh activity data bundle" --body "$body"
+          fi
+          pr_number="$(gh pr view "$branch" --json number --jq .number)"
           {
             echo ""
             echo "generatedAt: \`${generated_at}\`"
-            echo "commit: \`$(git rev-parse HEAD)\`"
+            echo "commit: \`${commit_sha}\`"
+            echo "branch: \`${branch}\`"
+            echo "pull request: #${pr_number}"
           } >> "$GITHUB_STEP_SUMMARY"
