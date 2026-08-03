@@ -306,7 +306,12 @@ test('reduced motion suppresses the boot overlay entirely @a11y', async ({
       if (path.startsWith('/data/v1/')) requests.push(path)
     })
     await page.goto('/')
-    await page.waitForLoadState('networkidle')
+    // `networkidle` is unreliable here (the payload loader keeps sockets alive),
+    // so settle on the boot decision instead: the overlay either mounts (seen or
+    // non-reduced path) or is suppressed entirely. Give the decision time to run
+    // and then assert the dialog never appears.
+    await page.waitForLoadState('domcontentloaded')
+    await page.waitForTimeout(1500)
     await expect(page.getByRole('dialog')).toHaveCount(0)
     return requests
   }
