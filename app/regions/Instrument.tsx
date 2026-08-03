@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import TransportBar from './TransportBar'
 import { ContributionTable } from '@/components/viz/ContributionTable'
 import { Pane } from '@/components/ds/Pane'
 import { GourceIsland } from '@/components/viz/GourceIsland'
@@ -8,14 +9,6 @@ import { Ribbon } from '@/components/viz/Ribbon'
 import { decodeGrid, decodeManifest } from '@/lib/bundle/codec'
 import type { GridSeries, Manifest } from '@/lib/bundle/schema'
 import { REGION_META, type InstrumentProps } from './_contract'
-
-/**
- * @description Placeholder transport footer consumed by the gource pane.
- * @returns The empty transport slot that KW-026 fills with its real bar.
- */
-function TransportSlot() {
-  return <div aria-hidden="true" />
-}
 
 const META = REGION_META.instrument
 const TABLE_ID = 'kw-contribution-table'
@@ -85,7 +78,7 @@ export function Instrument({ id, className, style }: InstrumentProps) {
           as="section"
           bleed
           focus
-          footer={<TransportSlot />}
+          footer={<TransportBar />}
           right={<GraphDate />}
           title="gource — repo graph"
           titleAs="h3"
