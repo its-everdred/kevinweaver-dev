@@ -1,13 +1,7 @@
-import {
-  liveIdsAscending,
-  advanceCursor,
-  isLive,
-  repoPhase,
-  seekCursor,
-} from './sim/cursor'
+import { isLive, repoPhase } from './sim/cursor'
 import { packOnce } from './sim/layout'
 import { seedRng } from './sim/rng'
-import { createSimState, digestSimState, resetSimState } from './sim/state'
+import { createSimState, resetSimState } from './sim/state'
 import { step } from './sim/step'
 import {
   ENTITY_REPO,
@@ -19,21 +13,45 @@ import {
   type SimInput,
   type SimState,
 } from './sim/types'
-import { renderGraph, createGraphLayer } from './render/graph'
-import { renderOverview, createOverviewLayer } from './render/overview'
-import { renderRibbon, createRibbonLayer } from './render/ribbon'
+import type { RenderView } from './render/budget'
+import { syncVizRibbonWindow } from './surface-pointer'
+import { createVizSurfaceController } from './surface-controller'
+import { paintVizSurfaces } from './surface-painter'
+import { createVizDriverSurfaceApi } from './driver-surface-api'
+import { createVizDriverLifecycle } from './driver-lifecycle'
+import { buildVizDriverInfo } from './driver-info'
 import {
-  createFrameBudget,
-  instrumentContext,
-  type Ctx2D,
-  type GridSeries,
-  type RenderMeta,
-  type RenderTheme,
-  type RenderView,
-  type Quality,
-  type Viewport,
-} from './render/budget'
-import { AG, LV, PANE_SURFACE } from './tokens/ramp'
+  anchorVizPlaybackDay,
+  createVizPlaybackTrajectory,
+  resolveVizSeekState,
+  type VizSeekMode,
+} from './driver-playback'
+import { createVizDriverRibbon } from './driver-ribbon'
+import {
+  createVizDriverRenderLayers,
+  renderVizQuality,
+  type VizDriverRenderData,
+} from './driver-render'
+import type {
+  VizPointer,
+  VizSurfaceAttachment,
+  VizSurfaceGeometry,
+  VizSurfaceId,
+} from './surfaces'
+
+export { bindVizTransport, getVizTransport } from './transport'
+export type {
+  VizTransport,
+  VizTransportMetadata,
+  VizTransportSnapshot,
+} from './transport'
+export type {
+  VizPointer,
+  VizSurfaceAttachment,
+  VizSurfaceGeometry,
+  VizSurfaceId,
+} from './surfaces'
+export type { VizDriverRenderData } from './driver-render'
 
 export type VizCanvasId = 'graph' | 'ribbon' | 'overview'
 export interface VizViewport {
@@ -94,7 +112,7 @@ export interface VizPerfInfo {
 }
 export interface VizDriverOptions {
   readonly input: SimInput
-  readonly repoNames: readonly string[]
+  readonly render: VizDriverRenderData
   readonly seed: number
   readonly reducedMotion?: boolean
 }
@@ -102,6 +120,12 @@ export interface VizDriver {
   readonly state: SimState
   setCanvas(id: VizCanvasId, ctx: CanvasRenderingContext2D | null): void
   setViewport(id: VizCanvasId, viewport: VizViewport): void
+  attach(attachment: VizSurfaceAttachment): void
+  detach(id: VizSurfaceId): void
+  resize(id: VizSurfaceId, geometry: VizSurfaceGeometry): void
+  invalidate(id: VizSurfaceId): void
+  setPointer(id: VizSurfaceId, point: VizPointer | null): void
+  scrubTo(fraction: number): void
   start(): void
   stop(): void
   play(): void
@@ -117,6 +141,7 @@ export interface VizDriver {
   inspect(): VizFrameInfo
   perf(): VizPerfInfo
   subscribe(listener: (info: VizFrameInfo) => void): () => void
+  onDestroy(listener: () => void): () => void
   destroy(): void
 }
 
@@ -214,11 +239,14 @@ function positiveModulo(value: number, divisor: number): number {
   return ((value % divisor) + divisor) % divisor
 }
 
+/**
+ * @description Creates one deterministic simulation, rendering, and surface driver.
+ * @param options Simulation input, payload-derived render data, and deterministic seed.
+ * @returns The lifecycle and consumer adapters for one visualization instance.
+ * @throws {RangeError} When simulation and renderer inputs are inconsistent.
+ */
 export function createVizDriver(options: VizDriverOptions): VizDriver {
-  if (options.repoNames.length !== options.input.repoCount)
-    throw new RangeError(
-      `repoNames length ${options.repoNames.length} does not match repoCount ${options.input.repoCount}`
-    )
+  const repoNames = options.render.meta.repos.map((repo) => repo.short)
   let seed = options.seed
   const state = createSimState(options.input, seed)
   state.speedIndex = DEFAULT_SPEED_INDEX
@@ -226,7 +254,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   // `packOnce` is guarded by a module-level WeakSet keyed on the state object, so
   // it can never run twice for this state. But `resetSimState` zeroes the very
   // arrays it fills (px, py, pr, repoR, repoX, repoY, repoAngle), and `step`
-  // never rewrites them — repoX/repoY are recomputed from repoAngle, which is
+  // never rewrites them. repoX/repoY are recomputed from repoAngle, which is
   // also zeroed. Without this snapshot, every seek-driven frame renders repos at
   // radius 0 stacked at one ring point: the reduced-motion static frame and every
   // screenshot baseline would capture collapsed geometry while CI stayed green.
@@ -250,20 +278,27 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     state.repoAngle.set(packedLayout.repoAngle)
   }
   const mapping = tickMapping(options.input)
-  const contexts = new Map<VizCanvasId, Ctx2D>()
-  const viewports = new Map<VizCanvasId, VizViewport>()
+  const playback = createVizPlaybackTrajectory(
+    mapping.day0,
+    mapping.sweepTicks,
+    DWELL_TICKS
+  )
   const listeners = new Set<(info: VizFrameInfo) => void>()
-  const layers = createLayers(options.input)
+  const destroyListeners = new Set<() => void>()
+  const layers = createVizDriverRenderLayers(options.input, options.render)
+  const surfaceController = createVizSurfaceController(layers.budget)
   let quality = qualityForTier(0)
   let qualityMode: 'high' | 'low' | 'auto' = 'auto'
-  let running = false
-  let resumeAfterReduce = false
-  let raf = 0
+  let raf: number | undefined
+  let invalidationRaf = 0
   let previous = 0
   let accumulator = 0
   let latchedWindow: number | null = null
   let settled = false
-  let reducedMotion = options.reducedMotion ?? mediaQuery()?.matches ?? false
+  const lifecycle = createVizDriverLifecycle(
+    state,
+    options.reducedMotion ?? mediaQuery()?.matches ?? false
+  )
   let media: MediaQueryList | null = mediaQuery()
   let uninstallHarness: (() => void) | undefined
   let lastFrameMs = 0
@@ -271,22 +306,33 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   let framesOverBudget = 0
   let samples: number[] = []
   let governorStreak = 0
+  const ribbon = createVizDriverRibbon({
+    input: options.input,
+    layer: layers.ribbon,
+    syncWindow: syncRibbonWindow,
+    highlightCell: (day, winStart) =>
+      highlightCellFor(options.input, day, winStart),
+  })
   let lastInfo = buildInfo()
+  const surfaceApi = createVizDriverSurfaceApi(surfaceController, {
+    state,
+    onDirty: scheduleInvalidatedPaint,
+    onPointer: updateSurfacePointer,
+    onEmptyDirty: cancelInvalidatedPaint,
+    seekDay,
+  })
 
   const onMediaChange = (event: MediaQueryListEvent): void => {
-    reducedMotion = event.matches
-    if (reducedMotion) {
-      resumeAfterReduce = running
-      stop()
-      void seekTick(0)
-    } else if (resumeAfterReduce) {
-      resumeAfterReduce = false
-      running = true
-      state.playing = true
-      previous = performance.now()
+    const action = lifecycle.mediaChanged(event.matches)
+    if (action === 'pause-and-settle') {
+      cancelFrame()
+      void seekAtTick(0, null, 'motion')
+    } else if (action === 'resume') {
       accumulator = 0
-      raf = requestAnimationFrame(frame)
-    }
+      cancelInvalidatedPaint()
+      publishFrameInfo()
+      if (lifecycle.running) resetFrameClock()
+    } else paint(settled)
   }
   media?.addEventListener('change', onMediaChange)
 
@@ -296,47 +342,90 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       ? window.matchMedia(REDUCE_QUERY)
       : null
   }
-  function setCanvas(
-    id: VizCanvasId,
-    ctx: CanvasRenderingContext2D | null
+  function updateSurfacePointer(
+    id: VizSurfaceId,
+    point: VizPointer | null
   ): void {
-    if (ctx) contexts.set(id, instrumentContext(ctx, layers.budget))
-    else contexts.delete(id)
+    if (id !== 'ribbon') return
+    const highlight = ribbon.setPointer(point, buildRenderView('ribbon'))
+    lastInfo = {
+      ...lastInfo,
+      winStart: syncRibbonWindow(),
+      highlightCell: highlight,
+    }
+    surfaceApi.invalidateCanvas('ribbon')
   }
-  function setViewport(id: VizCanvasId, viewport: VizViewport): void {
-    viewports.set(id, viewport)
+  function syncRibbonWindow(): number {
+    const winStart = ribbonWinStart(
+      options.input,
+      state.cursorDayInt,
+      latchedWindow
+    )
+    syncVizRibbonWindow(layers.ribbon, winStart)
+    return winStart
+  }
+  function scheduleInvalidatedPaint(): void {
+    if (
+      lifecycle.destroyed ||
+      lifecycle.running ||
+      invalidationRaf ||
+      !surfaceController.hasDirty() ||
+      typeof requestAnimationFrame !== 'function'
+    )
+      return
+    invalidationRaf = requestAnimationFrame(() => {
+      invalidationRaf = 0
+      const targets = surfaceController.drainDirty()
+      if (targets.size > 0) paint(settled, targets)
+    })
   }
   function start(): void {
-    if (running) return
-    if (reducedMotion) {
+    if (lifecycle.running) return
+    if (lifecycle.reducedMotion) {
       void seekTick(0)
       return
     }
     schedule()
   }
   function schedule(): void {
-    running = true
-    state.playing = true
+    if (!lifecycle.start()) return
+    cancelInvalidatedPaint()
+    resetFrameClock()
+  }
+  function resetFrameClock(): void {
     previous = performance.now()
+    armFrame()
+  }
+  function armFrame(): void {
+    if (raf !== undefined || lifecycle.destroyed || !lifecycle.running) return
     raf = requestAnimationFrame(frame)
   }
   function stop(): void {
-    if (raf) cancelAnimationFrame(raf)
-    raf = 0
-    running = false
-    state.playing = false
+    cancelFrame()
+    lifecycle.stop()
+    scheduleInvalidatedPaint()
+  }
+  function cancelFrame(): void {
+    if (raf !== undefined) cancelAnimationFrame(raf)
+    raf = undefined
+  }
+  function cancelInvalidatedPaint(): void {
+    if (!invalidationRaf) return
+    cancelAnimationFrame(invalidationRaf)
+    invalidationRaf = 0
   }
   function play(): void {
-    state.playing = true
-    if (!running) schedule()
+    if (!lifecycle.running) schedule()
   }
   function pause(): Promise<void> {
     stop()
     return Promise.resolve()
   }
   function frame(now: number): void {
-    if (!running) return
+    raf = undefined
+    if (!lifecycle.running) return
     try {
+      const frameStarted = performance.now()
       const dt = Math.min(
         FRAME_BACKLOG_CAP,
         Math.max(0, (now - previous) / 1000)
@@ -351,8 +440,8 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       }
       if (count === MAX_STEPS) accumulator = 0
       paint(false)
-      sampleGovernor(now)
-      raf = requestAnimationFrame(frame)
+      sampleGovernor(performance.now() - frameStarted)
+      armFrame()
     } catch {
       stop()
       listeners.forEach((listener) => listener(lastInfo))
@@ -360,19 +449,14 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   }
   function advance(): void {
     const tick = state.tick + 1
+    const projection = playback.project(tick, state.speedIndex)
+    const reportedPlaying = state.playing
     state.rngState = rngAnchor(seed, tick)
     state.rngDraws = 0
+    state.playing = projection.moving
     step(state)
-    anchorTick(tick)
-  }
-  function anchorTick(tick: number): void {
-    state.tick = tick
-    const day = cursorDayAtTick(mapping, tick)
-    const dayInt = Math.floor(day)
-    state.cursorDay = day
-    if (dayInt < state.cursorDayInt) advanceCursor(state, dayInt)
-    else if (dayInt > state.cursorDayInt) seekCursor(state, dayInt)
-    state.cursorDayInt = dayInt
+    anchorVizPlaybackDay(state, tick, projection.day)
+    state.playing = reportedPlaying
   }
   function settleChannels(): void {
     for (let id = 0; id < state.entityCount; id++) {
@@ -393,22 +477,34 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     state.beamEnt.fill(-1)
   }
   async function seekTick(tick: number): Promise<VizFrameInfo> {
+    stop()
+    cancelInvalidatedPaint()
+    return seekAtTick(tick, null, 'direct')
+  }
+  function seekAtTick(
+    tick: number,
+    window: number | null,
+    mode: VizSeekMode
+  ): Promise<VizFrameInfo> {
+    const seekState = resolveVizSeekState(
+      mode,
+      state.speedIndex,
+      lifecycle.running,
+      DEFAULT_SPEED_INDEX
+    )
     assertTick(tick)
     resetSimState(state, seed)
     restorePackedLayout()
-    // I-D3: two seekTick(t) calls must be identical regardless of what happened
-    // between them. seekDay/seekDate latch a ribbon window that paint() resolves
-    // through, so without clearing it the same tick renders differently after a
-    // prior seekDay — exactly the path-dependence this ticket exists to prevent.
-    latchedWindow = null
-    state.speedIndex = DEFAULT_SPEED_INDEX
-    state.playing = false
-    anchorTick(tick)
+    latchedWindow = window
+    state.speedIndex = seekState.speedIndex
+    state.playing = seekState.playing
+    anchorVizPlaybackDay(state, tick, cursorDayAtTick(mapping, tick))
     state.rngState = rngAnchor(seed, tick)
     state.rngDraws = 0
     step(state)
-    anchorTick(tick)
+    anchorVizPlaybackDay(state, tick, cursorDayAtTick(mapping, tick))
     settleChannels()
+    playback.syncCanonical(state.tick, state.cursorDay)
     settled = true
     paint(true)
     flushRaster()
@@ -416,7 +512,6 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   }
   function renderFrame(steps = 1): Promise<VizFrameInfo> {
     const count = Math.max(0, Math.floor(steps))
-    state.playing = true
     for (let index = 0; index < count; index++) advance()
     settled = false
     paint(false)
@@ -428,12 +523,16 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       0,
       Math.min(options.input.dayCount - 1, Math.floor(day))
     )
-    const tick =
+    const rewindTick =
       target === mapping.day0
         ? 0
         : DWELL_TICKS + Math.ceil((mapping.day0 - target) / mapping.daysPerTick)
-    latchedWindow = ribbonWinStart(options.input, target, null)
-    return seekTick(tick)
+    const tick = Math.min(mapping.sweepTicks - 1, rewindTick)
+    return seekAtTick(
+      tick,
+      ribbonWinStart(options.input, target, null),
+      'consumer'
+    )
   }
   function seekDate(iso: string): Promise<VizFrameInfo> {
     const start = Date.parse(`${options.input.windowStartISO}T00:00:00Z`)
@@ -442,11 +541,14 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     return seekDay(Number.isFinite(day) ? day : 0)
   }
   function reset(nextSeed = seed): void {
+    stop()
+    cancelInvalidatedPaint()
     seed = nextSeed
     resetSimState(state, seed)
     restorePackedLayout()
     state.speedIndex = DEFAULT_SPEED_INDEX
     state.playing = false
+    playback.syncCanonical(state.tick, state.cursorDay)
     latchedWindow = null
     settled = false
     paint(true)
@@ -457,6 +559,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   function setSpeedIndex(index: number): void {
     if (!Number.isInteger(index) || index < 0 || index >= SPEEDS.length)
       throw new RangeError(`speed index ${index} is invalid`)
+    playback.rebase(state.tick, state.cursorDay)
     state.speedIndex = index
   }
   function setQuality(mode: 'high' | 'low' | 'auto'): void {
@@ -478,105 +581,88 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     listeners.add(listener)
     return () => listeners.delete(listener)
   }
+  function onDestroy(listener: () => void): () => void {
+    destroyListeners.add(listener)
+    return () => destroyListeners.delete(listener)
+  }
   function destroy(): void {
+    lifecycle.destroy()
+    destroyListeners.forEach((listener) => listener())
+    destroyListeners.clear()
     stop()
+    cancelInvalidatedPaint()
     media?.removeEventListener('change', onMediaChange)
     media = null
     uninstallHarness?.()
-    contexts.clear()
+    surfaceApi.destroy()
+    surfaceController.destroy()
     listeners.clear()
   }
-  function paint(nextSettled: boolean): void {
+  function paint(
+    nextSettled: boolean,
+    targets?: ReadonlySet<VizCanvasId>
+  ): void {
     settled = nextSettled
-    const winStart = ribbonWinStart(
-      options.input,
-      state.cursorDayInt,
-      latchedWindow
+    const winStart = syncRibbonWindow()
+    const total = paintVizSurfaces(
+      surfaceController,
+      surfacePaintOptions(winStart, targets)
     )
-    layers.budget.begin()
-    const renderView = buildRenderView()
-    const overview = contexts.get('overview')
-    if (overview)
-      renderOverview(state, overview, renderView, layers.overview, winStart)
-    const ribbon = contexts.get('ribbon')
-    if (ribbon) renderRibbon(state, ribbon, renderView, layers.ribbon)
-    const graph = contexts.get('graph')
-    if (graph) renderGraph(state, graph, renderView, layers.graph)
-    const report = layers.budget.end()
-    lastInfo = buildInfo(winStart, report.drawCalls)
+    if (targets === undefined) surfaceController.clearDirty()
+    publishFrameInfo(winStart, total)
+  }
+  function publishFrameInfo(winStart = syncRibbonWindow(), total = 0): void {
+    lastInfo = buildInfo(winStart, total)
     listeners.forEach((listener) => listener(lastInfo))
   }
-  function buildInfo(
-    winStart = ribbonWinStart(options.input, state.cursorDayInt, latchedWindow),
-    total = 0
-  ): VizFrameInfo {
-    const digest = digestSimState(state)
-    const names: string[] = []
-    const ids = new Int32Array(state.entityCount)
-    const count = liveIdsAscending(state, ids)
-    for (let index = 0; index < count; index++) {
-      const id = ids[index]
-      if (id !== undefined && id < state.repoCount)
-        names.push(options.repoNames[id] ?? '')
-    }
+  function surfacePaintOptions(
+    winStart: number,
+    targets: ReadonlySet<VizCanvasId> | undefined
+  ) {
     return {
-      tick: state.tick,
-      cursorDay: state.cursorDay,
-      cursorDayInt: state.cursorDayInt,
-      date: formatDayISO(options.input.windowStartISO, state.cursorDayInt),
-      speedIndex: state.speedIndex,
-      playing: state.playing,
-      reducedMotion,
-      settled,
-      nLive: digest.nLive,
-      liveRepos: names,
-      ghostRepos: digest.ghostRepos,
-      liveHash: digest.liveHash,
-      rngState: digest.rngState,
-      rngDraws: digest.rngDraws,
+      state,
+      layers,
+      quality: renderVizQuality(quality),
+      meta: options.render.meta,
+      focusedDay: state.cursorDayInt,
       winStart,
-      highlightCell: highlightCellFor(
-        options.input,
-        state.cursorDayInt,
-        winStart
-      ),
-      beams: state.beamLife.filter((life) => life > 0).length,
-      drawCalls: { graph: 0, ribbon: 0, overview: 0, total },
-      qualityTier: quality.tier,
+      targets,
+      onRibbonPaint: updateRibbonPointerHighlight,
     }
   }
-  function buildRenderView(): RenderView {
-    const viewport = viewports.get('graph') ?? {
-      cssWidth: 1,
-      cssHeight: 1,
-      dpr: 1,
-    }
-    const renderViewport: Viewport = {
-      ...viewport,
-      pxWidth: Math.max(1, Math.round(viewport.cssWidth * viewport.dpr)),
-      pxHeight: Math.max(1, Math.round(viewport.cssHeight * viewport.dpr)),
-    }
-    return {
-      viewport: renderViewport,
-      theme: defaultTheme(),
-      quality: renderQuality(quality),
-      meta: renderMeta(options.repoNames),
-      budget: layers.budget,
-      focusedDay: state.cursorDayInt,
-    }
+  function updateRibbonPointerHighlight(view: RenderView): void {
+    ribbon.refreshPointer(view)
+  }
+  function buildInfo(winStart = syncRibbonWindow(), total = 0): VizFrameInfo {
+    const pointerHighlight = ribbon.pointerHighlight()
+    return buildVizDriverInfo({
+      state,
+      repoNames,
+      date: formatDayISO(options.input.windowStartISO, state.cursorDayInt),
+      reducedMotion: lifecycle.reducedMotion,
+      settled,
+      winStart,
+      highlightCell:
+        pointerHighlight === undefined
+          ? highlightCellFor(options.input, state.cursorDayInt, winStart)
+          : pointerHighlight,
+      qualityTier: quality.tier,
+      total,
+    })
+  }
+  function buildRenderView(surface: VizCanvasId = 'graph'): RenderView {
+    return surfaceController.buildView(
+      surface,
+      renderVizQuality(quality),
+      options.render.meta,
+      state.cursorDayInt
+    )
   }
   function flushRaster(): void {
-    for (const [id, ctx] of contexts) {
-      try {
-        ctx.getImageData(0, 0, 1, 1)
-      } catch {
-        contexts.delete(id)
-      }
-    }
+    surfaceController.flush()
   }
-  function sampleGovernor(now: number): void {
-    const delta =
-      lastFrameMs === 0 ? 0 : Math.max(0, now - (previous - FIXED_DT * 1000))
+  function sampleGovernor(frameMs: number): void {
+    const delta = Math.max(0, frameMs)
     lastFrameMs = delta
     samples = [...samples.slice(-59), delta]
     medianFrameMs =
@@ -592,8 +678,14 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   }
   const driver: VizDriver = {
     state,
-    setCanvas,
-    setViewport,
+    setCanvas: surfaceApi.setCanvas.bind(surfaceApi),
+    setViewport: surfaceApi.setViewport.bind(surfaceApi),
+    attach: surfaceApi.attach.bind(surfaceApi),
+    detach: surfaceApi.detach.bind(surfaceApi),
+    resize: surfaceApi.resize.bind(surfaceApi),
+    invalidate: surfaceApi.invalidate.bind(surfaceApi),
+    setPointer: surfaceApi.setPointer.bind(surfaceApi),
+    scrubTo: surfaceApi.scrubTo.bind(surfaceApi),
     start,
     stop,
     play,
@@ -609,6 +701,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     inspect,
     perf,
     subscribe,
+    onDestroy,
     destroy,
   }
   const buildHooks =
@@ -616,6 +709,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     process.env.NEXT_PUBLIC_TEST_HOOKS === '1'
   if (buildHooks)
     void import('./testHarness').then((module) => {
+      if (lifecycle.destroyed) return
       uninstallHarness = module.installTestHarness(driver)
     })
   return driver
@@ -624,96 +718,6 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
 function assertTick(tick: number): void {
   if (!Number.isInteger(tick) || !Number.isFinite(tick))
     throw new RangeError(`tick ${tick} must be a finite integer`)
-}
-function createLayers(input: SimInput): {
-  readonly budget: ReturnType<typeof createFrameBudget>
-  readonly graph: ReturnType<typeof createGraphLayer>
-  readonly ribbon: ReturnType<typeof createRibbonLayer>
-  readonly overview: ReturnType<typeof createOverviewLayer>
-} {
-  const grid: GridSeries = {
-    dayCount: input.dayCount,
-    windowStartISO: input.windowStartISO,
-    total: new Uint16Array(input.dayCount),
-    agent: new Uint16Array(input.dayCount),
-    level: new Uint8Array(input.dayCount),
-    agentBirthDay: -1,
-  }
-  return {
-    budget: createFrameBudget(false),
-    graph: createGraphLayer(input.entityCount),
-    ribbon: createRibbonLayer(grid),
-    overview: createOverviewLayer(grid),
-  }
-}
-function defaultTheme(): RenderTheme {
-  const token = {
-    bgH: PANE_SURFACE,
-    bg0: LV[0],
-    bg1: LV[1],
-    bg2: LV[2],
-    bg3: LV[3],
-    bg4: LV[4],
-    fg0: LV[9],
-    fg1: LV[8],
-    fg2: LV[7],
-    fg3: LV[6],
-    fg4: LV[5],
-    gray: LV[4],
-    green: LV[8],
-    greenD: LV[6],
-    aqua: AG[8],
-    aquaD: AG[6],
-    purple: AG[7],
-    purpleD: AG[5],
-    yellow: LV[9],
-    yellowD: LV[7],
-    red: AG[8],
-    blue: AG[7],
-  } as const
-  return {
-    lv: LV,
-    ag: AG,
-    paneSurface: PANE_SURFACE,
-    token,
-    fontPx: { micro: 10, small: 12, mono: 14 },
-    fontFamily: 'monospace',
-  }
-}
-function renderQuality(value: VizQuality): Quality {
-  return {
-    name:
-      value.tier === 0
-        ? 'full'
-        : value.tier === 1
-          ? 'no-file-labels'
-          : value.tier === 2
-            ? 'no-spokes'
-            : value.tier === 3
-              ? 'no-shadows'
-              : value.tier === 4
-                ? 'dpr1'
-                : 'half-files',
-    dpr: value.dprCap,
-    fileLabels: value.fileLabels,
-    spokes: value.spokes,
-    shadows: value.glow,
-    maxFiles: value.fileCap,
-    clusterMode: value.tier < 4 ? 'blur' : 'hatch',
-  }
-}
-function renderMeta(repoNames: readonly string[]): RenderMeta {
-  return {
-    repos: repoNames.map((short) => ({
-      short,
-      actor: 0,
-      stars: 0,
-      isPrivate: false,
-    })),
-    fileLabel: (id) => String(id),
-    agentBirthLabel: null,
-    agentBirthSubLabel: null,
-  }
 }
 function dateParts(iso: string): [number, number, number] {
   const parts = iso.split('-').map(Number)

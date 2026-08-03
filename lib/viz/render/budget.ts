@@ -365,8 +365,8 @@ export function instrumentContext(ctx: Ctx2D, budget: FrameBudget): Ctx2D {
   const state = BUDGETS.get(budget)
   if (!state) return ctx
   return new Proxy(ctx, {
-    get(target, property, receiver) {
-      const value = Reflect.get(target, property, receiver)
+    get(target, property) {
+      const value = Reflect.get(target, property, target)
       if (typeof property !== 'string' || typeof value !== 'function')
         return value
       if (DRAW_CALLS.has(property)) {
@@ -416,11 +416,11 @@ export function instrumentContext(ctx: Ctx2D, budget: FrameBudget): Ctx2D {
       }
       return value.bind(target)
     },
-    set(target, property, value, receiver) {
+    set(target, property, value) {
       if (property === 'filter') state.counters.filterActive = value !== 'none'
       if (property === 'shadowBlur')
         state.counters.shadowActive = Number(value) > 0
-      return Reflect.set(target, property, value, receiver)
+      return Reflect.set(target, property, value, target)
     },
   })
 }
