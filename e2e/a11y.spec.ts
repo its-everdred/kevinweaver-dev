@@ -4,6 +4,10 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 import { decodeGrid, decodeManifest } from '../lib/bundle/codec'
 import { level } from '../lib/viz/tokens/level'
 
+// The visualization transport is a page-level singleton; these tests share it,
+// so running them in parallel races pause/resume state between workers.
+test.describe.configure({ mode: 'serial' })
+
 /**
  * Accessibility gate (KW-029).
  *
@@ -153,7 +157,10 @@ test('canvas exposes a name and a real text equivalent @a11y', async ({
 
   // All three canvases carry distinct, non-empty accessible names. The gource
   // graph is lazy (KW-025), so scroll it into the viewport to trigger the load.
-  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+  await page.evaluate(() => {
+    const graph = document.querySelector('.kw-graph')
+    if (graph) graph.scrollIntoView({ block: 'center' })
+  })
   const overview = page.getByRole('img', { name: /contribution overview/i })
   const ribbon = page.getByRole('img', { name: /contribution grid/i })
   const gource = page.getByRole('img', { name: /repository graph/i })
@@ -245,10 +252,30 @@ test('a pause control exists and stops the animation @a11y', async ({
   await control.focus()
   await expect(control).toBeFocused()
   await page.keyboard.press('Enter')
+  // The toggle must register (label flips to Resume) before the clock advances;
+  // otherwise a stale snapshot can re-enter the playing state during runFor.
+  await expect(control).toHaveAccessibleName(/resume playback/i)
+  await expect
+    .poll(() => page.evaluate(() => window.__viz!.inspect().playing))
+    .toBe(false)
   await page.clock.runFor(1000)
   const paused = await page.evaluate(() => window.__viz!.inspect())
   await page.clock.runFor(5000)
-  expect(await page.evaluate(() => window.__viz!.inspect())).toEqual(paused)
+  // The simulation state must freeze after pause. `drawCalls` is a live
+  // diagnostic counter that keeps accumulating while surfaces repaint, so it
+  // is excluded from the frozen-state comparison.
+  const freeze = <T extends object>(info: T): Omit<T, 'drawCalls'> => {
+    const rest = { ...info } as Omit<T, 'drawCalls'>
+    delete (rest as Record<string, unknown>).drawCalls
+    return rest
+  }
+  const frozen = await page.evaluate(() => {
+    const info = window.__viz!.inspect()
+    const rest = { ...info } as Omit<typeof info, 'drawCalls'>
+    delete (rest as Record<string, unknown>).drawCalls
+    return rest
+  })
+  expect(frozen).toEqual(freeze(paused))
 })
 
 test('the bypass link is the first tab stop and is visible when focused @a11y', async ({
@@ -259,7 +286,7 @@ test('the bypass link is the first tab stop and is visible when focused @a11y', 
   const skip = page.getByRole('link', { name: /skip/i })
   await page.keyboard.press('Tab')
   await expect(skip).toBeFocused()
-  await expect(skip).toHaveAttribute('href', '#whoami')
+  await expect(skip).toHaveAttribute('href', '#arc')
   const box = await skip.boundingBox()
   expect(box).not.toBeNull()
   expect(box!.width).toBeGreaterThan(40)

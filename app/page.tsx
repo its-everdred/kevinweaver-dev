@@ -95,17 +95,15 @@ export default async function Page() {
 
   return (
     <>
-      <a className="skip sr-only" href="#whoami">
+      <a className="skip sr-only" href="#arc">
         skip the animation
       </a>
       <Header freshness={freshness} />
       <main className="kw-pad">
         <h1 className="sr-only">{pageHeading()}</h1>
+        <ManPage />
         <Instrument />
-        <div className="kw-2up" id="whoami" tabIndex={-1}>
-          <ManPage />
-          <CareerLog />
-        </div>
+        <CareerLog />
         <Contact />
       </main>
       <TmuxBar />

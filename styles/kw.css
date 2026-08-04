@@ -72,8 +72,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--pane-gap);
-  height: calc(100dvh - 3.75rem);
-  min-height: 32.5rem;
+  height: calc(100dvh - 8.75rem);
+  min-height: 30rem;
 }
 
 .kw-lower {
@@ -96,14 +96,20 @@ body {
   min-width: 0;
 }
 
-.kw-2up {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  gap: var(--pane-gap);
-}
-
 .kw-pad {
   padding: var(--pane-gap);
+}
+
+/* Each top-level region pane is a distinct section with its own vertical margin. */
+.kw-pad > .kw-instr,
+.kw-pad > .kw-man,
+.kw-pad > section,
+.kw-pad > .pane {
+  margin-bottom: var(--pane-gap);
+}
+
+.kw-pad > :last-child {
+  margin-bottom: 0;
 }
 
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
@@ -129,6 +135,13 @@ body {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* A `<table>` ignores `height` while its display is `table`; forcing block
+   makes the sr-only 1px box apply so the 5995-row contribution grid cannot
+   stretch the document and leave empty space under the footer. */
+.kw-sr-table {
+  display: block;
 }
 
 .sr-only-focusable:not(:focus):not(:focus-within) {
@@ -190,17 +203,7 @@ body {
   }
 }
 
-@media (max-width: 900px) {
-  .kw-2up {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
-  }
-}
-
 @media (max-width: 720px) {
-  .kw-2up {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
   .kw-hide-sm {
     display: none;
   }
@@ -211,12 +214,6 @@ body {
 
   .kw-graph {
     height: 21.25rem;
-  }
-}
-
-@media (max-width: 540px) {
-  .kw-2up {
-    gap: var(--sp-2);
   }
 }
 

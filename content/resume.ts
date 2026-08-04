@@ -15,7 +15,6 @@ export interface Employer {
   readonly title: string
   readonly start: string
   readonly end: string | null
-  readonly location: string
   readonly stack: readonly string[]
   readonly achievements: readonly string[]
   readonly evidence: readonly {
@@ -33,7 +32,6 @@ export const EMPLOYERS = [
     title: 'Senior Full Stack Software Engineer',
     start: '2025-05',
     end: null,
-    location: 'Remote, America/Los_Angeles',
     stack: ['TypeScript', 'Hono', 'Vite', 'React', 'Solidity', 'Kubernetes'],
     achievements: [
       'Built the Actions SDK surface for embedded wallets and DeFi protocols.',
@@ -55,7 +53,6 @@ export const EMPLOYERS = [
     title: 'Lead Software Engineer',
     start: '2022-09',
     end: '2025-04',
-    location: 'Remote, America/Los_Angeles',
     stack: [
       'TypeScript',
       'Express',
@@ -85,7 +82,6 @@ export const EMPLOYERS = [
     title: 'Lead Blockchain Engineer',
     start: '2021-09',
     end: '2022-09',
-    location: 'Remote, America/Los_Angeles',
     stack: ['TypeScript', 'Solidity'],
     achievements: [
       'Maintained Truffle core and box templates, now archived, while making the EVM legible through debugging tools.',
@@ -111,7 +107,6 @@ export const EMPLOYERS = [
     title: 'Lead Software Engineer',
     start: '2017-12',
     end: '2021-09',
-    location: 'California, USA',
     stack: ['Ruby', 'Rails', 'React', 'TypeScript', 'PostgreSQL', 'GraphQL'],
     achievements: [
       'Led customer-facing features from scope through rollout and built microservice APIs consumed across the organization.',
@@ -126,7 +121,6 @@ export const EMPLOYERS = [
     title: 'Co-founder and Fullstack Engineer',
     start: '2014-03',
     end: '2017-12',
-    location: 'USA',
     stack: ['Ruby', 'Rails', 'JavaScript'],
     achievements: [
       'Co-founded, built, and supported medical records and billing software for emergency medical services.',
@@ -141,7 +135,6 @@ export const EMPLOYERS = [
     title: 'Founder',
     start: '2010-02',
     end: '2014-03',
-    location: 'USA',
     stack: ['PHP', 'JavaScript'],
     achievements: [
       'Founded a software consulting firm and shipped CMS, ecommerce, and healthcare web applications.',
@@ -156,7 +149,6 @@ export const EMPLOYERS = [
     title: 'B.S. Management Information Systems',
     start: '2008-09',
     end: '2012-05',
-    location: 'USA',
     stack: ['Management Information Systems', 'Computer Science'],
     achievements: [
       'Earned a B.S. in Management Information Systems with a minor in Computer Science.',

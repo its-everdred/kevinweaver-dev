@@ -2,12 +2,10 @@ import { isLive, liveIdsAscending, repoPhase } from '@/lib/viz/sim/cursor'
 import {
   MAX_BEAMS,
   PHASE_ABSENT,
-  PHASE_GHOST,
   PHASE_LIVE,
   type SimState,
 } from '@/lib/viz/sim/types'
 
-import { buildClusterTile, renderCluster, type ClusterTile } from './cluster'
 import {
   CAPS,
   type Ctx2D,
@@ -28,6 +26,7 @@ export interface GraphProjection {
   readonly rx: number
   readonly ry: number
   readonly repoRadiusScale: number
+  readonly repoMaxRadiusPx: number
   readonly repoBudget: number
 }
 
@@ -46,8 +45,6 @@ interface SpriteFrame {
 /** Mutable cache objects retained by the graph canvas owner. */
 export interface GraphLayer {
   sprites: SpriteAtlas | null
-  cluster: ClusterTile | null
-  clusterKey: string
   liveScratch: Int32Array
 }
 
@@ -143,8 +140,6 @@ export const SPRITE_PALETTE: Readonly<Record<string, TokenName>> = {
 export function createGraphLayer(entityCount: number): GraphLayer {
   return {
     sprites: null,
-    cluster: null,
-    clusterKey: '',
     liveScratch: new Int32Array(Math.max(0, entityCount)),
   }
 }
@@ -168,6 +163,7 @@ export function graphProjection(view: RenderView): GraphProjection {
     rx,
     ry,
     repoRadiusScale: Math.max(1, Math.min(rx, ry) / 24),
+    repoMaxRadiusPx: Math.max(24, Math.min(rx, ry) * 0.42),
     repoBudget: cssWidth < 1080 ? 12 : CAPS.maxRepoCircles,
   }
 }
@@ -269,33 +265,8 @@ function drawRepositories(
     if (!isSelectedRepo(state, repoId, proj.repoBudget)) continue
     const phase = repoPhase(state, repoId, state.cursorDayInt)
     if (phase === PHASE_ABSENT) continue
-    if (phase === PHASE_GHOST) {
-      drawGhostRepository(state, ctx, view, proj, repoId)
-      continue
-    }
     drawLiveRepository(state, ctx, view, proj, repoId)
   }
-}
-
-function drawGhostRepository(
-  state: SimState,
-  ctx: Ctx2D,
-  view: RenderView,
-  proj: GraphProjection,
-  repoId: number
-): void {
-  const centerX = repoCenterX(state, proj, repoId)
-  const centerY = repoCenterY(state, proj, repoId)
-  const radius = repoRadiusAt(state, proj, repoId)
-  ctx.save()
-  ctx.globalAlpha = 0.45
-  ctx.setLineDash([6, 5])
-  ctx.strokeStyle = view.theme.token.bg4
-  ctx.lineWidth = 1
-  ctx.beginPath()
-  ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
-  ctx.stroke()
-  ctx.restore()
 }
 
 function drawLiveRepository(
@@ -517,10 +488,9 @@ function drawRepoLabels(
     ctx.font = `600 ${view.theme.fontPx.micro}px ${view.theme.fontFamily}`
     ctx.textAlign =
       Math.abs(cosine) < 0.35 ? 'center' : cosine > 0 ? 'left' : 'right'
-    ctx.fillStyle =
-      phase === PHASE_GHOST ? view.theme.token.fg4 : view.theme.token.fg2
+    ctx.fillStyle = view.theme.token.fg2
     ctx.fillText(meta?.short ?? `repo-${repoId}`, x, y)
-    if (phase === PHASE_GHOST || !meta || meta.stars <= 40) continue
+    if (!meta || meta.stars <= 40) continue
     ctx.font = `700 ${view.theme.fontPx.micro}px ${view.theme.fontFamily}`
     ctx.fillStyle = view.theme.token.fg4
     ctx.fillText(starLabel(meta.stars), x, y + view.theme.fontPx.micro + 2)
@@ -535,31 +505,81 @@ function drawPrivateCluster(
   proj: GraphProjection
 ): void {
   if (!hasPrivateRepository(view.meta)) return
-  const sizePx = Math.max(1, Math.round(Math.min(proj.rx, proj.ry)))
-  const key = clusterKey(view, state, sizePx)
-  if (!layer.cluster || layer.clusterKey !== key) {
-    try {
-      layer.cluster = buildClusterTile(
-        view.theme,
-        view.quality,
-        sizePx,
-        state.dayCount + state.repoCount
-      )
-      layer.clusterKey = key
-    } catch {
-      return
-    }
+  drawPrivateFog(ctx, view, proj)
+}
+
+/**
+ * @description Draws the private-repo fog: a few blurred repository discs pinned
+ * to the bottom-middle, half under the fold, beneath a circular gaussian blur
+ * and the "private repos" label. The repo specifics are intentionally illegible.
+ */
+function drawPrivateFog(
+  ctx: Ctx2D,
+  view: RenderView,
+  proj: GraphProjection
+): void {
+  const cx = proj.cx
+  const baseY = proj.padYPx + proj.fieldHPx
+  const radius = Math.max(28, Math.min(proj.rx, proj.ry) * 0.34)
+
+  // A few faint repository discs mostly below the fold.
+  for (let index = 0; index < 4; index += 1) {
+    const x = cx + (index - 1.5) * radius * 0.9
+    const y = baseY - radius * 0.35 + (index % 2) * radius * 0.25
+    ctx.save()
+    ctx.globalAlpha = 0.22
+    ctx.fillStyle = view.theme.token.bg2
+    ctx.beginPath()
+    ctx.arc(x, y, radius * (0.45 + (index % 3) * 0.18), 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
   }
-  const tile = layer.cluster
-  if (!tile) return
-  renderCluster(
-    ctx,
-    tile,
-    Math.round(proj.cx - tile.sizePx / 2),
-    Math.round(proj.cy - tile.sizePx / 2),
-    view,
-    'private repos'
+
+  // Circular gaussian fog over the cluster, fading toward the pane surface.
+  ctx.save()
+  const surface = view.theme.paneSurface
+  const fog = ctx.createRadialGradient(
+    cx,
+    baseY - radius * 0.4,
+    radius * 0.25,
+    cx,
+    baseY - radius * 0.4,
+    radius * 1.6
   )
+  fog.addColorStop(0, surfaceRgba(surface, 0.96))
+  fog.addColorStop(0.55, surfaceRgba(surface, 0.88))
+  fog.addColorStop(1, surfaceRgba(surface, 0))
+  ctx.fillStyle = fog
+  ctx.fillRect(
+    cx - radius * 2,
+    baseY - radius * 2,
+    radius * 4,
+    radius * 3
+  )
+  ctx.restore()
+
+  // Label pinned below the fog.
+  ctx.font = `700 ${view.theme.fontPx.micro}px ${view.theme.fontFamily}`
+  ctx.textAlign = 'center'
+  ctx.fillStyle = view.theme.token.fg4
+  ctx.fillText('private repos', cx, baseY - radius * 0.28)
+}
+
+/**
+ * @description Renders a #rrggbb surface color as rgba with an alpha channel,
+ * for canvas gradients that must match the pane surface rather than a literal.
+ * @param surface Hex color, for example `#1d2021`.
+ * @param alpha Alpha value in [0, 1].
+ * @returns An `rgba(r,g,b,alpha)` color string.
+ */
+function surfaceRgba(surface: string, alpha: number): string {
+  const hex = surface.replace('#', '')
+  const value = parseInt(hex, 16)
+  if (!Number.isFinite(value) || hex.length !== 6) return `rgba(29,32,33,${alpha})`
+  const r = (value >> 16) & 255
+  const g = (value >> 8) & 255
+  const b = value & 255
+  return `rgba(${r},${g},${b},${alpha})`
 }
 
 function drawActors(
@@ -756,7 +776,8 @@ function repoRadiusAt(
   proj: GraphProjection,
   repoId: number
 ): number {
-  return Math.max(1, valueAt(state.repoR, repoId) * proj.repoRadiusScale)
+  const raw = valueAt(state.repoR, repoId) * proj.repoRadiusScale
+  return Math.max(1, Math.min(raw, proj.repoMaxRadiusPx))
 }
 
 function sortLiveFilesByHeat(
@@ -877,17 +898,6 @@ function beamColor(theme: RenderTheme, kind: number): string {
 
 function hasPrivateRepository(meta: RenderMeta): boolean {
   return meta.repos.some((repo) => repo.isPrivate)
-}
-
-function clusterKey(view: RenderView, state: SimState, sizePx: number): string {
-  return [
-    sizePx,
-    view.quality.clusterMode,
-    view.theme.token.bg2,
-    view.theme.token.bg3,
-    state.dayCount,
-    state.repoCount,
-  ].join(':')
 }
 
 function labelOffset(sine: number): number {

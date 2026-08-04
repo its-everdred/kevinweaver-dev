@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import TransportBar from './TransportBar'
 import { ContributionTable } from '@/components/viz/ContributionTable'
+import { EventsTail } from '@/components/viz/EventsTail'
 import { Pane } from '@/components/ds/Pane'
 import { GourceIsland } from '@/components/viz/GourceIsland'
 import { GraphDate, Overview } from '@/components/viz/Overview'
@@ -88,13 +89,7 @@ export function Instrument({ id, className, style }: InstrumentProps) {
           <GourceIsland />
         </Pane>
         <Pane className="kw-tail" title="events — tail -f">
-          <div
-            aria-label="recent contribution events"
-            aria-live="polite"
-            aria-relevant="additions"
-            id="kw-event-log"
-            role="log"
-          />
+          <EventsTail />
         </Pane>
       </div>
     </section>

@@ -14,7 +14,6 @@ import {
   ENTITY_FILE,
   ENTITY_REPO,
   PHASE_ABSENT,
-  PHASE_GHOST,
   PHASE_LIVE,
   type SimInput,
 } from '../../lib/viz/sim/types';
@@ -70,17 +69,17 @@ describe('simulation lifespan cursor', () => {
 
     expect(idsAt(state)).toEqual([2, 3, 4]);
     expect(repoPhase(state, 0, 5)).toBe(PHASE_LIVE);
-    expect(repoPhase(state, 1, 2)).toBe(PHASE_ABSENT);
+    expect(repoPhase(state, 1, 2)).toBe(PHASE_LIVE);
     expect(isLive(state, 0)).toBe(false);
 
     advanceCursor(state, 2);
-    expect(idsAt(state)).toEqual([2, 3]);
+    expect(idsAt(state)).toEqual([2, 3, 4]);
 
     advanceCursor(state, 1);
-    expect(idsAt(state)).toEqual([2]);
+    expect(idsAt(state)).toEqual([2, 3, 4]);
   });
 
-  it('classifies ended repositories as ghosts and applies non-saturating tails', () => {
+  it('classifies ended repositories as absent and applies non-saturating tails', () => {
     const input: SimInput = {
       dayCount: 151,
       windowStartISO: '2026-01-01',
@@ -95,7 +94,9 @@ describe('simulation lifespan cursor', () => {
 
     expect(state.death[0]).toBe(97);
     expect(state.death[1]).toBe(39);
-    expect(repoPhase(state, 0, 98)).toBe(PHASE_GHOST);
+    expect(repoPhase(state, 0, 98)).toBe(PHASE_ABSENT);
+    expect(repoPhase(state, 0, 97)).toBe(PHASE_LIVE);
+    expect(repoPhase(state, 0, 30)).toBe(PHASE_LIVE);
   });
 
   it('is path-independent and permits arbitrary-direction seeks', () => {

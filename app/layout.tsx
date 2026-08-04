@@ -12,9 +12,9 @@ const TWITTER_HANDLE = TWITTER
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://www.kevinweaver.dev'),
-  title: 'Kevin Weaver — Lead Fullstack Software Engineer',
+  title: 'Kevin Weaver — Senior Full Stack Software Engineer',
   description:
-    'Kevin Weaver, lead fullstack software engineer. Web3 builder, Ethereum enthusiast, public goods enjoyer. Sixteen years of commits, replayed backwards.',
+    'Kevin Weaver, senior fullstack software engineer. Sixteen years of commits, replayed backwards.',
   applicationName: IDENTITY.site,
   authors: [{ name: IDENTITY.name, url: `https://${IDENTITY.site}` }],
   creator: IDENTITY.name,
@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     lastName: 'Weaver',
     username: IDENTITY.whoami,
     description:
-      "Sixteen years of commits, replayed backwards. Web3 builder, Ethereum enthusiast, public goods enjoyer, building coordination tools on the internet's frontier.",
+      "Sixteen years of commits, replayed backwards.",
   },
   twitter: {
     card: 'summary_large_image',

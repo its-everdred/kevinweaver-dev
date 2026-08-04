@@ -330,7 +330,7 @@ function drawWeekdayLabels(
   theme: RenderTheme,
   geom: RibbonGeometry
 ): void {
-  const labels = ['mon', '', 'wed', '', 'fri', '', '']
+  const labels = ['sun', '', 'tue', '', 'thu', '', 'sat']
   ctx.font = `600 ${theme.fontPx.micro}px ${theme.fontFamily}`
   ctx.textAlign = 'left'
   for (let day = 0; day < labels.length; day += 1) {

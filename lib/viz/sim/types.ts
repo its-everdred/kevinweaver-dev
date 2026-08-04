@@ -67,8 +67,6 @@ export interface SimState {
   slot: Int32Array;
   nLive: number;
   pDeath: number;
-  birthHeap: Int32Array;
-  nHeap: number;
   alpha: Float32Array;
   heat: Float32Array;
   px: Float32Array;

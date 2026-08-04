@@ -88,7 +88,7 @@ export const REGION_META = {
   },
   manPage: {
     landmark: 'section',
-    anchorId: 'whoami',
+    anchorId: 'man',
     titleId: 'region-man-page-title',
     accessibleName: 'man kevin-weaver',
     headingLevel: 2,
@@ -97,7 +97,7 @@ export const REGION_META = {
     landmark: 'section',
     anchorId: 'arc',
     titleId: 'region-career-log-title',
-    accessibleName: 'git log --graph --oneline --since=2021',
+    accessibleName: 'git log --graph --decorate --all',
     headingLevel: 2,
   },
   contact: {
@@ -131,7 +131,7 @@ export interface NavSection {
 
 /** Header navigation sections, rendered as tmux window numbers. */
 export const NAV_SECTIONS = [
-  { index: 1, id: 'whoami', label: 'whoami' },
+  { index: 1, id: 'man', label: 'man' },
   { index: 2, id: 'arc', label: 'arc' },
   { index: 3, id: 'contact', label: 'contact' },
 ] as const satisfies readonly NavSection[]
