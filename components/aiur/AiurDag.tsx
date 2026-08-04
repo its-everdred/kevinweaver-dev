@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import aiurSnapshot from '@/packages/aiur-dag/fixtures/aiur.json'
 import {
   buildFileDag,
   DEFAULT_THEME,
@@ -19,10 +18,9 @@ const DIRECTION_LABELS: Record<PlaybackDirection, string> = {
   backward: 'backward',
 }
 
-/** Loads the embedded aiur snapshot as a typed value. */
-const SNAPSHOT = aiurSnapshot as RepoSnapshot
-
 const STEP_MS = 900
+
+const SNAPSHOT_URL = '/data/aiur/aiur.json'
 
 /**
  * @description Renders the interactive aiur-dag visualization for the aiur repo.
@@ -32,22 +30,42 @@ export function AiurDag(): ReactNode {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const directionRef = useRef<PlaybackDirection>('forward')
   const indexRef = useRef(0)
+  const [snapshot, setSnapshot] = useState<RepoSnapshot | null>(null)
   const [direction, setDirection] = useState<PlaybackDirection>('forward')
-  const [date, setDate] = useState(SNAPSHOT.commits[0]?.date ?? '')
+  const [date, setDate] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(SNAPSHOT_URL)
+      .then((response) => {
+        if (!response.ok) throw new Error(`snapshot fetch failed: ${response.status}`)
+        return response.json() as Promise<RepoSnapshot>
+      })
+      .then((value) => {
+        if (!cancelled) setSnapshot(value)
+      })
+      .catch(() => {
+        if (!cancelled) setSnapshot(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const engine = useMemo(() => {
-    const dag = buildFileDag(SNAPSHOT)
+    if (!snapshot) return null
+    const dag = buildFileDag(snapshot)
     const layout = layoutDag(dag)
     const pathToNode = new Map<string, string>()
     for (const node of dag.nodes.values()) {
       if (node.isFile) pathToNode.set(node.path, node.id)
     }
     return { dag, layout, pathToNode }
-  }, [])
+  }, [snapshot])
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas) return
+    if (!canvas || !engine || !snapshot) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const dpr = Math.min(2, window.devicePixelRatio || 1)
@@ -65,11 +83,11 @@ export function AiurDag(): ReactNode {
       if (now - last >= STEP_MS) {
         last = now
         indexRef.current = nextCommitIndex(
-          playbackFrame(SNAPSHOT, indexRef.current, directionRef.current),
+          playbackFrame(snapshot, indexRef.current, directionRef.current),
           directionRef.current
         )
       }
-      const playback = playbackFrame(SNAPSHOT, indexRef.current, directionRef.current)
+      const playback = playbackFrame(snapshot, indexRef.current, directionRef.current)
       const dateLabel = playback.commit?.date ?? ''
       setDate(dateLabel)
       renderDag(
@@ -90,7 +108,7 @@ export function AiurDag(): ReactNode {
       observer.disconnect()
       cancelAnimationFrame(raf)
     }
-  }, [engine])
+  }, [engine, snapshot])
 
   const toggle = (): void => {
     const next: PlaybackDirection =
@@ -100,9 +118,13 @@ export function AiurDag(): ReactNode {
   }
 
   const jump = (fraction: number): void => {
+    if (!snapshot) return
     const index = Math.max(
       0,
-      Math.min(SNAPSHOT.commits.length - 1, Math.round(fraction * (SNAPSHOT.commits.length - 1)))
+      Math.min(
+        snapshot.commits.length - 1,
+        Math.round(fraction * (snapshot.commits.length - 1))
+      )
     )
     indexRef.current = index
   }
@@ -120,17 +142,18 @@ export function AiurDag(): ReactNode {
         link the kw contributor to the files it touched.
       </canvas>
       <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
-        <button onClick={toggle} type="button">
+        <button disabled={!snapshot} onClick={toggle} type="button">
           play {DIRECTION_LABELS[direction]}
         </button>
-        <button onClick={() => jump(0)} type="button">
+        <button disabled={!snapshot} onClick={() => jump(0)} type="button">
           start
         </button>
-        <button onClick={() => jump(1)} type="button">
+        <button disabled={!snapshot} onClick={() => jump(1)} type="button">
           end
         </button>
         <input
           aria-label="scrub the contribution timeline"
+          disabled={!snapshot}
           max="1"
           min="0"
           onChange={(event) => jump(Number(event.target.value))}

@@ -9,7 +9,8 @@
  *   git clone --bare https://github.com/aiur-team/aiur.git /tmp/aiur-bare
  *   node packages/aiur-dag/scripts/build-aiur-snapshot.mjs /tmp/aiur-bare
  *
- * The output is written to packages/aiur-dag/fixtures/aiur.json.
+ * The output is written to public/data/aiur/aiur.json, where the browser
+ * fetches it as a static asset (kept out of the JS bundle).
  */
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -21,7 +22,7 @@ const REPO_NAME = 'aiur'
 const BRANCH = 'main'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const fixturePath = resolve(here, '../fixtures/aiur.json')
+const fixturePath = resolve(here, '../../../public/data/aiur/aiur.json')
 const clonePath = process.argv[2]
 if (!clonePath) {
   console.error('usage: build-aiur-snapshot.mjs <path-to-aiur-clone>')
