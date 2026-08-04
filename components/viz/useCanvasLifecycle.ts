@@ -9,6 +9,7 @@ import type {
 
 const MAX_DPR = 2
 const mounted = new Set<VizSurfaceId>()
+const startedSurface = new Set<VizSurfaceId>()
 
 interface LifecycleOptions {
   readonly id: VizSurfaceId
@@ -67,7 +68,13 @@ function attachSurface(contextRef: ContextRef): void {
   })
   context.attached = context.driver
   mounted.add(context.id)
-  context.driver.start()
+  // Start playback on the very first surface attach only. A later lazy attach
+  // (for example the below-the-fold gource) must not resume a user-paused
+  // driver.
+  if (!startedSurface.has(context.id)) {
+    startedSurface.add(context.id)
+    context.driver.start()
+  }
 }
 function useGeometryObserver(
   id: VizSurfaceId,
@@ -156,6 +163,7 @@ function detachSurface(id: VizSurfaceId, contextRef: ContextRef): void {
   const driver = context.attached
   context.attached = null
   mounted.delete(id)
+  startedSurface.delete(id)
   if (mounted.size === 0) driver.stop()
 }
 function createGeometry(

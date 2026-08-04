@@ -1,11 +1,9 @@
 import { advanceCursor, repoPhase, seekCursor } from './cursor'
 import { RING } from './layout'
-import { nextRng, rngValue } from './rng'
 import {
   FIXED_DT,
   MAX_BEAMS,
   MAX_STEPS,
-  PHASE_GHOST,
   PHASE_LIVE,
   SPEEDS,
 } from './types'
@@ -15,26 +13,19 @@ import type { SimState } from './types'
 export const DECAY = {
   heatHalfLifeSeconds: 0.250901,
   repoEaseHalfLifeSeconds: 0.250901,
-  repoGhostHalfLifeSeconds: 0.571827,
   actorEaseHalfLifeSeconds: 0.122494,
   fileAlphaHalfLifeSeconds: 0.250901,
   beamLifePerSecond: 1.32,
 } as const
 
-/** Alpha target for repositories whose active era has ended. */
-export const REPO_GHOST_ALPHA = 0.34
 /** Maximum events represented by beam slots for one crossed day. */
 export const MAX_BEAMS_PER_DAY = 12
-/** Unit-space extent used when actors choose a new idle target. */
-export const ACTOR_WANDER = { x: 0.6, y: 0.5 } as const
 
 const HEAT_KEEP = keepForStep(DECAY.heatHalfLifeSeconds)
 const REPO_EASE_K = 1 - keepForStep(DECAY.repoEaseHalfLifeSeconds)
-const REPO_GHOST_K = 1 - keepForStep(DECAY.repoGhostHalfLifeSeconds)
 const ACTOR_EASE_K = 1 - keepForStep(DECAY.actorEaseHalfLifeSeconds)
 const FILE_ALPHA_K = 1 - keepForStep(DECAY.fileAlphaHalfLifeSeconds)
 const BEAM_DECAY_STEP = DECAY.beamLifePerSecond * FIXED_DT
-const IDLE_EPSILON_SQ = 1e-6
 
 /**
  * @description Advances presentation and playback by one deterministic fixed timestep.
@@ -149,14 +140,11 @@ function settleFiles(state: SimState): void {
 
 function settleRepos(state: SimState): void {
   for (let repoId = 0; repoId < state.repoCount; repoId++) {
-    const phase = repoPhase(state, repoId, state.cursorDayInt)
-    const target =
-      phase === PHASE_LIVE ? 1 : phase === PHASE_GHOST ? REPO_GHOST_ALPHA : 0
-    const easing = phase === PHASE_GHOST ? REPO_GHOST_K : REPO_EASE_K
+    const target = repoPhase(state, repoId, state.cursorDayInt) === PHASE_LIVE ? 1 : 0
     const angle = valueAt(state.repoAngle, repoId)
     state.repoAlpha[repoId] =
       valueAt(state.repoAlpha, repoId) +
-      (target - valueAt(state.repoAlpha, repoId)) * easing
+      (target - valueAt(state.repoAlpha, repoId)) * REPO_EASE_K
     easeRepoPosition(state, repoId, angle)
   }
 }
@@ -186,7 +174,6 @@ function decayBeams(state: SimState): void {
 function settleActors(state: SimState): void {
   for (let actorId = 0; actorId < state.actorX.length; actorId++) {
     easeActor(state, actorId)
-    if (isSettled(state, actorId)) retargetActor(state, actorId)
   }
 }
 
@@ -201,35 +188,21 @@ function easeActor(state: SimState, actorId: number): void {
       ACTOR_EASE_K
 }
 
-function isSettled(state: SimState, actorId: number): boolean {
-  const dx = valueAt(state.actorTX, actorId) - valueAt(state.actorX, actorId)
-  const dy = valueAt(state.actorTY, actorId) - valueAt(state.actorY, actorId)
-  return dx * dx + dy * dy < IDLE_EPSILON_SQ
-}
-
-function retargetActor(state: SimState, actorId: number): void {
-  state.rngState = nextRng(state.rngState)
-  const x = rngValue(state.rngState)
-  state.rngDraws++
-  state.rngState = nextRng(state.rngState)
-  const y = rngValue(state.rngState)
-  state.rngDraws++
-  state.actorTX[actorId] = RING.cx + (x - 0.5) * ACTOR_WANDER.x
-  state.actorTY[actorId] = RING.cy + (y - 0.5) * ACTOR_WANDER.y
-}
-
 function emitBeam(state: SimState, entityId: number): void {
   const beamId = state.beamHead
   state.beamEnt[beamId] = entityId
-  state.beamActor[beamId] = 0
+  // Alternate which actor the beam belongs to so both kw and the agent move
+  // across the field as contributions are crossed, each tracing its own lines.
+  const actor = beamId % 2
+  state.beamActor[beamId] = actor
   state.beamKind[beamId] = 0
   state.beamLife[beamId] = 1
   state.beamHead = (beamId + 1) % MAX_BEAMS
   const repoId = valueAt(state.repoOf, entityId)
   if (repoId < 0) return
-  state.actorTX[0] =
+  state.actorTX[actor] =
     valueAt(state.repoX, repoId) + valueAt(state.px, entityId) * 0.03
-  state.actorTY[0] =
+  state.actorTY[actor] =
     valueAt(state.repoY, repoId) + valueAt(state.py, entityId) * 0.05
 }
 
@@ -242,10 +215,9 @@ function snapFiles(state: SimState): void {
 
 function snapRepos(state: SimState): void {
   for (let repoId = 0; repoId < state.repoCount; repoId++) {
-    const phase = repoPhase(state, repoId, state.cursorDayInt)
     const angle = valueAt(state.repoAngle, repoId)
     state.repoAlpha[repoId] =
-      phase === PHASE_LIVE ? 1 : phase === PHASE_GHOST ? REPO_GHOST_ALPHA : 0
+      repoPhase(state, repoId, state.cursorDayInt) === PHASE_LIVE ? 1 : 0
     state.repoX[repoId] = RING.cx + Math.cos(angle) * RING.rx
     state.repoY[repoId] = RING.cy + Math.sin(angle) * RING.ry
   }

@@ -18,7 +18,7 @@ export function monthWindows(pStart: string, monthCount: number) {
 
 export async function fetchPrivateAggregate(request: GraphqlRequest, opts: { pStart?: string; monthCount?: number } = {}) {
   await assertSamlVisibility(request);
-  const pStart = opts.pStart ?? "2021-01"; const monthCount = opts.monthCount ?? 67; const windows = monthWindows(pStart, monthCount);
+  const pStart = opts.pStart ?? "2010-01"; const monthCount = opts.monthCount ?? 199; const windows = monthWindows(pStart, monthCount);
   const actors: ActorPrivateSeries[] = [];
   for (const login of ["its-everdred", "its-applekid"] as const) {
     const values = await Promise.all(windows.map(async (window) => { const response = await request<unknown>(QUERY, { login, from: window.from, to: window.to }); const parsed = responseSchema.safeParse(response); if (!parsed.success) throw new Error(`Private response shape invalid: ${parsed.error.message}`); return parsed.data.user.contributionsCollection; }));
@@ -30,8 +30,8 @@ export async function fetchPrivateAggregate(request: GraphqlRequest, opts: { pSt
 }
 
 async function selfCheck() {
-  const windows = monthWindows("2021-01", 67); if (windows[0]?.key !== "2021-01" || windows.at(-1)?.key !== "2026-07" || windows.at(-1)?.to !== "2026-07-31T23:59:59Z") throw new Error("month window self-check failed");
-  const fixture = [21,12,21,23,18,6,0,2,2,0,0,0,0,0,0,0,1,0,2,4,8,15,35,23,77,45,110,76,62,24,75,216,90,122,91,42,121,278,258,200,110,126,169,208,158,290,152,292,213,228,91,72,42,33,34,68,65,83,33,36,23,25,40,101,68,109,122]; if (fixture.length !== 67 || fixture.some((value) => value < 0 || !Number.isInteger(value))) throw new Error("private fixture self-check failed");
+  const windows = monthWindows("2010-01", 199); if (windows[0]?.key !== "2010-01" || windows.at(-1)?.key !== "2026-07" || windows.at(-1)?.to !== "2026-07-31T23:59:59Z") throw new Error("month window self-check failed");
+  if (windows.length !== 199) throw new Error("month window count self-check failed");
   const fake: GraphqlRequest = async <T>(query: string) => query.includes("SamlCanary")
     ? ({ repository: { nameWithOwner: "ethereum-optimism/actions", isPrivate: false }, user: { contributionsCollection: { commitContributionsByRepository: [{ repository: { owner: { login: "ethereum-optimism" } }, contributions: { totalCount: 1 } }] } }, rateLimit: { remaining: 5000 } } as T)
     : ({ user: { contributionsCollection: { restrictedContributionsCount: 1, hasAnyRestrictedContributions: true } }, rateLimit: { remaining: 5000 } } as T);

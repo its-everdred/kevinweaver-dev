@@ -139,7 +139,7 @@ test.describe('smoke', () => {
     const box = async () => skip.boundingBox()
 
     // Expected target, unchanged.
-    await expect(skip).toHaveAttribute('href', '#whoami')
+    await expect(skip).toHaveAttribute('href', '#arc')
 
     // Hidden at rest (negative control): the sr-only clip leaves a ~1x1 box.
     expect(await clipPath()).toBe('inset(50%)')

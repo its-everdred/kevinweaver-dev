@@ -8,12 +8,10 @@ import {
   type ManBlock,
   type ManSection,
 } from '@/content/manpage'
-import { IDENTITY, type FingerField } from '@/content/identity'
 import { fill } from '@/content/boot'
 import { REGION_META, type ManPageProps } from './_contract'
 
 const META = REGION_META.manPage
-const WHOAMI_TITLE_ID = 'region-man-page-whoami-title'
 const PAGER_TITLE_ID = 'region-man-page-pager-title'
 
 /**
@@ -24,7 +22,6 @@ const FOOTER_CENTER = fill(MAN_FOOTER.center, { date: REVISION_DATE })
 
 const KW_MAN_CSS = `
 .kw-man{display:flex;flex-direction:column;gap:var(--pane-gap);min-width:0;}
-.kw-man-whoami{flex:0 0 auto;}
 .kw-man-pane{flex:1 1 auto;min-width:0;min-height:0;}
 .kw-man-body{min-width:0;}
 .kw-man-doc{padding:var(--pane-pad);min-width:${MAN_WRAP_COLUMNS}ch;font-family:var(--mono);
@@ -42,10 +39,6 @@ const KW_MAN_CSS = `
 .kw-man-cmd{margin:.9em 0 0;color:var(--text-faint);}
 .kw-man-sh>.kw-man-cmd:first-child{margin-top:0;}
 .kw-man-out{margin:0;}
-.kw-man-finger{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 2ch;margin:0;}
-.kw-man-ff{display:flex;gap:1ch;min-width:0;}
-.kw-man-ff dt{color:var(--text-faint);}
-.kw-man-ff dd{margin:0;min-width:0;}
 .kw-man-chrome{display:flex;gap:2ch;margin:0 0 1.2em;color:var(--text-faint);}
 .kw-man-chrome>:nth-child(2){flex:1 1 auto;text-align:center;}
 .kw-man-doc>.kw-man-chrome:last-of-type{margin:1.6em 0 0;}
@@ -56,7 +49,7 @@ const KW_MAN_CSS = `
 }
 `
 
-/** Renders the identity and manual-page region. */
+/** Renders the manual-page region. */
 export function ManPage({ id, className, style }: ManPageProps) {
   return (
     <section
@@ -71,59 +64,8 @@ export function ManPage({ id, className, style }: ManPageProps) {
       <h2 className="sr-only" id={META.titleId}>
         {META.accessibleName}
       </h2>
-      <WhoamiPane />
       <ManPagerPane />
     </section>
-  )
-}
-
-function chunkPairs(
-  fields: readonly FingerField[]
-): ReadonlyArray<readonly FingerField[]> {
-  return Array.from({ length: Math.ceil(fields.length / 2) }, (_, index) =>
-    fields.slice(index * 2, index * 2 + 2)
-  )
-}
-
-function WhoamiPane() {
-  const fingerRows = chunkPairs(IDENTITY.finger)
-  return (
-    <Pane
-      as="article"
-      className="kw-man-whoami"
-      labelledBy={WHOAMI_TITLE_ID}
-      title="whoami"
-      titleAs="h3"
-      titleId={WHOAMI_TITLE_ID}
-    >
-      <div className="kw-man-sh">
-        <p className="kw-man-cmd">
-          <span className="prompt">$</span> whoami
-        </p>
-        <p className="kw-man-out">{IDENTITY.whoami}</p>
-        <p className="kw-man-cmd">
-          <span className="prompt">$</span> id
-        </p>
-        <p className="kw-man-out">{IDENTITY.idLines.join('\n')}</p>
-        <p className="kw-man-cmd">
-          <span className="prompt">$</span> finger -l {IDENTITY.whoami}
-        </p>
-        <dl className="kw-man-finger">
-          {fingerRows.map((row) =>
-            row.map((field) => (
-              <div className="kw-man-ff" key={field.label}>
-                <dt>{field.label}:</dt>
-                <dd>{field.value}</dd>
-              </div>
-            ))
-          )}
-        </dl>
-        <p className="kw-man-cmd">Project:</p>
-        <p className="kw-man-out">{IDENTITY.project.join('\n')}</p>
-        <p className="kw-man-cmd">Plan:</p>
-        <p className="kw-man-out">{IDENTITY.plan.join('\n')}</p>
-      </div>
-    </Pane>
   )
 }
 

@@ -13,9 +13,6 @@ export const RING = {
   ry: 0.38,
   phase: 0.55,
 } as const
-/** Initial multiplier applied to the repository ring before it eases inward. */
-export const RING_ENTRY_SCALE = 1.5
-
 const PACKED = new WeakSet<SimState>()
 
 /**
@@ -145,12 +142,41 @@ function placeRepos(state: SimState): void {
   )
   for (let rank = 0; rank < repoIds.length; rank++) {
     const repoId = required(repoIds, rank)
-    const angle = ((2 * rank + 1) / state.repoCount) * Math.PI + RING.phase
-    state.repoAngle[repoId] = angle
-    state.repoX[repoId] = RING.cx + Math.cos(angle) * RING.rx * RING_ENTRY_SCALE
-    state.repoY[repoId] = RING.cy + Math.sin(angle) * RING.ry * RING_ENTRY_SCALE
+    const slot = hashPosition(state, repoId)
+    state.repoAngle[repoId] = slot.angle
+    state.repoX[repoId] = RING.cx + Math.cos(slot.angle) * slot.r * RING.rx
+    state.repoY[repoId] = RING.cy + Math.sin(slot.angle) * slot.r * RING.ry
     state.repoAlpha[repoId] = 0
   }
+}
+
+/**
+ * @description Derives a deterministic, non-uniform scatter position for one repository.
+ * @param state Simulation state for the repo's seed and id.
+ * @param repoId Repository entity id.
+ * @returns A pseudo-random angle and radial fraction within the field.
+ */
+function hashPosition(
+  state: SimState,
+  repoId: number
+): { readonly angle: number; readonly r: number } {
+  const a = hash01(repoId * 2 + 1)
+  const b = hash01(repoId * 2 + 2)
+  const angle = a * Math.PI * 2
+  const r = 0.15 + b * 0.6
+  return { angle, r }
+}
+
+/**
+ * @description Deterministic hash returning a fraction in [0, 1), independent
+ * of the repository count so a small repo set still scatters across the field.
+ */
+function hash01(seed: number): number {
+  let h = seed | 0
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b)
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b)
+  h ^= h >>> 16
+  return ((h >>> 0) % 1000) / 1000
 }
 
 function required<T>(values: readonly T[], index: number): T {

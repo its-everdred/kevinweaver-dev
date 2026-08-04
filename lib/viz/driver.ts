@@ -295,6 +295,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
   let accumulator = 0
   let latchedWindow: number | null = null
   let settled = false
+  let userPaused = false
   const lifecycle = createVizDriverLifecycle(
     state,
     options.reducedMotion ?? mediaQuery()?.matches ?? false
@@ -331,7 +332,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       accumulator = 0
       cancelInvalidatedPaint()
       publishFrameInfo()
-      if (lifecycle.running) resetFrameClock()
+      if (lifecycle.running && !userPaused) resetFrameClock()
     } else paint(settled)
   }
   media?.addEventListener('change', onMediaChange)
@@ -380,7 +381,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     })
   }
   function start(): void {
-    if (lifecycle.running) return
+    if (lifecycle.running || userPaused) return
     if (lifecycle.reducedMotion) {
       void seekTick(0)
       return
@@ -415,10 +416,13 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     invalidationRaf = 0
   }
   function play(): void {
+    userPaused = false
     if (!lifecycle.running) schedule()
   }
   function pause(): Promise<void> {
     stop()
+    userPaused = true
+    state.playing = false
     return Promise.resolve()
   }
   function frame(now: number): void {
@@ -492,6 +496,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
       lifecycle.running,
       DEFAULT_SPEED_INDEX
     )
+    if (mode === 'consumer') userPaused = false
     assertTick(tick)
     resetSimState(state, seed)
     restorePackedLayout()
@@ -567,7 +572,7 @@ export function createVizDriver(options: VizDriverOptions): VizDriver {
     quality = qualityForTier(mode === 'low' ? 5 : 0)
   }
   function inspect(): VizFrameInfo {
-    return lastInfo
+    return buildInfo()
   }
   function perf(): VizPerfInfo {
     return {

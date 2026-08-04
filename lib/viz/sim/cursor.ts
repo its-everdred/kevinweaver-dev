@@ -1,5 +1,6 @@
 import type { RepoPhase, SimState } from './types';
-import { ENTITY_FILE, PHASE_ABSENT, PHASE_GHOST, PHASE_LIVE } from './types';
+import { ENTITY_FILE, PHASE_ABSENT, PHASE_LIVE } from './types';
+
 
 /**
  * @description Seeds the file live set at a cursor day from empty state.
@@ -13,11 +14,7 @@ export function seedCursor(state: SimState, day: number): void {
     state.pDeath < state.byDeath.length &&
     valueAt(state.death, valueAt(state.byDeath, state.pDeath)) >= day
   ) {
-    const id = valueAt(state.byDeath, state.pDeath++);
-    if (valueAt(state.birth, id) <= day) {
-      liveAdd(state, id);
-      heapPush(state, id);
-    }
+    liveAdd(state, valueAt(state.byDeath, state.pDeath++));
   }
   state.cursorDayInt = day;
 }
@@ -37,16 +34,8 @@ export function advanceCursor(state: SimState, day: number): void {
     state.pDeath < state.byDeath.length &&
     valueAt(state.death, valueAt(state.byDeath, state.pDeath)) >= day
   ) {
-    const id = valueAt(state.byDeath, state.pDeath++);
-    if (valueAt(state.birth, id) <= day) {
-      liveAdd(state, id);
-      heapPush(state, id);
-    }
+    liveAdd(state, valueAt(state.byDeath, state.pDeath++));
   }
-  while (state.nHeap > 0 && valueAt(state.birth, valueAt(state.birthHeap, 0)) > day) {
-    liveRemove(state, heapPop(state));
-  }
-
   state.cursorDayInt = day;
 }
 
@@ -62,11 +51,7 @@ export function seekCursor(state: SimState, day: number): void {
     state.pDeath < state.byDeath.length &&
     valueAt(state.death, valueAt(state.byDeath, state.pDeath)) >= day
   ) {
-    const id = valueAt(state.byDeath, state.pDeath++);
-    if (valueAt(state.birth, id) <= day) {
-      liveAdd(state, id);
-      heapPush(state, id);
-    }
+    liveAdd(state, valueAt(state.byDeath, state.pDeath++));
   }
   state.cursorDayInt = day;
 }
@@ -83,9 +68,8 @@ export function repoPhase(state: SimState, repoId: number, day: number): RepoPha
     throw new RangeError(`repo id ${repoId} is outside the repository table`);
   }
   assertDay(state, day);
-  if (day < valueAt(state.birth, repoId)) return PHASE_ABSENT;
-  if (day <= valueAt(state.death, repoId)) return PHASE_LIVE;
-  return PHASE_GHOST;
+  if (day > valueAt(state.death, repoId)) return PHASE_ABSENT;
+  return PHASE_LIVE;
 }
 
 /**
@@ -132,9 +116,7 @@ function assertDay(state: SimState, day: number): void {
 function clearLiveSet(state: SimState): void {
   state.live.fill(0);
   state.slot.fill(-1);
-  state.birthHeap.fill(0);
   state.nLive = 0;
-  state.nHeap = 0;
   state.pDeath = 0;
 }
 
@@ -143,53 +125,6 @@ function liveAdd(state: SimState, id: number): void {
   state.slot[id] = state.nLive++;
 }
 
-function liveRemove(state: SimState, id: number): void {
-  const slot = valueAt(state.slot, id);
-  const last = state.nLive - 1;
-  const lastId = valueAt(state.live, last);
-  state.live[slot] = lastId;
-  state.slot[lastId] = slot;
-  state.slot[id] = -1;
-  state.nLive = last;
-}
-
-function heapPush(state: SimState, id: number): void {
-  let index = state.nHeap++;
-  while (index > 0) {
-    const parent = Math.floor((index - 1) / 2);
-    const parentId = valueAt(state.birthHeap, parent);
-    if (!hasHigherBirth(state, id, parentId)) break;
-    state.birthHeap[index] = parentId;
-    index = parent;
-  }
-  state.birthHeap[index] = id;
-}
-
-function heapPop(state: SimState): number {
-  const top = valueAt(state.birthHeap, 0);
-  const last = valueAt(state.birthHeap, --state.nHeap);
-  let index = 0;
-  while (index * 2 + 1 < state.nHeap) {
-    const left = index * 2 + 1;
-    const right = left + 1;
-    const child =
-      right < state.nHeap &&
-      hasHigherBirth(state, valueAt(state.birthHeap, right), valueAt(state.birthHeap, left))
-        ? right
-        : left;
-    const childId = valueAt(state.birthHeap, child);
-    if (!hasHigherBirth(state, childId, last)) break;
-    state.birthHeap[index] = childId;
-    index = child;
-  }
-  if (state.nHeap > 0) state.birthHeap[index] = last;
-  return top;
-}
-function hasHigherBirth(state: SimState, left: number, right: number): boolean {
-  return valueAt(state.birth, left) === valueAt(state.birth, right)
-    ? left > right
-    : valueAt(state.birth, left) > valueAt(state.birth, right);
-}
 function valueAt(table: Int32Array | Uint8Array, index: number): number {
   const value = table[index];
   if (value === undefined) throw new RangeError(`missing table value at ${index}`);

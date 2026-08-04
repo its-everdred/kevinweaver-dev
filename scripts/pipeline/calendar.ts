@@ -136,7 +136,7 @@ export function mergeActorDays(actors: ActorCalendar[], windowStart: string, win
 }
 
 export async function fetchCalendarBundle(request: GraphqlRequest, opts: { windowStart?: string; windowEnd?: string; previous?: CalendarBundle } = {}) {
-  const windowStart = opts.windowStart ?? "2021-01-01"; const windowEnd = opts.windowEnd ?? "2026-07-31";
+  const windowStart = opts.windowStart ?? "2010-01-01"; const windowEnd = opts.windowEnd ?? "2026-07-31";
   const canary = await assertSamlVisibility(request); const years = new Set(dateRange(windowStart, windowEnd).map((date) => date.slice(0, 4)));
   try {
     const actors: ActorCalendar[] = [];

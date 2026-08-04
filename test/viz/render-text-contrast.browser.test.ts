@@ -112,8 +112,8 @@ const INPUT: SimInput = {
   ]),
   repoOf: Int32Array.from([-1, -1, -1, 0, 0, 2]),
   birthDay: Int32Array.from([0, 0, 0, 0, 0, 0]),
-  // Repo 1 dies at day 90 (0 + 90-day dwell tail) so it is a ghost at day 399;
-  // the rest stay alive, giving live, ghost, and live-private repositories.
+  // Repo 1 dies at day 90 (0 + 90-day dwell tail) so it is ABSENT at day 399;
+  // the rest stay alive, giving live, live, and live-private repositories.
   lastTouchDay: Int32Array.from([
     DAY_ALIVE,
     0,
@@ -221,7 +221,7 @@ describe('canvas render text contrast', () => {
     const calls = recordContext(canvas)
     renderRibbon(state(), calls.ctx, view(530, 300), createRibbonLayer(GRID))
     const texts = textCommands(calls.calls)
-    for (const weekday of ['mon', 'wed', 'fri'])
+    for (const weekday of ['sun', 'tue', 'thu', 'sat'])
       expect(texts.some(({ text }) => text === weekday)).toBe(true)
     expect(
       texts.some(({ text }) =>
@@ -236,8 +236,11 @@ describe('canvas render text contrast', () => {
     const calls = recordContext(canvas)
     renderGraph(state(), calls.ctx, view(530, 300), graphLayer())
     const texts = textCommands(calls.calls)
-    // Ghost repository label (repo 1 died inside the window).
-    expect(texts.some(({ text }) => text === 'beta')).toBe(true)
+    // Repo 1 died at day 90 and is ABSENT at the day-399 cursor: its label must
+    // not render under the appear-on-contribution lifecycle.
+    expect(texts.some(({ text }) => text === 'beta')).toBe(false)
+    expect(texts.some(({ text }) => text === 'alpha')).toBe(true)
+    expect(texts.some(({ text }) => text === 'gamma')).toBe(true)
     // Repository star counts for live repositories.
     expect(texts.some(({ text }) => text.startsWith('★'))).toBe(true)
     // Agent-birth sublabel.

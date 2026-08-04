@@ -28,8 +28,6 @@ export interface FingerField {
 export interface Identity {
   readonly name: string
   readonly title: string
-  readonly location: string
-  readonly timezone: string
   readonly site: string
   readonly email: string | null
   readonly actors: readonly Actor[]
@@ -50,9 +48,7 @@ export const CONTACT_TWITTER: string | null = null
 const EXTERNAL_REL = ['me', 'noopener'] as const
 export const IDENTITY = {
   name: 'Kevin Weaver',
-  title: 'Lead Fullstack Software Engineer',
-  location: 'California, USA',
-  timezone: 'America/Los_Angeles',
+  title: 'Senior Full Stack Software Engineer',
   site: 'kevinweaver.dev',
   email: CONTACT_EMAIL,
   actors: [
@@ -106,9 +102,8 @@ export const IDENTITY = {
     { label: 'Name', value: 'Kevin Weaver' },
     { label: 'Directory', value: '/home/kevin' },
     { label: 'Shell', value: '/usr/bin/zsh' },
-    { label: 'Title', value: 'Lead Fullstack Software Engineer' },
+    { label: 'Title', value: 'Senior Full Stack Software Engineer' },
     { label: 'Since', value: 'Feb 2010' },
-    { label: 'Location', value: 'California, USA' },
     {
       label: 'On since',
       value: 'Mon May 5 09:12 2025 on optimism (messages off)',

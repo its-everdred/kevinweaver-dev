@@ -83,7 +83,7 @@ export function ContributionTable({
     <table
       id={id}
       data-testid="contribution-table"
-      className={['sr-only', className].filter(Boolean).join(' ')}
+      className={['sr-only kw-sr-table', className].filter(Boolean).join(' ')}
     >
       <caption>
         {`Contributions by day, ${dayLabel(toUtcDate(meta.windowStart))} – ${dayLabel(

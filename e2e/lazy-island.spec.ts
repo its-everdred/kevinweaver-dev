@@ -117,9 +117,10 @@ test('no deferred island chunk is fetched while the instrument region is out of 
   const declared = await declaredChunks(page)
   const requested = trackChunkRequests(page)
 
-  // Land below the instrument. `#contact` is KW-005's anchor on the contact
-  // region, which sits after the instrument in comp document order.
-  await page.goto('/#contact', { waitUntil: 'networkidle' })
+  // Land above the instrument. The manual-page region is KW-005's first region,
+  // sitting above the instrument in comp document order, so the instrument is
+  // below the fold and the island must not load.
+  await page.goto('/#man', { waitUntil: 'networkidle' })
   await settle(page)
 
   // Precondition, asserted rather than assumed. If the instrument is still in
@@ -151,7 +152,7 @@ test('scrolling the instrument region into view fetches the deferred island chun
   const declared = await declaredChunks(page)
   const requested = trackChunkRequests(page)
 
-  await page.goto('/#contact', { waitUntil: 'networkidle' })
+  await page.goto('/#man', { waitUntil: 'networkidle' })
   await settle(page)
   const before = new Set(requested)
 

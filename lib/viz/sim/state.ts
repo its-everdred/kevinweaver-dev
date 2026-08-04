@@ -42,8 +42,6 @@ export function createSimState(input: SimInput, seed: number): SimState {
     slot: new Int32Array(input.entityCount),
     nLive: 0,
     pDeath: 0,
-    birthHeap: new Int32Array(input.entityCount),
-    nHeap: 0,
     alpha: new Float32Array(input.entityCount),
     heat: new Float32Array(input.entityCount),
     px: new Float32Array(input.entityCount),
