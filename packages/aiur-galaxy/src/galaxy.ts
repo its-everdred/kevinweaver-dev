@@ -47,7 +47,7 @@ export function layoutUniverse(snapshot: UniverseSnapshot): UniverseLayout {
     const repo = snapshot.repos[index]
     if (!repo) continue
     const starCountInGalaxy = repo.files.length
-    const angle = spiralAngle(index, snapshot.repos.length)
+    const angle = spiralAngle(index)
     const radius = spiralRadius(index, snapshot.repos.length)
     const fieldRadius = 0.5 - FIELD_MARGIN
     const galaxyRadius = galaxyScale(starCountInGalaxy)
@@ -74,7 +74,7 @@ export function layoutUniverse(snapshot: UniverseSnapshot): UniverseLayout {
  * @description Golden-angle sunflower placement gives even galaxy spacing with
  * no tight winding, unlike an Archimedean spiral that clusters points.
  */
-function spiralAngle(index: number, total: number): number {
+function spiralAngle(index: number): number {
   return index * Math.PI * (3 - Math.sqrt(5))
 }
 function spiralRadius(index: number, total: number): number {

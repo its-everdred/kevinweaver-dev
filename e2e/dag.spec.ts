@@ -6,7 +6,7 @@ async function gotoDag(page: Page) {
   await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
 }
 
-test.describe('aiur-dag page', () => {
+test.describe('aiur-galaxy page', () => {
   test('renders the canvas and a contribution date @smoke', async ({ page }) => {
     await gotoDag(page)
     const canvas = page.getByRole('img', { name: /animated dag/i })

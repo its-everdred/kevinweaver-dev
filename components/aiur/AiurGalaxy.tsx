@@ -11,7 +11,7 @@ import {
   renderDag,
   type PlaybackDirection,
   type RepoSnapshot,
-} from '@/packages/aiur-dag/src'
+} from '@/packages/aiur-galaxy/src'
 
 const DIRECTION_LABELS: Record<PlaybackDirection, string> = {
   forward: 'forward',
@@ -23,10 +23,10 @@ const STEP_MS = 900
 const SNAPSHOT_URL = '/data/aiur/aiur.json'
 
 /**
- * @description Renders the interactive aiur-dag visualization for the aiur repo.
+ * @description Renders the interactive aiur-galaxy visualization for the aiur repo.
  * @returns The canvas plus forward/backward playback controls.
  */
-export function AiurDag(): ReactNode {
+export function AiurGalaxy(): ReactNode {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const directionRef = useRef<PlaybackDirection>('forward')
   const indexRef = useRef(0)

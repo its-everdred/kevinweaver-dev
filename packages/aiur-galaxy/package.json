@@ -1,5 +1,5 @@
 {
-  "name": "aiur-dag",
+  "name": "aiur-galaxy",
   "version": "0.1.0",
   "description": "Animated spatial DAG visualization of a git repository: files as nodes, contributions as linked edges, forward or backward playback. Framework-free, DOM-free core.",
   "type": "module",
@@ -7,6 +7,12 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "three": ">=0.160.0"
+  },
+  "devDependencies": {
+    "three": "0.185.1"
   },
   "files": [
     "src"

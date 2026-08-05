@@ -1,6 +1,15 @@
 export { buildFileDag } from './buildDag'
 export { buildUniverse, type UniverseEvent, type UniverseRepoInput } from './buildUniverse'
 export {
+  buildGalaxyPoints,
+  createGalaxyScene,
+  type GalaxyScene,
+  type GalaxySceneOptions,
+  type GalaxySceneTheme,
+  type SceneContributor,
+} from './galaxyScene'
+export { STAR_FRAGMENT_SHADER, STAR_VERTEX_SHADER } from './galaxyShader'
+export {
   layoutDag,
   type DagLayout,
   type DagPosition,
