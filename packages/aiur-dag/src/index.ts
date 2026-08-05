@@ -29,6 +29,8 @@ export {
 export {
   DEFAULT_UNIVERSE_THEME,
   renderUniverse,
+  resolveContributors,
+  type ContributorNode,
   type StarHit,
   type UniverseMetrics,
   type UniversePointer,
@@ -43,6 +45,7 @@ export type {
   RepoSnapshot,
   SnapshotCommit,
   SnapshotFile,
+  UniverseActor,
   UniverseContribution,
   UniverseRepo,
   UniverseSnapshot,

@@ -48,6 +48,9 @@ export interface UniverseRepo {
   readonly files: readonly string[]
 }
 
+/** Contribution actor id: 0 is the human (kw), 1 is the agent (AK). */
+export type UniverseActor = 0 | 1
+
 /** A shared contribution timeline entry across all repos. */
 export interface UniverseContribution {
   /** Timeline step index in [0, stepCount). */
@@ -56,6 +59,8 @@ export interface UniverseContribution {
   readonly repo: number
   /** Repo-relative file path touched. */
   readonly file: string
+  /** Which contributor made this contribution. */
+  readonly actor: UniverseActor
 }
 
 /** The full input contract for a multi-repo galaxy-cluster visualization. */

@@ -11,10 +11,10 @@ describe('buildUniverse', () => {
         { id: 2, name: 'a/r3' },
       ],
       [
-        { repo: 1, path: 'b.ts', step: 0 },
-        { repo: 0, path: 'a.ts', step: 0 },
-        { repo: 0, path: 'a.ts', step: 1 },
-        { repo: 0, path: 'c.ts', step: 2 },
+        { repo: 1, path: 'b.ts', step: 0, actor: 0 },
+        { repo: 0, path: 'a.ts', step: 0, actor: 0 },
+        { repo: 0, path: 'a.ts', step: 1, actor: 0 },
+        { repo: 0, path: 'c.ts', step: 2, actor: 1 },
       ],
       3
     )
@@ -22,11 +22,11 @@ describe('buildUniverse', () => {
     expect(universe.repos[0]?.name).toBe('a/r1')
     expect(universe.repos[0]?.files).toEqual(['a.ts', 'c.ts'])
     expect(universe.repos[1]?.files).toEqual(['b.ts'])
-    expect(universe.contributions.map((c) => `${c.step}:${c.repo}:${c.file}`)).toEqual([
-      '0:0:a.ts',
-      '0:1:b.ts',
-      '1:0:a.ts',
-      '2:0:c.ts',
+    expect(universe.contributions.map((c) => `${c.step}:${c.repo}:${c.file}:${c.actor}`)).toEqual([
+      '0:0:a.ts:0',
+      '0:1:b.ts:0',
+      '1:0:a.ts:0',
+      '2:0:c.ts:1',
     ])
   })
 
@@ -36,7 +36,7 @@ describe('buildUniverse', () => {
         { id: 0, name: 'a/r1' },
         { id: 1, name: 'a/r2' },
       ],
-      [{ repo: 0, path: 'x.ts', step: 0 }],
+      [{ repo: 0, path: 'x.ts', step: 0, actor: 0 }],
       1
     )
     expect(universe.repos.length).toBe(1)

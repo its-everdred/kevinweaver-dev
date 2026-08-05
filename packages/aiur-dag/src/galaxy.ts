@@ -70,10 +70,13 @@ export function layoutUniverse(snapshot: UniverseSnapshot): UniverseLayout {
  * @description Places galaxy centers along an Archimedean spiral so the cluster
  * reads as a coherent structure even with many repos.
  */
+/**
+ * @description Golden-angle sunflower placement gives even galaxy spacing with
+ * no tight winding, unlike an Archimedean spiral that clusters points.
+ */
 function spiralAngle(index: number, total: number): number {
-  return (index / Math.max(1, total)) * Math.PI * 2 * Math.sqrt(total)
+  return index * Math.PI * (3 - Math.sqrt(5))
 }
-
 function spiralRadius(index: number, total: number): number {
   return Math.min(1, Math.sqrt(index / Math.max(1, total)))
 }
@@ -82,7 +85,7 @@ function spiralRadius(index: number, total: number): number {
  * @description Scales a galaxy by its star count: more files, a larger galaxy.
  */
 function galaxyScale(starCount: number): number {
-  return Math.max(0.05, Math.min(0.16, 0.03 + Math.sqrt(starCount) * 0.003))
+  return Math.max(0.07, Math.min(0.16, 0.055 + Math.sqrt(starCount) * 0.004))
 }
 
 /**

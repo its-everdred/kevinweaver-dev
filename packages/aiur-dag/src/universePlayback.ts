@@ -14,6 +14,8 @@ export interface UniverseFrame {
   readonly currentFiles: readonly string[]
   /** Repos that contributed at the current step, by repo id. */
   readonly currentRepos: ReadonlySet<number>
+  /** Current-step contributions with their actor, in snapshot order. */
+  readonly currentContributions: readonly UniverseContribution[]
   /** Total number of timeline steps. */
   readonly total: number
   /** Progress in [0, 1], 1 at the newest step in either direction. */
@@ -81,11 +83,13 @@ export function universeFrame(
   const liveFiles = universeLiveAt(snapshot.contributions, clamped, direction)
   const currentFiles: string[] = []
   const currentRepos = new Set<number>()
+  const currentContributions: UniverseContribution[] = []
   if (clamped >= 0) {
     for (const contribution of snapshot.contributions) {
       if (contribution.step !== clamped) continue
       currentFiles.push(key(contribution.repo, contribution.file))
       currentRepos.add(contribution.repo)
+      currentContributions.push(contribution)
     }
   }
   return {
@@ -93,6 +97,7 @@ export function universeFrame(
     liveFiles,
     currentFiles,
     currentRepos,
+    currentContributions,
     total,
     progress: total <= 0 ? 0 : (clamped + 1) / total,
   }
