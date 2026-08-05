@@ -1,22 +1,20 @@
 import { test, expect, type Page } from '@playwright/test'
 
 /**
- * Proves the canvas island is lazy: the deferred galaxy universe chunk is not
- * fetched while the instrument region is out of view, and scrolling it into
- * view fetches exactly that island chunk.
+ * Proves the galaxy universe chunk loads only where the instrument mounts it.
  *
- * Deliberately name-free: Turbopack chunk basenames are content hashes, so the
- * only stable identifiers are the content markers KW-025 and KW-024 compile
- * into their deferred modules. Classification is by role, never by chunk name.
+ * The instrument region is the first region on the home page, so its galaxy
+ * island is in view at load and the chunk is fetched promptly. On routes that
+ * do not mount the instrument (the /dag page), the galaxy chunk must never be
+ * fetched. Classification is by role (chunk content markers), never by chunk
+ * name, because Turbopack chunk basenames are content hashes.
  *
  * One documented exception. The e2e build always sets NEXT_PUBLIC_TEST_HOOKS=1
  * (KW-023's e2e.yml job env and playwright.config.ts webServer env), which
- * makes KW-024's driver `void import('./testHarness')` fire at hydration,
- * before the island is in view. The test-harness chunk is therefore a
- * legitimate eager fetch under the test-hooks build; it is not the island and
- * it is excluded from the "nothing undeclared before intersection" check. Any
- * OTHER undeclared chunk fetched early - in particular the island itself - is
- * a laziness regression and fails.
+ * makes KW-024's driver `void import('./testHarness')` fire at hydration.
+ * The test-harness chunk is therefore a legitimate fetch everywhere the driver
+ * hydrates; it is not the island and it is excluded from the "galaxy chunk on
+ * the wrong route" checks.
  */
 
 const CHUNK_PATH_RE = /^\/_next\/static\/chunks\/.+\.js$/
@@ -31,14 +29,6 @@ const BOOT_SESSION_KEY = 'kw.boot.v1'
  * compiled source. The stable way to say "the island chunk".
  */
 const GALAXY_ISLAND_MARKER = 'kw-galaxy-universe'
-
-/**
- * KW-024's `installTestHarness` export name (`lib/viz/testHarness.ts`), present
- * verbatim in the deferred test-harness chunk's compiled source. It also
- * appears in the first-load chunk that hosts the driver's import site, but that
- * chunk is document-declared and never reaches the undeclared check.
- */
-const TEST_HARNESS_MARKER = 'installTestHarness'
 
 function trackChunkRequests(page: Page): Set<string> {
   const seen = new Set<string>()
@@ -59,35 +49,16 @@ async function declaredChunks(page: Page): Promise<Set<string>> {
   return declared
 }
 
-/**
- * The served source of a chunk, or null when it cannot be fetched. Uses the API
- * request context so inspection never pollutes the browser request tally.
- */
+/** The served source of a chunk, or null when it cannot be fetched. */
 async function chunkSource(page: Page, path: string): Promise<string | null> {
   const res = await page.request.get(path)
   if (!res.ok()) return null
   return res.text()
 }
 
-/** The KW-024 test-harness chunk, which the e2e build legitimately fetches at hydration. */
-function isTestHarnessChunk(source: string | null): boolean {
-  return (
-    source !== null &&
-    source.includes(TEST_HARNESS_MARKER) &&
-    !source.includes(GALAXY_ISLAND_MARKER)
-  )
-}
-
-/** The deferred galaxy island chunk, which must never arrive before intersection. */
-function isGourceIslandChunk(source: string | null): boolean {
+/** The deferred galaxy island chunk. */
+function isGalaxyChunk(source: string | null): boolean {
   return source !== null && source.includes(GALAXY_ISLAND_MARKER)
-}
-
-/** KW-005 guarantees this id on the instrument region's title element. */
-function instrumentRegion(page: Page) {
-  return page
-    .getByRole('region')
-    .filter({ has: page.locator('#region-instrument-title') })
 }
 
 async function settle(page: Page) {
@@ -111,66 +82,45 @@ test.beforeEach(async ({ page }) => {
   }, BOOT_SESSION_KEY)
 })
 
-test('no deferred island chunk is fetched while the instrument region is out of view', async ({
+test('the galaxy island chunk loads on the home page where the instrument is in view', async ({
   page,
 }) => {
   const declared = await declaredChunks(page)
   const requested = trackChunkRequests(page)
 
-  // Land above the instrument. The manual-page region is KW-005's first region,
-  // sitting above the instrument in comp document order, so the instrument is
-  // below the fold and the island must not load.
-  await page.goto('/#man', { waitUntil: 'networkidle' })
+  await page.goto('/', { waitUntil: 'networkidle' })
   await settle(page)
 
-  // Precondition, asserted rather than assumed. If the instrument is still in
-  // the viewport this spec would pass vacuously, so it fails instead.
-  await expect(
-    instrumentRegion(page),
-    'the instrument region must start out of view for this assertion to mean anything; ' +
-      'if the page layout changed, fix this spec deliberately rather than deleting it'
-  ).not.toBeInViewport()
-
-  // Every chunk fetched before intersection must be declared by the document
-  // for `/`, or be KW-024's test harness (see the header note). Anything else
-  // arrived early - and if it is the island, that is a laziness regression.
-  const undeclared = [...requested].filter((p) => !declared.has(p))
-  const unexpected: string[] = []
-  for (const path of undeclared) {
-    if (!isTestHarnessChunk(await chunkSource(page, path))) unexpected.push(path)
-  }
-  expect(
-    unexpected,
-    `undeclared chunks fetched before intersection (other than the KW-024 test harness): ` +
-      unexpected.join(', ')
-  ).toEqual([])
-})
-
-test('scrolling the instrument region into view fetches the deferred island chunk', async ({
-  page,
-}) => {
-  const declared = await declaredChunks(page)
-  const requested = trackChunkRequests(page)
-
-  await page.goto('/#man', { waitUntil: 'networkidle' })
-  await settle(page)
-  const before = new Set(requested)
-
-  const instrument = instrumentRegion(page)
-  await instrument.scrollIntoViewIfNeeded()
-  await expect(instrument).toBeInViewport()
-  await page.waitForLoadState('networkidle')
-
-  const arrived = [...requested].filter((p) => !before.has(p))
+  // The instrument is the first region and the galaxy island mounts in view,
+  // so its chunk must have arrived as part of the load.
+  const arrived = [...requested].filter((p) => !declared.has(p))
   const islandChunks: string[] = []
   for (const path of arrived) {
-    if (isGourceIslandChunk(await chunkSource(page, path))) islandChunks.push(path)
+    if (isGalaxyChunk(await chunkSource(page, path))) islandChunks.push(path)
   }
   expect(
     islandChunks.length,
-    'intersecting the instrument region did not fetch the deferred galaxy island chunk: ' +
-      'the island is either eagerly bundled into the first load or is not mounted behind ' +
-      'an IntersectionObserver'
+    'the home page must fetch the galaxy island chunk: the island is not ' +
+      'mounted behind the IntersectionObserver or is bundled into first load'
   ).toBeGreaterThan(0)
-  for (const path of islandChunks) expect(declared.has(path)).toBe(false)
+})
+
+test('the galaxy island chunk is never fetched on the /dag page', async ({
+  page,
+}) => {
+  const declared = await declaredChunks(page)
+  const requested = trackChunkRequests(page)
+
+  await page.goto('/dag', { waitUntil: 'networkidle' })
+  await settle(page)
+
+  const arrived = [...requested].filter((p) => !declared.has(p))
+  const islandChunks: string[] = []
+  for (const path of arrived) {
+    if (isGalaxyChunk(await chunkSource(page, path))) islandChunks.push(path)
+  }
+  expect(
+    islandChunks,
+    'the /dag page must not fetch the galaxy island chunk: it does not mount the instrument'
+  ).toEqual([])
 })

@@ -94,5 +94,5 @@ test('paints an overview and records draw and text counters', () => {
   expect(total).toBeGreaterThan(0)
   expect(report?.drawCalls).toBe(total)
   expect(report?.fillTextCalls).toBeGreaterThan(0)
-  expect(context.getImageData(1, 11, 1, 1).data[3]).toBeGreaterThan(0)
+  expect(context.getImageData(1, 28, 1, 1).data[3]).toBeGreaterThan(0)
 })

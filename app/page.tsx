@@ -101,9 +101,11 @@ export default async function Page() {
       <Header freshness={freshness} />
       <main className="kw-pad">
         <h1 className="sr-only">{pageHeading()}</h1>
-        <ManPage />
         <Instrument />
-        <CareerLog />
+        <div className="kw-man-log">
+          <ManPage />
+          <CareerLog />
+        </div>
         <Contact />
       </main>
       <TmuxBar />
