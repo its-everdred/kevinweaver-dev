@@ -3,8 +3,8 @@ import { join } from 'node:path'
 import TransportBar from './TransportBar'
 import { ContributionTable } from '@/components/viz/ContributionTable'
 import { EventsTail } from '@/components/viz/EventsTail'
+import { GalaxyUniverseIsland } from '@/components/viz/GalaxyUniverseIsland'
 import { Pane } from '@/components/ds/Pane'
-import { GourceIsland } from '@/components/viz/GourceIsland'
 import { GraphDate, Overview } from '@/components/viz/Overview'
 import { Ribbon } from '@/components/viz/Ribbon'
 import { decodeGrid, decodeManifest } from '@/lib/bundle/codec'
@@ -81,12 +81,12 @@ export function Instrument({ id, className, style }: InstrumentProps) {
           focus
           footer={<TransportBar />}
           right={<GraphDate />}
-          title="gource — repo graph"
+          title="galaxies — repo universe"
           titleAs="h3"
           bodyClassName="kw-graph"
           style={{ flex: 1, minWidth: 0 }}
         >
-          <GourceIsland />
+          <GalaxyUniverseIsland />
         </Pane>
         <Pane className="kw-tail" title="events — tail -f">
           <EventsTail />

@@ -40,6 +40,32 @@ export interface RepoSnapshot {
   readonly commits: readonly SnapshotCommit[]
 }
 
+/** One repository in a multi-repo universe: a galaxy. */
+export interface UniverseRepo {
+  readonly id: number
+  readonly name: string
+  /** Repo-relative files that become this galaxy's stars. */
+  readonly files: readonly string[]
+}
+
+/** A shared contribution timeline entry across all repos. */
+export interface UniverseContribution {
+  /** Timeline step index in [0, stepCount). */
+  readonly step: number
+  /** Repo id this contribution belongs to. */
+  readonly repo: number
+  /** Repo-relative file path touched. */
+  readonly file: string
+}
+
+/** The full input contract for a multi-repo galaxy-cluster visualization. */
+export interface UniverseSnapshot {
+  readonly repos: readonly UniverseRepo[]
+  /** Oldest-first by step index; stepCount is the timeline length. */
+  readonly contributions: readonly UniverseContribution[]
+  readonly stepCount: number
+}
+
 /** A node in the file-tree DAG: either a directory or a file leaf. */
 export interface DagNode {
   readonly id: string

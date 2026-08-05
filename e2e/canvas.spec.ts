@@ -22,8 +22,8 @@ const WINDOW_END = '2026-06-01'
 const DAY_COUNT = dayIndex(WINDOW_START, WINDOW_END) + 1 // 731
 const TICKS = [0, DWELL_TICKS, DWELL_TICKS + 3600, DWELL_TICKS + 12000] as const
 const SNAPSHOT_DIR = join(__dirname, '__screenshots__')
-const MAX_BASELINES = 12
-const SURFACES = ['overview', 'ribbon', 'gource'] as const
+const MAX_BASELINES = 8
+const SURFACES = ['overview', 'ribbon'] as const
 type SurfaceId = (typeof SURFACES)[number]
 
 const ACTORS: readonly Actor[] = [
@@ -194,9 +194,7 @@ test('canvas inventory: three role=img canvases in comp order', async ({
     const label = (await canvas.getAttribute('aria-label')) ?? ''
     expect(label.trim().length).toBeGreaterThan(0)
   }
-  // Order-independent shape discriminator: overview shortest, gource tallest.
-  // A reorder would swap the twelve baselines' identities and surface as three
-  // simultaneous pixel diffs; catch it here with an actionable message.
+  // Order-independent shape discriminator: overview shorter than the ribbon.
   const heights: number[] = []
   for (const id of SURFACES) {
     const box = await surface(page, id).boundingBox()
@@ -204,7 +202,7 @@ test('canvas inventory: three role=img canvases in comp order', async ({
     heights.push(box.height)
   }
   expect(
-    heights[0]! < heights[1]! && heights[1]! < heights[2]!,
+    heights[0]! < heights[1]!,
     `canvas order changed — KW-025 reordered the instrument panes (heights ${heights.join(', ')}); regenerate baselines`
   ).toBe(true)
 })
@@ -300,8 +298,8 @@ test('double-render canary: same-tick renders are byte-identical', async ({
 }) => {
   await boot(page)
   await page.evaluate((t) => window.__viz!.seekTick(t), TICKS[2]!)
-  const first = await surface(page, 'gource').screenshot()
-  const second = await surface(page, 'gource').screenshot()
+  const first = await surface(page, 'overview').screenshot()
+  const second = await surface(page, 'overview').screenshot()
   expect(
     Buffer.compare(first, second),
     'two renders at the same tick differ — if this fails, no other visual ' +
