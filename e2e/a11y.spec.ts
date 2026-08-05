@@ -155,21 +155,21 @@ test('canvas exposes a name and a real text equivalent @a11y', async ({
   await page.evaluate(() => document.fonts.ready)
   const { manifest, grid } = await readPayload(page)
 
-  // All three canvases carry distinct, non-empty accessible names. The gource
-  // graph is lazy (KW-025), so scroll it into the viewport to trigger the load.
+  // All three canvases carry distinct, non-empty accessible names. The galaxy
+  // universe is lazy (KW-025), so scroll it into the viewport to trigger the load.
   await page.evaluate(() => {
     const graph = document.querySelector('.kw-graph')
     if (graph) graph.scrollIntoView({ block: 'center' })
   })
   const overview = page.getByRole('img', { name: /contribution overview/i })
   const ribbon = page.getByRole('img', { name: /contribution grid/i })
-  const gource = page.getByRole('img', { name: /repository graph/i })
-  for (const canvas of [overview, ribbon, gource]) {
+  const galaxies = page.getByRole('img', { name: /repository galaxies/i })
+  for (const canvas of [overview, ribbon, galaxies]) {
     await expect(canvas).toBeVisible()
     expect(await canvas.evaluate((el) => el.tagName)).toBe('CANVAS')
   }
   const names = await Promise.all(
-    [overview, ribbon, gource].map((canvas) =>
+    [overview, ribbon, galaxies].map((canvas) =>
       canvas.getAttribute('aria-label')
     )
   )
