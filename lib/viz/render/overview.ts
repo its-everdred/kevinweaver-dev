@@ -11,6 +11,44 @@ import {
 } from './budget'
 import { RIBBON_WINDOW_DAYS } from './ribbon'
 
+/**
+ * @description Computes the weekday of an ISO date arithmetically, no clocks.
+ * @param iso An ISO day string, for example "2026-01-01".
+ * @returns 0 for Sunday through 6 for Saturday.
+ */
+function weekdayOfISO(iso: string): number {
+  const year = Number.parseInt(iso.slice(0, 4), 10)
+  const month = Number.parseInt(iso.slice(5, 7), 10)
+  const day = Number.parseInt(iso.slice(8, 10), 10)
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day)
+  )
+    return 0
+  return weekdayFromYmd(year, month, day)
+}
+
+/**
+ * @description Zeller's congruence for the weekday of a Gregorian date.
+ * @returns 0 for Sunday through 6 for Saturday.
+ */
+function weekdayFromYmd(year: number, month: number, day: number): number {
+  const m = ((month + 9) % 12) + 1
+  const adjustedYear = month <= 2 ? year - 1 : year
+  const century = Math.floor(adjustedYear / 100)
+  const yearOfCentury = adjustedYear % 100
+  const zeller =
+    (day +
+      Math.floor((13 * m - 1) / 5) +
+      yearOfCentury +
+      Math.floor(yearOfCentury / 4) +
+      Math.floor(century / 4) -
+      2 * century) %
+    7
+  return ((zeller + 7) % 7)
+}
+
 /** Geometry for the intentionally non-square, gapless overview minimap. */
 export interface OverviewGeometry {
   readonly weeks: number
@@ -18,6 +56,8 @@ export interface OverviewGeometry {
   readonly chPx: number
   readonly labelStripPx: number
   readonly dayCount: number
+  /** Weekday of the window start (0 = Sunday), so rows align like the ribbon. */
+  readonly startWeekday: number
 }
 
 /** Mutable bitmap cache for the overview canvas. */
@@ -38,7 +78,8 @@ export function overviewGeometry(
   view: RenderView,
   grid: GridSeries
 ): OverviewGeometry {
-  const weeks = Math.max(1, Math.ceil(grid.dayCount / 7))
+  const startWeekday = weekdayOfISO(grid.windowStartISO)
+  const weeks = Math.max(1, Math.ceil((grid.dayCount + startWeekday) / 7))
   const labelStripPx = Math.round(10 * view.viewport.dpr)
   return {
     weeks,
@@ -46,6 +87,7 @@ export function overviewGeometry(
     chPx: Math.max(1, (view.viewport.pxHeight - labelStripPx) / 7),
     labelStripPx,
     dayCount: grid.dayCount,
+    startWeekday,
   }
 }
 
@@ -58,7 +100,11 @@ export function overviewDayAtX(
   if (geom.dayCount === 0) return -1
   const dayCount = Math.max(1, geom.dayCount)
   const xPx = cssX * view.viewport.dpr
-  return clamp(Math.floor(xPx / geom.cwPx) * 7, 0, dayCount - 1)
+  return clamp(
+    Math.floor(xPx / geom.cwPx) * 7 - geom.startWeekday,
+    0,
+    dayCount - 1
+  )
 }
 
 /** Renders cached minimap cells, the window brush, and the reverse-playback cursor. */
@@ -124,20 +170,18 @@ function drawGrid(
   geom: OverviewGeometry,
   theme: RenderTheme
 ): void {
-  for (let week = 0; week < geom.weeks; week += 1) {
-    for (let weekday = 0; weekday < 7; weekday += 1) {
-      const day = week * 7 + weekday
-      if (day >= grid.dayCount) continue
-      drawOverviewCell(
-        ctx,
-        grid,
-        day,
-        week * geom.cwPx,
-        geom.labelStripPx + weekday * geom.chPx,
-        geom,
-        theme
-      )
-    }
+  for (let day = 0; day < grid.dayCount; day += 1) {
+    const week = Math.floor((day + geom.startWeekday) / 7)
+    const weekday = (day + geom.startWeekday) % 7
+    drawOverviewCell(
+      ctx,
+      grid,
+      day,
+      week * geom.cwPx,
+      geom.labelStripPx + weekday * geom.chPx,
+      geom,
+      theme
+    )
   }
 }
 
@@ -167,7 +211,7 @@ function drawYearMarkers(
   layer.calendar = markers
   for (const marker of markers) {
     if (marker.day !== 0 && marker.month !== 1) continue
-    const x = (marker.day / 7) * geom.cwPx
+    const x = ((marker.day + geom.startWeekday) / 7) * geom.cwPx
     ctx.fillStyle = theme.token.bg2
     ctx.fillRect(x, geom.labelStripPx - 2, 1, geom.chPx * 7 + 2)
     ctx.font = `700 ${theme.fontPx.micro}px ${theme.fontFamily}`
@@ -184,7 +228,7 @@ function drawBirthRule(
   geom: OverviewGeometry
 ): void {
   if (grid.agentBirthDay < 0 || grid.agentBirthDay >= grid.dayCount) return
-  const x = (grid.agentBirthDay / 7) * geom.cwPx
+  const x = ((grid.agentBirthDay + geom.startWeekday) / 7) * geom.cwPx
   ctx.save()
   ctx.globalAlpha = 0.85
   ctx.fillStyle = view.theme.token.purple
@@ -232,7 +276,7 @@ function drawPlayhead(
   cursorDay: number
 ): void {
   if (dayCount === 0 || cursorDay < 0 || cursorDay >= dayCount) return
-  const x = (cursorDay / 7) * geom.cwPx
+  const x = ((cursorDay + geom.startWeekday) / 7) * geom.cwPx
   ctx.save()
   ctx.globalAlpha = 0.9
   ctx.fillStyle = view.theme.token.fg0
