@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 
 /**
- * Proves the canvas island is lazy: the deferred gource island chunk is not
+ * Proves the canvas island is lazy: the deferred galaxy universe chunk is not
  * fetched while the instrument region is out of view, and scrolling it into
  * view fetches exactly that island chunk.
  *
@@ -26,11 +26,11 @@ const HTML_ASSET_RE = /\/_next\/static\/chunks\/[^"'\\\s)]+?\.js/g
 const BOOT_SESSION_KEY = 'kw.boot.v1'
 
 /**
- * KW-025's GOURCE_CHUNK_MARKER, set as `data-chunk` on the graph canvas
- * (`components/viz/Gource.tsx`) and present verbatim in the island chunk's
+ * The galaxy chunk marker, set as `data-chunk` on the graph canvas
+ * (`components/viz/GalaxyUniverse.tsx`) and present verbatim in the island chunk's
  * compiled source. The stable way to say "the island chunk".
  */
-const GOURCE_ISLAND_MARKER = 'kw-gource-island'
+const GALAXY_ISLAND_MARKER = 'kw-galaxy-universe'
 
 /**
  * KW-024's `installTestHarness` export name (`lib/viz/testHarness.ts`), present
@@ -74,13 +74,13 @@ function isTestHarnessChunk(source: string | null): boolean {
   return (
     source !== null &&
     source.includes(TEST_HARNESS_MARKER) &&
-    !source.includes(GOURCE_ISLAND_MARKER)
+    !source.includes(GALAXY_ISLAND_MARKER)
   )
 }
 
-/** The deferred gource island chunk, which must never arrive before intersection. */
+/** The deferred galaxy island chunk, which must never arrive before intersection. */
 function isGourceIslandChunk(source: string | null): boolean {
-  return source !== null && source.includes(GOURCE_ISLAND_MARKER)
+  return source !== null && source.includes(GALAXY_ISLAND_MARKER)
 }
 
 /** KW-005 guarantees this id on the instrument region's title element. */
@@ -168,7 +168,7 @@ test('scrolling the instrument region into view fetches the deferred island chun
   }
   expect(
     islandChunks.length,
-    'intersecting the instrument region did not fetch the deferred gource island chunk: ' +
+    'intersecting the instrument region did not fetch the deferred galaxy island chunk: ' +
       'the island is either eagerly bundled into the first load or is not mounted behind ' +
       'an IntersectionObserver'
   ).toBeGreaterThan(0)
