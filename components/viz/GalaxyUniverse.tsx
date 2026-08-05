@@ -9,18 +9,23 @@ import {
   layoutUniverse,
   nextUniverseStep,
   renderUniverse,
+  resolveContributors,
   universeFrame,
+  type ContributorNode,
   type PlaybackDirection,
+  type UniverseActor,
 } from '@/packages/aiur-dag/src'
 import {
   useInstrumentRuntime,
   type InstrumentRuntimeState,
 } from './instrumentRuntime'
+import { publishGalaxyTimeline } from './galaxyTimeline'
 
 /** Stable identifier used to locate the separately requested galaxy chunk. */
 export const GALAXY_CHUNK_MARKER = 'kw-galaxy-universe'
 
 const STEP_MS = 900
+const EASE = 0.12
 const DIRECTION_LABELS: Record<PlaybackDirection, string> = {
   forward: 'forward',
   backward: 'backward',
@@ -34,7 +39,8 @@ function galaxyLabel(runtime: InstrumentRuntimeState): string {
 
 /**
  * @description Renders the galaxy-cluster universe: each repo is a galaxy and
- * each file a star, with repo labels and hover-for-file-name.
+ * each file a star, with repo labels, hover-for-file-name, and contributor
+ * nodes (kw and AK) that travel to the day's contributions.
  * @returns The interactive galaxy canvas and its playback controls.
  */
 export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
@@ -44,8 +50,11 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   const pointerRef = useRef<{ x: number; y: number } | null>(null)
   const directionRef = useRef<PlaybackDirection>('forward')
   const stepRef = useRef(0)
+  const contributorRef = useRef<Partial<Record<UniverseActor, { x: number; y: number }>>>({})
   const [direction, setDirection] = useState<PlaybackDirection>('forward')
   const [date, setDate] = useState('')
+
+  const layoutRef = useRef<ReturnType<typeof layoutUniverse> | null>(null)
 
   const universe = useMemo(() => {
     if (!viz) return null
@@ -54,26 +63,23 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
       repo: event.repo,
       path: event.path,
       step: viz.head.manifest.dayCount - 1 - event.day,
+      actor: event.actor as UniverseActor,
     }))
     return buildUniverse(repos, events, viz.head.manifest.dayCount)
   }, [viz])
-
-  const layout = useMemo(
-    () => (universe ? layoutUniverse(universe) : null),
-    [universe]
-  )
 
   const windowStart = viz?.head.manifest.windowStart ?? ''
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas || !universe || !layout) return
+    if (!canvas || !universe) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const dpr = Math.min(2, window.devicePixelRatio || 1)
     const resize = (): void => {
       canvas.width = Math.round(canvas.clientWidth * dpr)
       canvas.height = Math.round(canvas.clientHeight * dpr)
+      layoutRef.current = layoutUniverse(universe)
     }
     resize()
     const observer = new ResizeObserver(resize)
@@ -89,18 +95,24 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
           directionRef.current
         )
       }
+      const layout = layoutRef.current
+      if (!layout) {
+        raf = requestAnimationFrame(frame)
+        return
+      }
       const playback = universeFrame(universe, stepRef.current, directionRef.current)
       if (playback.step >= 0 && windowStart) {
-        setDate(formatDayISO(windowStart, playback.step))
+        const dateLabel = formatDayISO(windowStart, playback.step)
+        setDate(dateLabel)
+        publishGalaxyTimeline({ step: playback.step, date: dateLabel })
       }
+      const metrics = { width: canvas.width, height: canvas.height }
+      const targets = resolveContributors(layout, playback, metrics)
+      const contributors = easedContributors(contributorRef.current, targets)
       renderUniverse(
         ctx,
-        { width: canvas.width, height: canvas.height },
-        {
-          layout,
-          frame: playback,
-          pointer: pointerRef.current,
-        },
+        metrics,
+        { layout, frame: playback, pointer: pointerRef.current, contributors },
         DEFAULT_UNIVERSE_THEME
       )
       raf = requestAnimationFrame(frame)
@@ -110,7 +122,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
       observer.disconnect()
       cancelAnimationFrame(raf)
     }
-  }, [universe, layout, windowStart])
+  }, [universe, windowStart])
 
   const onPointerMove = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -190,3 +202,24 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
     </>
   )
 })
+
+function easedContributors(
+  current: Partial<Record<UniverseActor, { x: number; y: number }>>,
+  targets: readonly ContributorNode[]
+): readonly ContributorNode[] {
+  for (const target of targets) {
+    const existing = current[target.actor]
+    if (!existing) {
+      current[target.actor] = { x: target.x, y: target.y }
+      continue
+    }
+    existing.x += (target.x - existing.x) * EASE
+    existing.y += (target.y - existing.y) * EASE
+  }
+  return targets.map((target) => ({
+    actor: target.actor,
+    x: current[target.actor]?.x ?? target.x,
+    y: current[target.actor]?.y ?? target.y,
+    active: target.active,
+  }))
+}

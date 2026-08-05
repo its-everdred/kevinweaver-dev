@@ -1,4 +1,4 @@
-import type { UniverseRepo, UniverseSnapshot } from './types'
+import type { UniverseActor, UniverseRepo, UniverseSnapshot } from './types'
 
 /** Host-agnostic contribution event: repo id, file path, timeline step. */
 export interface UniverseEvent {
@@ -6,6 +6,8 @@ export interface UniverseEvent {
   readonly path: string
   /** Timeline step index (0 is the oldest step). */
   readonly step: number
+  /** Contributor id: 0 is the human (kw), 1 is the agent (AK). */
+  readonly actor: UniverseActor
 }
 
 /** Host-agnostic repo record for building a universe snapshot. */
@@ -46,18 +48,34 @@ export function buildUniverse(
     universeRepos.push({ id: repo.id, name: repo.name, files: [...files].sort() })
   }
   const contributions = events
-    .map((event) => ({ step: event.step, repo: event.repo, file: event.path }))
+    .map((event) => ({
+      step: event.step,
+      repo: event.repo,
+      file: event.path,
+      actor: event.actor,
+    }))
     .sort(compareContributions)
   return { repos: universeRepos, contributions, stepCount }
 }
 
 function compareContributions(
-  left: { readonly step: number; readonly repo: number; readonly file: string },
-  right: { readonly step: number; readonly repo: number; readonly file: string }
+  left: {
+    readonly step: number
+    readonly repo: number
+    readonly file: string
+    readonly actor: UniverseActor
+  },
+  right: {
+    readonly step: number
+    readonly repo: number
+    readonly file: string
+    readonly actor: UniverseActor
+  }
 ): number {
   return (
     left.step - right.step ||
     left.repo - right.repo ||
-    left.file.localeCompare(right.file)
+    left.file.localeCompare(right.file) ||
+    left.actor - right.actor
   )
 }

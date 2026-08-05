@@ -14,10 +14,10 @@ const SNAPSHOT: UniverseSnapshot = {
     { id: 1, name: 'a/r2', files: ['c.ts', 'd.ts'] },
   ],
   contributions: [
-    { step: 0, repo: 0, file: 'a.ts' },
-    { step: 0, repo: 1, file: 'c.ts' },
-    { step: 1, repo: 0, file: 'b.ts' },
-    { step: 2, repo: 1, file: 'd.ts' },
+    { step: 0, repo: 0, file: 'a.ts', actor: 0 },
+    { step: 0, repo: 1, file: 'c.ts', actor: 1 },
+    { step: 1, repo: 0, file: 'b.ts', actor: 0 },
+    { step: 2, repo: 1, file: 'd.ts', actor: 1 },
   ],
   stepCount: 3,
 }

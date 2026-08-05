@@ -1,5 +1,6 @@
 import type { GalaxyLayout, StarPosition, UniverseLayout } from './galaxy'
 import type { UniverseFrame } from './universePlayback'
+import type { UniverseActor } from './types'
 
 /** Theme colors injected by the host so the renderer stays host-agnostic. */
 export interface UniverseTheme {
@@ -8,20 +9,24 @@ export interface UniverseTheme {
   readonly liveStar: string
   readonly currentStar: string
   readonly galaxyHalo: string
+  readonly galaxyCore: string
   readonly label: string
   readonly repoLabel: string
   readonly contributor: string
+  readonly agent: string
 }
 
 export const DEFAULT_UNIVERSE_THEME: UniverseTheme = {
   background: '#1d2021',
-  star: '#3b4252',
+  star: '#5c6370',
   liveStar: '#81a1c1',
   currentStar: '#98c379',
-  galaxyHalo: 'rgba(59,66,82,0.18)',
+  galaxyHalo: 'rgba(59,66,82,0.22)',
+  galaxyCore: '#4b5263',
   label: '#abb2bf',
   repoLabel: '#d8dee9',
   contributor: '#61afef',
+  agent: '#c678dd',
 }
 
 /** Surface metrics for a galaxy-rendered frame, in device pixels. */
@@ -44,11 +49,21 @@ export interface StarHit {
   readonly y: number
 }
 
+/** A contributor node to draw, with its label and per-actor color. */
+export interface ContributorNode {
+  readonly actor: UniverseActor
+  readonly x: number
+  readonly y: number
+  readonly active: boolean
+}
+
 /** Public draw state for one galaxy-cluster frame. */
 export interface UniverseRenderState {
   readonly layout: UniverseLayout
   readonly frame: UniverseFrame
   readonly pointer: UniversePointer | null
+  /** Contributor node positions, resolved by the host from the frame. */
+  readonly contributors: readonly ContributorNode[]
 }
 
 function starKey(repoId: number, file: string): string {
@@ -57,6 +72,35 @@ function starKey(repoId: number, file: string): string {
 
 function starRadiusPx(metrics: UniverseMetrics): number {
   return Math.max(1, Math.min(3, metrics.width / 900))
+}
+
+/**
+ * @description Resolves contributor node positions from a frame and layout.
+ * @param layout The universe layout.
+ * @param frame The current universe frame.
+ * @param metrics Surface dimensions.
+ * @returns One contributor node per actor that has current contributions,
+ * positioned at the centroid of its current stars; absent actors are omitted.
+ */
+export function resolveContributors(
+  layout: UniverseLayout,
+  frame: UniverseFrame,
+  metrics: UniverseMetrics
+): readonly ContributorNode[] {
+  const nodes: ContributorNode[] = []
+  for (const actor of [0, 1] as const) {
+    const points: { x: number; y: number }[] = []
+    for (const contribution of frame.currentContributions) {
+      if (contribution.actor !== actor) continue
+      const point = starPositionFor(layout, metrics, contribution.repo, contribution.file)
+      if (point) points.push(point)
+    }
+    if (points.length === 0) continue
+    const cx = points.reduce((sum, p) => sum + p.x, 0) / points.length
+    const cy = points.reduce((sum, p) => sum + p.y, 0) / points.length
+    nodes.push({ actor, x: cx / metrics.width, y: cy / metrics.height, active: true })
+  }
+  return nodes
 }
 
 /**
@@ -80,7 +124,8 @@ export function renderUniverse(
   const hit = hoverHit(metrics, state)
   drawGalaxyStars(ctx, metrics, state, theme, px)
   drawCurrentStars(ctx, metrics, state, theme, px)
-  drawCurrentBeams(ctx, metrics, state, theme)
+  drawContributorBeams(ctx, metrics, state, theme)
+  drawContributors(ctx, metrics, state, theme)
   drawRepoLabels(ctx, metrics, state, theme)
   if (hit) drawHitLabel(ctx, metrics, hit, theme)
   drawProgress(ctx, metrics, state, theme)
@@ -127,6 +172,12 @@ function drawGalaxyStars(
     ctx.arc(cx, cy, radiusPx, 0, Math.PI * 2)
     ctx.fill()
 
+    // Core so even a one-star repo reads as a galaxy.
+    ctx.fillStyle = theme.galaxyCore
+    ctx.beginPath()
+    ctx.arc(cx, cy, Math.max(2, px * 1.8), 0, Math.PI * 2)
+    ctx.fill()
+
     // Batch every non-current star in one path per galaxy.
     ctx.fillStyle = theme.star
     ctx.beginPath()
@@ -135,7 +186,7 @@ function drawGalaxyStars(
       const point = starPixel(metrics, galaxy, star)
       const live = isLive(state, galaxy, star)
       ctx.moveTo(point.x + px, point.y)
-      ctx.arc(point.x, point.y, live ? px * 1.4 : px, 0, Math.PI * 2)
+      ctx.arc(point.x, point.y, live ? px * 1.6 : px * 1.2, 0, Math.PI * 2)
     }
     ctx.fill()
   }
@@ -180,28 +231,73 @@ function shortName(name: string): string {
   return slash < 0 ? name : name.slice(slash + 1)
 }
 
-function drawCurrentBeams(
+function drawContributorBeams(
   ctx: CanvasRenderingContext2D,
   metrics: UniverseMetrics,
   state: UniverseRenderState,
   theme: UniverseTheme
 ): void {
-  ctx.strokeStyle = theme.contributor
-  ctx.lineWidth = 1
-  ctx.globalAlpha = 0.45
-  const originX = metrics.width / 2
-  const originY = metrics.height / 2
-  for (const galaxy of state.layout.galaxies) {
-    for (const star of galaxy.stars) {
-      if (!isCurrent(state, galaxy, star)) continue
-      const point = starPixel(metrics, galaxy, star)
+  // Map each current contribution's actor to a contributor position.
+  for (const contributor of state.contributors) {
+    const activeStars: { x: number; y: number }[] = []
+    for (const contribution of state.frame.currentContributions) {
+      if (contribution.actor !== contributor.actor) continue
+      const point = starPositionFor(state.layout, metrics, contribution.repo, contribution.file)
+      if (point) activeStars.push(point)
+    }
+    if (activeStars.length === 0) continue
+    ctx.strokeStyle =
+      contributor.actor === 0 ? theme.contributor : theme.agent
+    ctx.lineWidth = 1.5
+    ctx.globalAlpha = 0.75
+    const originX = contributor.x * metrics.width
+    const originY = contributor.y * metrics.height
+    for (const star of activeStars) {
       ctx.beginPath()
       ctx.moveTo(originX, originY)
-      ctx.lineTo(point.x, point.y)
+      ctx.lineTo(star.x, star.y)
       ctx.stroke()
     }
   }
   ctx.globalAlpha = 1
+}
+
+function starPositionFor(
+  layout: UniverseLayout,
+  metrics: UniverseMetrics,
+  repoId: number,
+  file: string
+): { x: number; y: number } | null {
+  for (const galaxy of layout.galaxies) {
+    if (galaxy.repoId !== repoId) continue
+    for (const star of galaxy.stars) {
+      if (star.file !== file) continue
+      return starPixel(metrics, galaxy, star)
+    }
+  }
+  return null
+}
+
+function drawContributors(
+  ctx: CanvasRenderingContext2D,
+  metrics: UniverseMetrics,
+  state: UniverseRenderState,
+  theme: UniverseTheme
+): void {
+  for (const contributor of state.contributors) {
+    const color =
+      contributor.actor === 0 ? theme.contributor : theme.agent
+    const x = contributor.x * metrics.width
+    const y = contributor.y * metrics.height
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.arc(x, y, contributor.active ? 7 : 5, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.fillStyle = theme.background
+    ctx.font = '800 8px monospace'
+    ctx.textAlign = 'center'
+    ctx.fillText(contributor.actor === 0 ? 'kw' : 'ak', x, y + 3)
+  }
 }
 
 function drawProgress(
