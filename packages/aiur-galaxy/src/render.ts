@@ -46,7 +46,7 @@ function project(
 }
 
 /**
- * @description Paints one aiur-dag frame onto a 2D canvas context.
+ * @description Paints one aiur-galaxy frame onto a 2D canvas context.
  * @param ctx The canvas 2D context.
  * @param metrics Surface dimensions.
  * @param state Layout plus playback frame.

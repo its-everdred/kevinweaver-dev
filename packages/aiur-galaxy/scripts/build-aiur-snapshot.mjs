@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
- * Builds the aiur-dag fixture snapshot for aiur-team/aiur.
+ * Builds the aiur-galaxy fixture snapshot for aiur-team/aiur.
  *
  * Reads a local clone of the repo (bare or working), extracts the current file
  * tree and the oldest-first commit log, and writes the manifest that the
  * browser consumes. Run after cloning:
  *
  *   git clone --bare https://github.com/aiur-team/aiur.git /tmp/aiur-bare
- *   node packages/aiur-dag/scripts/build-aiur-snapshot.mjs /tmp/aiur-bare
+ *   node packages/aiur-galaxy/scripts/build-aiur-snapshot.mjs /tmp/aiur-bare
  *
  * The output is written to public/data/aiur/aiur.json, where the browser
  * fetches it as a static asset (kept out of the JS bundle).

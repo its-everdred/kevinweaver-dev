@@ -1,5 +1,5 @@
 /**
- * Core types for aiur-dag.
+ * Core types for aiur-galaxy.
  *
  * A snapshot is the package's only input: the repo's full current file tree
  * plus the contribution log with enough per-commit detail to build links.
@@ -26,7 +26,7 @@ export interface SnapshotCommit {
   readonly files: readonly string[]
 }
 
-/** The full input contract consumed by aiur-dag. */
+/** The full input contract consumed by aiur-galaxy. */
 export interface RepoSnapshot {
   readonly repo: {
     readonly owner: string

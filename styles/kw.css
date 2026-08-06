@@ -78,21 +78,29 @@ body {
 
 .kw-lower {
   display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   gap: var(--pane-gap);
 }
 
+.kw-lower > .kw-graph {
+  flex: 1 1 auto;
+  min-height: 22rem;
+}
+
+.kw-lower > .kw-tail {
+  flex: 0 0 auto;
+  height: 14rem;
+}
+
 .kw-graph {
   position: relative;
-  flex: 1;
   min-height: 0;
   background: var(--bg-h);
 }
 
 .kw-tail {
-  flex: 0 0 20rem;
-  width: 20rem;
   min-width: 0;
 }
 
@@ -113,7 +121,7 @@ body {
   margin-bottom: 0;
 }
 
-/* Manual page (1/3) beside the git log (2/3), same pane chrome. */
+/* Manual page (1/3) beside the git log + contact column (2/3). */
 .kw-man-log {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
@@ -122,6 +130,18 @@ body {
 }
 
 .kw-man-log > * {
+  min-width: 0;
+}
+
+/* Git log above contact, stacked inside the 2/3 column. */
+.kw-log-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pane-gap);
+  min-width: 0;
+}
+
+.kw-log-col > * {
   min-width: 0;
 }
 
@@ -191,15 +211,6 @@ body {
     min-height: 0;
   }
 
-  .kw-lower {
-    flex: none;
-    flex-direction: column;
-  }
-
-  .kw-lower > .pane {
-    flex: none;
-  }
-
   .kw-graph {
     flex: none;
     height: 26.25rem;
@@ -207,7 +218,6 @@ body {
 
   .kw-tail {
     flex: none;
-    width: 100%;
     height: 13.125rem;
   }
 

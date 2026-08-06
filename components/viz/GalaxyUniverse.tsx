@@ -5,16 +5,15 @@ import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { formatDayISO } from '@/lib/viz/driver'
 import {
   buildUniverse,
-  DEFAULT_UNIVERSE_THEME,
+  createGalaxyScene,
   layoutUniverse,
   nextUniverseStep,
-  renderUniverse,
   resolveContributors,
   universeFrame,
-  type ContributorNode,
+  type GalaxyScene,
   type PlaybackDirection,
   type UniverseActor,
-} from '@/packages/aiur-dag/src'
+} from '@/packages/aiur-galaxy/src'
 import {
   useInstrumentRuntime,
   type InstrumentRuntimeState,
@@ -24,7 +23,7 @@ import { publishGalaxyTimeline } from './galaxyTimeline'
 /** Stable identifier used to locate the separately requested galaxy chunk. */
 export const GALAXY_CHUNK_MARKER = 'kw-galaxy-universe'
 
-const STEP_MS = 900
+const STEP_MS = 1000
 const EASE = 0.12
 const DIRECTION_LABELS: Record<PlaybackDirection, string> = {
   forward: 'forward',
@@ -38,9 +37,10 @@ function galaxyLabel(runtime: InstrumentRuntimeState): string {
 }
 
 /**
- * @description Renders the galaxy-cluster universe: each repo is a galaxy and
- * each file a star, with repo labels, hover-for-file-name, and contributor
- * nodes (kw and AK) that travel to the day's contributions.
+ * @description Renders the galaxy-cluster universe via the aiur-galaxy WebGL
+ * renderer. This component is a thin consumer: it builds the universe snapshot
+ * from the bundle and passes it to the package, which owns all DAG, layout,
+ * playback, and rendering logic.
  * @returns The interactive galaxy canvas and its playback controls.
  */
 export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
@@ -48,13 +48,12 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   const viz = runtime.status === 'ready' ? runtime.viz : null
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const pointerRef = useRef<{ x: number; y: number } | null>(null)
+  const sceneRef = useRef<GalaxyScene | null>(null)
   const directionRef = useRef<PlaybackDirection>('forward')
   const stepRef = useRef(0)
   const contributorRef = useRef<Partial<Record<UniverseActor, { x: number; y: number }>>>({})
   const [direction, setDirection] = useState<PlaybackDirection>('forward')
   const [date, setDate] = useState('')
-
-  const layoutRef = useRef<ReturnType<typeof layoutUniverse> | null>(null)
 
   const universe = useMemo(() => {
     if (!viz) return null
@@ -73,13 +72,21 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !universe) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    const layout = layoutUniverse(universe)
+    let scene: GalaxyScene | null = null
+    try {
+      scene = createGalaxyScene(canvas, { layout })
+    } catch {
+      return
+    }
+    sceneRef.current = scene
     const dpr = Math.min(2, window.devicePixelRatio || 1)
     const resize = (): void => {
-      canvas.width = Math.round(canvas.clientWidth * dpr)
-      canvas.height = Math.round(canvas.clientHeight * dpr)
-      layoutRef.current = layoutUniverse(universe)
+      if (!sceneRef.current) return
+      sceneRef.current.resize(
+        Math.round(canvas.clientWidth * dpr),
+        Math.round(canvas.clientHeight * dpr)
+      )
     }
     resize()
     const observer = new ResizeObserver(resize)
@@ -95,44 +102,57 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
           directionRef.current
         )
       }
-      const layout = layoutRef.current
-      if (!layout) {
-        raf = requestAnimationFrame(frame)
-        return
-      }
       const playback = universeFrame(universe, stepRef.current, directionRef.current)
       if (playback.step >= 0 && windowStart) {
         const dateLabel = formatDayISO(windowStart, playback.step)
         setDate(dateLabel)
         publishGalaxyTimeline({ step: playback.step, date: dateLabel })
       }
-      const metrics = { width: canvas.width, height: canvas.height }
-      const targets = resolveContributors(layout, playback, metrics)
-      const contributors = easedContributors(contributorRef.current, targets)
-      renderUniverse(
-        ctx,
-        metrics,
-        { layout, frame: playback, pointer: pointerRef.current, contributors },
-        DEFAULT_UNIVERSE_THEME
-      )
+      if (sceneRef.current) {
+        const metrics = {
+          width: Math.round(canvas.clientWidth * dpr),
+          height: Math.round(canvas.clientHeight * dpr),
+        }
+        sceneRef.current.setFrame(layout, playback)
+        const targets = resolveContributors(layout, playback, metrics)
+        const contributors = easedContributors(contributorRef.current, targets)
+        sceneRef.current.setContributors(contributors)
+        sceneRef.current.render()
+      }
       raf = requestAnimationFrame(frame)
     }
     raf = requestAnimationFrame(frame)
     return () => {
       observer.disconnect()
       cancelAnimationFrame(raf)
+      sceneRef.current = null
+      scene?.dispose()
     }
   }, [universe, windowStart])
 
-  const onPointerMove = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    pointerRef.current = {
-      x: event.nativeEvent.offsetX * (event.currentTarget.width / rect.width),
-      y: event.nativeEvent.offsetY * (event.currentTarget.height / rect.height),
-    }
-  }
   const onPointerLeave = (): void => {
     pointerRef.current = null
+  }
+
+  const scrubToX = (clientX: number, element: HTMLCanvasElement): void => {
+    if (!universe) return
+    const rect = element.getBoundingClientRect()
+    const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)))
+    const step = Math.max(
+      0,
+      Math.min(
+        universe.stepCount - 1,
+        Math.round(fraction * (universe.stepCount - 1))
+      )
+    )
+    stepRef.current = step
+  }
+  const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
+    scrubToX(event.clientX, event.currentTarget)
+  }
+  const onPointerDrag = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
+    if (!event.buttons) return
+    scrubToX(event.clientX, event.currentTarget)
   }
 
   const toggle = (): void => {
@@ -160,11 +180,13 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
       <canvas
         aria-label={label}
         data-chunk={GALAXY_CHUNK_MARKER}
+        onPointerDown={onPointerDown}
         onPointerLeave={onPointerLeave}
-        onPointerMove={onPointerMove}
+        onPointerMove={onPointerDrag}
+        onPointerUp={onPointerLeave}
         ref={canvasRef}
         role="img"
-        style={{ display: 'block', height: '100%', width: '100%' }}
+        style={{ cursor: 'pointer', display: 'block', height: '100%', width: '100%' }}
         tabIndex={0}
       >
         {label}. Each repo is a galaxy and each file is a star; contributions
@@ -205,8 +227,8 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
 
 function easedContributors(
   current: Partial<Record<UniverseActor, { x: number; y: number }>>,
-  targets: readonly ContributorNode[]
-): readonly ContributorNode[] {
+  targets: readonly { actor: UniverseActor; x: number; y: number; active: boolean }[]
+): readonly { actor: UniverseActor; x: number; y: number }[] {
   for (const target of targets) {
     const existing = current[target.actor]
     if (!existing) {
@@ -220,6 +242,5 @@ function easedContributors(
     actor: target.actor,
     x: current[target.actor]?.x ?? target.x,
     y: current[target.actor]?.y ?? target.y,
-    active: target.active,
   }))
 }

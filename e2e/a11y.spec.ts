@@ -161,22 +161,21 @@ test('canvas exposes a name and a real text equivalent @a11y', async ({
     const graph = document.querySelector('.kw-graph')
     if (graph) graph.scrollIntoView({ block: 'center' })
   })
-  const overview = page.getByRole('img', { name: /contribution overview/i })
   const ribbon = page.getByRole('img', { name: /contribution grid/i })
   const galaxies = page.getByRole('img', { name: /repository galaxies/i })
-  for (const canvas of [overview, ribbon, galaxies]) {
+  for (const canvas of [ribbon, galaxies]) {
     await expect(canvas).toBeVisible()
     expect(await canvas.evaluate((el) => el.tagName)).toBe('CANVAS')
   }
   const names = await Promise.all(
-    [overview, ribbon, galaxies].map((canvas) =>
+    [ribbon, galaxies].map((canvas) =>
       canvas.getAttribute('aria-label')
     )
   )
   expect(names.every((name) => Boolean(name && name.trim().length > 0))).toBe(
     true
   )
-  expect(new Set(names).size).toBe(3)
+  expect(new Set(names).size).toBe(2)
 
   // DEC-011 table: exactly one canonical table (Executor preflight: "a count
   // proving exactly one table"), with one cell per day; every date/count/level

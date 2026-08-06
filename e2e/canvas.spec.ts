@@ -22,8 +22,8 @@ const WINDOW_END = '2026-06-01'
 const DAY_COUNT = dayIndex(WINDOW_START, WINDOW_END) + 1 // 731
 const TICKS = [0, DWELL_TICKS, DWELL_TICKS + 3600, DWELL_TICKS + 12000] as const
 const SNAPSHOT_DIR = join(__dirname, '__screenshots__')
-const MAX_BASELINES = 8
-const SURFACES = ['overview', 'ribbon'] as const
+const MAX_BASELINES = 4
+const SURFACES = ['ribbon'] as const
 type SurfaceId = (typeof SURFACES)[number]
 
 const ACTORS: readonly Actor[] = [
@@ -182,29 +182,18 @@ function repoByShort(short: string): RepoRecord {
   return repo
 }
 
-test('canvas inventory: three role=img canvases in comp order', async ({
+test('canvas inventory: role=img canvases with non-empty names', async ({
   page,
 }) => {
   await boot(page)
   const canvases = page.locator('section.kw-instr canvas')
-  await expect(canvases).toHaveCount(3)
-  for (let index = 0; index < 3; index++) {
+  await expect(canvases).toHaveCount(2)
+  for (let index = 0; index < 2; index++) {
     const canvas = canvases.nth(index)
     await expect(canvas).toHaveAttribute('role', 'img')
     const label = (await canvas.getAttribute('aria-label')) ?? ''
     expect(label.trim().length).toBeGreaterThan(0)
   }
-  // Order-independent shape discriminator: overview shorter than the ribbon.
-  const heights: number[] = []
-  for (const id of SURFACES) {
-    const box = await surface(page, id).boundingBox()
-    if (box === null) throw new Error(`surface ${id} has no bounding box`)
-    heights.push(box.height)
-  }
-  expect(
-    heights[0]! < heights[1]!,
-    `canvas order changed — KW-025 reordered the instrument panes (heights ${heights.join(', ')}); regenerate baselines`
-  ).toBe(true)
 })
 
 test('frame semantics at each tick', async ({ page }) => {
@@ -298,8 +287,8 @@ test('double-render canary: same-tick renders are byte-identical', async ({
 }) => {
   await boot(page)
   await page.evaluate((t) => window.__viz!.seekTick(t), TICKS[2]!)
-  const first = await surface(page, 'overview').screenshot()
-  const second = await surface(page, 'overview').screenshot()
+  const first = await surface(page, 'ribbon').screenshot()
+  const second = await surface(page, 'ribbon').screenshot()
   expect(
     Buffer.compare(first, second),
     'two renders at the same tick differ — if this fails, no other visual ' +

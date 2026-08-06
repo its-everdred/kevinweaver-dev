@@ -5,7 +5,6 @@ import { ContributionTable } from '@/components/viz/ContributionTable'
 import { EventsTail } from '@/components/viz/EventsTail'
 import { GalaxyUniverseIsland } from '@/components/viz/GalaxyUniverseIsland'
 import { Pane } from '@/components/ds/Pane'
-import { GraphDate, Overview } from '@/components/viz/Overview'
 import { Ribbon } from '@/components/viz/Ribbon'
 import { decodeGrid, decodeManifest } from '@/lib/bundle/codec'
 import type { GridSeries, Manifest } from '@/lib/bundle/schema'
@@ -64,7 +63,6 @@ export function Instrument({ id, className, style }: InstrumentProps) {
         }}
         style={{ flex: '0 0 auto' }}
       >
-        <Overview />
         <Ribbon />
       </Pane>
       {head ? (
@@ -80,7 +78,6 @@ export function Instrument({ id, className, style }: InstrumentProps) {
           bleed
           focus
           footer={<TransportBar />}
-          right={<GraphDate />}
           title="galaxies — repo universe"
           titleAs="h3"
           bodyClassName="kw-graph"

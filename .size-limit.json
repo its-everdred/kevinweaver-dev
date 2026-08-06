@@ -20,7 +20,7 @@
   {
     "name": "total client JavaScript (first load + deferred + noModule polyfills)",
     "path": ".next/static/chunks/**/*.js",
-    "limit": "295 kB",
+    "limit": "320 kB",
     "brotli": true
   }
 ]

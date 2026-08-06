@@ -104,9 +104,11 @@ export default async function Page() {
         <Instrument />
         <div className="kw-man-log">
           <ManPage />
-          <CareerLog />
+          <div className="kw-log-col">
+            <CareerLog />
+            <Contact />
+          </div>
         </div>
-        <Contact />
       </main>
       <TmuxBar />
       <BootOverlay />
