@@ -195,14 +195,6 @@ async function boot(page: Page): Promise<void> {
   await seekStep(page, 0)
 }
 
-function repoByShort(short: string): RepoRecord {
-  const repo = REPOS.find((candidate) => candidate.short === short)
-  if (repo === undefined) {
-    throw new Error(`fixture has no repository named ${short}`)
-  }
-  return repo
-}
-
 test('canvas inventory: role=img canvases with non-empty names', async ({
   page,
 }) => {
