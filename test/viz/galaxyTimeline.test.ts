@@ -4,7 +4,6 @@ import {
   getGalaxyTimeline,
   publishGalaxyTimeline,
   seekGalaxyTimeline,
-  setGalaxyDirection,
   setGalaxyPlaying,
   subscribeGalaxyTimeline,
 } from '../../components/viz/galaxyTimeline'
@@ -94,17 +93,6 @@ describe('galaxyTimeline', () => {
     seekGalaxyTimeline(start + 99, start + 10)
     expect(getGalaxyTimeline().step).toBe(start + 9)
     expect(listener).toHaveBeenCalledTimes(2)
-  })
-
-  it('sets playback direction', () => {
-    const start = baselineStep()
-    publish(start, 'x', 4)
-    setGalaxyDirection('backward')
-    expect(getGalaxyTimeline().direction).toBe('backward')
-    setGalaxyDirection('backward')
-    expect(getGalaxyTimeline().direction).toBe('backward')
-    setGalaxyDirection('forward')
-    expect(getGalaxyTimeline().direction).toBe('forward')
   })
 
   it('toggles playing state via setGalaxyPlaying', () => {

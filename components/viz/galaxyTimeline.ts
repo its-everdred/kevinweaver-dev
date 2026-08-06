@@ -92,10 +92,3 @@ export function setGalaxyPlaying(playing: boolean): void {
   snapshot = { ...snapshot, playing }
   notify()
 }
-
-/** @description Sets the playback direction. */
-export function setGalaxyDirection(direction: GalaxyDirection): void {
-  if (direction === snapshot.direction) return
-  snapshot = { ...snapshot, direction }
-  notify()
-}
