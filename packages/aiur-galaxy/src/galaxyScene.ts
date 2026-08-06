@@ -11,6 +11,7 @@ export interface GalaxySceneTheme {
   readonly currentStar: number
   readonly contributor: number
   readonly agent: number
+  readonly label: number
 }
 
 /** Options for creating the three.js galaxy scene. */
@@ -53,10 +54,37 @@ const DEFAULT_THEME: GalaxySceneTheme = {
   currentStar: 0x98c379,
   contributor: 0x61afef,
   agent: 0xc678dd,
+  label: 0xd8dee9,
 }
 
 function toColor(value: number): THREE.Color {
   return new THREE.Color(value)
+}
+
+function createLabelSprite(name: string, color: number): THREE.Sprite {
+  const canvas = document.createElement('canvas')
+  canvas.width = 512
+  canvas.height = 64
+  const ctx = canvas.getContext('2d')
+  if (ctx) {
+    ctx.font = '600 40px monospace'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    const rgb = new THREE.Color(color)
+    ctx.fillStyle = `rgb(${Math.round(rgb.r * 255)},${Math.round(rgb.g * 255)},${Math.round(rgb.b * 255)})`
+    const short = name.split('/').pop() ?? name
+    ctx.fillText(short, 256, 32)
+  }
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.minFilter = THREE.LinearFilter
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+  })
+  const sprite = new THREE.Sprite(material)
+  sprite.scale.set(1.4, 0.175, 1)
+  return sprite
 }
 
 function addContributorNode(
@@ -92,18 +120,25 @@ export function createGalaxyScene(
   })
   renderer.setClearColor(theme.background, 1)
   const scene = new THREE.Scene()
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000)
-  camera.position.z = 5
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
+  camera.position.z = 2.6
 
   const galaxies: THREE.Points[] = []
   const contributors: SceneContributor[] = []
+  const labels: THREE.Sprite[] = []
   addContributorNode(scene, contributors, 0, theme.contributor)
   addContributorNode(scene, contributors, 1, theme.agent)
 
   for (let index = 0; index < options.layout.galaxies.length; index++) {
+    const galaxy = options.layout.galaxies[index]
+    if (!galaxy) continue
     const points = buildGalaxyPoints(options.layout, index, theme)
     scene.add(points)
     galaxies.push(points)
+    const label = createLabelSprite(galaxy.name, theme.label)
+    label.position.set((galaxy.x - 0.5) * 6, (galaxy.y - 0.5) * 4, 0)
+    scene.add(label)
+    labels.push(label)
   }
 
   const setFrame = (layout: UniverseLayout, frame: UniverseFrame): void => {
@@ -125,11 +160,16 @@ export function createGalaxyScene(
     contributors,
     setFrame,
     setContributors(nodes) {
+      // Hide every contributor first; only nodes present in the current frame
+      // become visible at their centroid. This prevents a stray node lingering
+      // at the field center when an actor has no contribution that day.
+      for (const contributor of contributors) contributor.mesh.visible = false
       for (let index = 0; index < nodes.length; index++) {
         const node = nodes[index]
         if (!node) continue
         const existing = contributors.find((c) => c.actor === node.actor)
         if (!existing) continue
+        existing.mesh.visible = true
         existing.mesh.position.x = (node.x - 0.5) * 6
         existing.mesh.position.y = (node.y - 0.5) * 4
         existing.mesh.position.z = 0.5
@@ -149,6 +189,11 @@ export function createGalaxyScene(
         contributor.mesh.geometry.dispose()
         const material = contributor.mesh.material
         if (material instanceof THREE.Material) material.dispose()
+      }
+      for (const label of labels) {
+        const material = label.material
+        if (material.map) material.map.dispose()
+        material.dispose()
       }
       renderer.dispose()
     },
@@ -178,7 +223,7 @@ export function buildGalaxyPoints(
   for (const star of galaxy.stars) {
     positions.push((star.x - 0.5) * 2, (star.y - 0.5) * 2, 0)
     colors.push(starColor.r, starColor.g, starColor.b)
-    sizes.push(0.02 + ((index + star.file.length) % 10) * 0.001)
+    sizes.push(0.09 + ((index + star.file.length) % 8) * 0.008)
   }
 
   const geometry = new THREE.BufferGeometry()

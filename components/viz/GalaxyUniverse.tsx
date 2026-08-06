@@ -18,7 +18,14 @@ import {
   useInstrumentRuntime,
   type InstrumentRuntimeState,
 } from './instrumentRuntime'
-import { publishGalaxyTimeline } from './galaxyTimeline'
+import {
+  getGalaxyTimeline,
+  publishGalaxyTimeline,
+  seekGalaxyTimeline,
+  setGalaxyDirection,
+  setGalaxyPlaying,
+  subscribeGalaxyTimeline,
+} from './galaxyTimeline'
 
 /** Stable identifier used to locate the separately requested galaxy chunk. */
 export const GALAXY_CHUNK_MARKER = 'kw-galaxy-universe'
@@ -38,9 +45,10 @@ function galaxyLabel(runtime: InstrumentRuntimeState): string {
 
 /**
  * @description Renders the galaxy-cluster universe via the aiur-galaxy WebGL
- * renderer. This component is a thin consumer: it builds the universe snapshot
- * from the bundle and passes it to the package, which owns all DAG, layout,
- * playback, and rendering logic.
+ * renderer. This component is the playback owner: it advances the shared
+ * galaxy timeline store (the single source of truth for the current day) and
+ * renders the current frame. The contributions strip, events log, and
+ * transport all read the same store.
  * @returns The interactive galaxy canvas and its playback controls.
  */
 export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
@@ -49,11 +57,8 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const pointerRef = useRef<{ x: number; y: number } | null>(null)
   const sceneRef = useRef<GalaxyScene | null>(null)
-  const directionRef = useRef<PlaybackDirection>('forward')
-  const stepRef = useRef(0)
   const contributorRef = useRef<Partial<Record<UniverseActor, { x: number; y: number }>>>({})
-  const [direction, setDirection] = useState<PlaybackDirection>('forward')
-  const [date, setDate] = useState('')
+  const [snapshot, setSnapshot] = useState(() => getGalaxyTimeline())
 
   const universe = useMemo(() => {
     if (!viz) return null
@@ -69,6 +74,11 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
 
   const windowStart = viz?.head.manifest.windowStart ?? ''
 
+  // Subscribe to the store so controls reflect the single clock.
+  useEffect(() => {
+    return subscribeGalaxyTimeline(() => setSnapshot(getGalaxyTimeline()))
+  }, [])
+
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas || !universe) return
@@ -80,6 +90,16 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
       return
     }
     sceneRef.current = scene
+
+    // Initialize the shared clock from this universe's bounds.
+    publishGalaxyTimeline({
+      step: 0,
+      date: formatDayISO(windowStart, 0),
+      playing: true,
+      total: universe.stepCount,
+      direction: 'forward',
+    })
+
     const dpr = Math.min(2, window.devicePixelRatio || 1)
     const resize = (): void => {
       if (!sceneRef.current) return
@@ -95,29 +115,28 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
     let raf = 0
     let last = performance.now()
     const frame = (now: number): void => {
-      if (now - last >= STEP_MS) {
-        last = now
-        stepRef.current = nextUniverseStep(
-          universeFrame(universe, stepRef.current, directionRef.current),
-          directionRef.current
-        )
-      }
-      const playback = universeFrame(universe, stepRef.current, directionRef.current)
-      if (playback.step >= 0 && windowStart) {
-        const dateLabel = formatDayISO(windowStart, playback.step)
-        setDate(dateLabel)
-        publishGalaxyTimeline({ step: playback.step, date: dateLabel })
-      }
-      if (sceneRef.current) {
-        const metrics = {
-          width: Math.round(canvas.clientWidth * dpr),
-          height: Math.round(canvas.clientHeight * dpr),
+      const current = getGalaxyTimeline()
+      if (current.total === universe.stepCount) {
+        if (now - last >= STEP_MS && current.playing) {
+          last = now
+          const next = nextUniverseStep(
+            universeFrame(universe, current.step, current.direction),
+            current.direction
+          )
+          seekGalaxyTimeline(next, formatDayISO(windowStart, next), universe.stepCount)
         }
-        sceneRef.current.setFrame(layout, playback)
-        const targets = resolveContributors(layout, playback, metrics)
-        const contributors = easedContributors(contributorRef.current, targets)
-        sceneRef.current.setContributors(contributors)
-        sceneRef.current.render()
+        if (sceneRef.current) {
+          const playback = universeFrame(universe, current.step, current.direction)
+          sceneRef.current.setFrame(layout, playback)
+          const metrics = {
+            width: Math.round(canvas.clientWidth * dpr),
+            height: Math.round(canvas.clientHeight * dpr),
+          }
+          const targets = resolveContributors(layout, playback, metrics)
+          const contributors = easedContributors(contributorRef.current, targets)
+          sceneRef.current.setContributors(contributors)
+          sceneRef.current.render()
+        }
       }
       raf = requestAnimationFrame(frame)
     }
@@ -145,7 +164,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
         Math.round(fraction * (universe.stepCount - 1))
       )
     )
-    stepRef.current = step
+    seekGalaxyTimeline(step, formatDayISO(windowStart, step), universe.stepCount)
   }
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
     scrubToX(event.clientX, event.currentTarget)
@@ -156,12 +175,12 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   }
 
   const toggle = (): void => {
-    const next: PlaybackDirection =
-      directionRef.current === 'forward' ? 'backward' : 'forward'
-    directionRef.current = next
-    setDirection(next)
+    setGalaxyPlaying(!getGalaxyTimeline().playing)
   }
-
+  const flipDirection = (): void => {
+    const current = getGalaxyTimeline().direction
+    setGalaxyDirection(current === 'forward' ? 'backward' : 'forward')
+  }
   const jump = (fraction: number): void => {
     if (!universe) return
     const step = Math.max(
@@ -171,7 +190,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
         Math.round(fraction * (universe.stepCount - 1))
       )
     )
-    stepRef.current = step
+    seekGalaxyTimeline(step, formatDayISO(windowStart, step), universe.stepCount)
   }
 
   const label = galaxyLabel(runtime)
@@ -201,7 +220,10 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
         }}
       >
         <button disabled={!universe} onClick={toggle} type="button">
-          play {DIRECTION_LABELS[direction]}
+          {snapshot.playing ? 'pause' : 'play'}
+        </button>
+        <button disabled={!universe} onClick={flipDirection} type="button">
+          {DIRECTION_LABELS[snapshot.direction]}
         </button>
         <button disabled={!universe} onClick={() => jump(0)} type="button">
           start
@@ -219,7 +241,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
           style={{ flex: 1 }}
           type="range"
         />
-        <span>{date}</span>
+        <span>{snapshot.date}</span>
       </div>
     </>
   )

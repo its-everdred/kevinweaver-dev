@@ -23,6 +23,7 @@ const THEME = {
   currentStar: 0x98c379,
   contributor: 0x61afef,
   agent: 0xc678dd,
+  label: 0xd8dee9,
 }
 
 describe('buildGalaxyPoints', () => {
