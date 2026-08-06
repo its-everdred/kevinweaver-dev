@@ -41,7 +41,10 @@ const KW_MAN_CSS = `
 .kw-man-sh>.kw-man-cmd:first-child{margin-top:0;}
 .kw-man-out{margin:0;}
 .kw-man-chrome{display:flex;gap:2ch;margin:0 0 1.2em;color:var(--text-faint);}
+.kw-man-chrome>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.kw-man-chrome>:nth-child(1){flex:0 0 auto;}
 .kw-man-chrome>:nth-child(2){flex:1 1 auto;text-align:center;}
+.kw-man-chrome>:nth-child(3){flex:0 0 auto;}
 .kw-man-doc>.kw-man-chrome:last-of-type{margin:1.6em 0 0;}
 .kw-man-hint{display:none;margin:1.2em 0 0;padding-left:7ch;color:var(--text-faint);}
 @media (max-width:1080px){
