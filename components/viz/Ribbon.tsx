@@ -57,9 +57,9 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
       }
       const current = getGalaxyTimeline().step
       if (current >= 0 && current < dayCount) {
-        ctx.fillStyle = 'rgba(255,255,255,0.25)'
+        ctx.fillStyle = 'rgba(251,241,199,0.25)'
         ctx.fillRect(current * cellW, 0, cellW, cellH)
-        ctx.strokeStyle = 'var(--fg0)'
+        ctx.strokeStyle = '#fbf1c7'
         ctx.lineWidth = Math.max(1, dpr)
         ctx.strokeRect(
           current * cellW + 0.5,
@@ -129,8 +129,9 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
 
 function levelColor(level: number): string {
   // Contribution density bands, green like GitHub's contribution graph.
+  // Concrete hex, not CSS tokens: the canvas 2D API does not resolve var().
   const palette = [
-    'var(--bg2)',
+    '#504945',
     '#0e4429',
     '#006d32',
     '#26a641',
