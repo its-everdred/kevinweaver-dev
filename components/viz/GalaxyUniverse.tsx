@@ -22,6 +22,7 @@ import {
   publishGalaxyTimeline,
   seekGalaxyTimeline,
 } from './galaxyTimeline'
+import { installGalaxyTestHarness } from './galaxyTestHarness'
 
 /** Stable identifier used to locate the separately requested galaxy chunk. */
 export const GALAXY_CHUNK_MARKER = 'kw-galaxy-universe'
@@ -77,15 +78,20 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
     }
     sceneRef.current = scene
 
-    // Initialize the shared clock from this universe's bounds.
+    // Initialize the shared clock from this universe's bounds. Reduced-motion
+    // users see a static day: playback only advances on an explicit seek.
+    const reducedMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)'
+    ).matches
     publishGalaxyTimeline({
       step: 0,
       date: formatDayISO(windowStart, 0),
-      playing: true,
+      playing: !reducedMotion,
       total: universe.stepCount,
       direction: 'forward',
       windowStartISO: windowStart,
     })
+    const removeHarness = installGalaxyTestHarness(universe.stepCount)
 
     const dpr = Math.min(2, window.devicePixelRatio || 1)
     const resize = (): void => {
@@ -104,7 +110,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
     const frame = (now: number): void => {
       const current = getGalaxyTimeline()
       if (current.total === universe.stepCount) {
-        if (now - last >= STEP_MS && current.playing) {
+        if (!reducedMotion && now - last >= STEP_MS && current.playing) {
           last = now
           const next = nextUniverseStep(
             universeFrame(universe, current.step, current.direction),
@@ -131,6 +137,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
     return () => {
       observer.disconnect()
       cancelAnimationFrame(raf)
+      removeHarness()
       sceneRef.current = null
       scene?.dispose()
     }
