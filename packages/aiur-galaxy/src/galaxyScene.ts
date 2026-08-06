@@ -33,8 +33,6 @@ export interface GalaxyScene {
   readonly camera: THREE.PerspectiveCamera
   /** Per-galaxy points objects, indexed by galaxy position in the layout. */
   readonly galaxies: THREE.Points[]
-  /** Live/current star marker objects, indexed by galaxy. */
-  readonly markers: THREE.Points[]
   readonly contributors: SceneContributor[]
   /** Updates the star colors for the current frame. */
   setFrame(layout: UniverseLayout, frame: UniverseFrame): void
@@ -98,7 +96,6 @@ export function createGalaxyScene(
   camera.position.z = 5
 
   const galaxies: THREE.Points[] = []
-  const markers: THREE.Points[] = []
   const contributors: SceneContributor[] = []
   addContributorNode(scene, contributors, 0, theme.contributor)
   addContributorNode(scene, contributors, 1, theme.agent)
@@ -110,12 +107,13 @@ export function createGalaxyScene(
   }
 
   const setFrame = (layout: UniverseLayout, frame: UniverseFrame): void => {
+    const current = new Set(frame.currentFiles)
     for (let index = 0; index < layout.galaxies.length; index++) {
       const galaxy = layout.galaxies[index]
       if (!galaxy) continue
       const points = galaxies[index]
       if (!points) continue
-      updateStarColors(points, galaxy, frame, theme)
+      updateStarColors(points, galaxy, frame, current, theme)
     }
   }
 
@@ -124,7 +122,6 @@ export function createGalaxyScene(
     scene,
     camera,
     galaxies,
-    markers,
     contributors,
     setFrame,
     setContributors(nodes) {
@@ -148,7 +145,6 @@ export function createGalaxyScene(
     },
     dispose() {
       for (const points of galaxies) points.geometry.dispose()
-      for (const points of markers) points.geometry.dispose()
       for (const contributor of contributors) {
         contributor.mesh.geometry.dispose()
         const material = contributor.mesh.material
@@ -210,22 +206,23 @@ function updateStarColors(
   points: THREE.Points,
   galaxy: UniverseLayout['galaxies'][number],
   frame: UniverseFrame,
+  current: ReadonlySet<string>,
   theme: GalaxySceneTheme
 ): void {
   const geometry = points.geometry
   const colorAttr = geometry.getAttribute('color')
   if (!colorAttr) return
   const live = toColor(theme.liveStar)
-  const current = toColor(theme.currentStar)
+  const currentColor = toColor(theme.currentStar)
   const base = toColor(theme.star)
   const array = colorAttr.array as Float32Array
   for (let index = 0; index < galaxy.stars.length; index++) {
     const star = galaxy.stars[index]
     if (!star) continue
     const key = `${galaxy.repoId}:${star.file}`
-    const isCurrent = frame.currentFiles.includes(key)
+    const isCurrent = current.has(key)
     const isLive = frame.liveFiles.has(key)
-    const color = isCurrent ? current : isLive ? live : base
+    const color = isCurrent ? currentColor : isLive ? live : base
     const offset = index * 3
     array[offset] = color.r
     array[offset + 1] = color.g
