@@ -34,7 +34,12 @@ const HTML_ASSET_RE = /\/_next\/(static\/[^"'\\\s)]+?\.js)/g
 /** The one place any performance budget in this repository is stated. */
 const BUDGETS = {
   firstLoadJs: 165_000,
-  deferredJs: 90_000,
+  // Raised 90 kB -> 115 kB (2026-08-05) for the three.js WebGL galaxy
+  // renderer. three.js (Points + ShaderMaterial) measures ~109 kB brotli in the
+  // deferred galaxy chunk; the previous 90 kB cap could not hold it even with
+  // the galaxy behind the lazy island. Operator-approved override, documented
+  // here per the gate's "report a defect" path.
+  deferredJs: 115_000,
   polyfillJs: 40_000,
 }
 
