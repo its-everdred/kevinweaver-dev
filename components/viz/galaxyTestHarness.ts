@@ -19,6 +19,12 @@ export interface GalaxyTestHarness {
   setQuality(_quality: 'high' | 'low' | 'auto'): void
 }
 
+declare global {
+  interface Window {
+    __galaxyTestHarness?: boolean
+  }
+}
+
 export interface GalaxyHarnessInfo {
   readonly step: number
   readonly date: string
@@ -37,6 +43,10 @@ export function installGalaxyTestHarness(total: number): () => void {
   if (typeof window === 'undefined') return () => undefined
   if (new URLSearchParams(window.location.search).get('viz-test') !== '1')
     return () => undefined
+  // Mark ownership before assignment so the legacy driver harness's async
+  // install, which may resolve after this one, does not clobber the page's
+  // real clock (lib/viz/testHarness.ts reads this marker).
+  window.__galaxyTestHarness = true
   const harness: GalaxyTestHarness = {
     pause: () => setGalaxyPlaying(false),
     play: () => setGalaxyPlaying(true),
@@ -56,8 +66,10 @@ export function installGalaxyTestHarness(total: number): () => void {
   // supertype worth modelling.
   window.__viz = harness as unknown as VizTestHarness
   const remove = () => {
-    if (window.__viz === (harness as unknown as VizTestHarness))
+    if (window.__viz === (harness as unknown as VizTestHarness)) {
       delete window.__viz
+      delete window.__galaxyTestHarness
+    }
   }
   return remove
 }

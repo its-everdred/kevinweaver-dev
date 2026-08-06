@@ -17,6 +17,7 @@ export interface VizTestHarness {
 declare global {
   interface Window {
     __viz?: VizTestHarness
+    __galaxyTestHarness?: boolean
   }
 }
 
@@ -29,6 +30,9 @@ export function installTestHarness(driver: VizDriver): () => void {
   if (typeof window === 'undefined') return () => undefined
   const params = new URLSearchParams(window.location.search)
   if (params.get('viz-test') !== '1') return () => undefined
+  // The galaxy timeline harness is the page's real clock and owns the hook;
+  // it installs after this async import resolves, so yield ownership to it.
+  if (window.__galaxyTestHarness) return () => undefined
   const seed = params.get('seed')
   if (seed !== null) driver.reset(Number(seed))
   driver.setQuality('high')
