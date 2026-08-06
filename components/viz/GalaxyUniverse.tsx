@@ -1,6 +1,6 @@
 'use client'
 
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { formatDayISO } from '@/lib/viz/driver'
 import {
@@ -11,7 +11,6 @@ import {
   resolveContributors,
   universeFrame,
   type GalaxyScene,
-  type PlaybackDirection,
   type UniverseActor,
 } from '@/packages/aiur-galaxy/src'
 import {
@@ -22,9 +21,6 @@ import {
   getGalaxyTimeline,
   publishGalaxyTimeline,
   seekGalaxyTimeline,
-  setGalaxyDirection,
-  setGalaxyPlaying,
-  subscribeGalaxyTimeline,
 } from './galaxyTimeline'
 
 /** Stable identifier used to locate the separately requested galaxy chunk. */
@@ -32,10 +28,6 @@ export const GALAXY_CHUNK_MARKER = 'kw-galaxy-universe'
 
 const STEP_MS = 1000
 const EASE = 0.12
-const DIRECTION_LABELS: Record<PlaybackDirection, string> = {
-  forward: 'forward',
-  backward: 'backward',
-}
 
 function galaxyLabel(runtime: InstrumentRuntimeState): string {
   if (runtime.status === 'unavailable') return 'Repository galaxies unavailable'
@@ -58,7 +50,6 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   const pointerRef = useRef<{ x: number; y: number } | null>(null)
   const sceneRef = useRef<GalaxyScene | null>(null)
   const contributorRef = useRef<Partial<Record<UniverseActor, { x: number; y: number }>>>({})
-  const [snapshot, setSnapshot] = useState(() => getGalaxyTimeline())
 
   const universe = useMemo(() => {
     if (!viz) return null
@@ -73,11 +64,6 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   }, [viz])
 
   const windowStart = viz?.head.manifest.windowStart ?? ''
-
-  // Subscribe to the store so controls reflect the single clock.
-  useEffect(() => {
-    return subscribeGalaxyTimeline(() => setSnapshot(getGalaxyTimeline()))
-  }, [])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -98,6 +84,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
       playing: true,
       total: universe.stepCount,
       direction: 'forward',
+      windowStartISO: windowStart,
     })
 
     const dpr = Math.min(2, window.devicePixelRatio || 1)
@@ -123,7 +110,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
             universeFrame(universe, current.step, current.direction),
             current.direction
           )
-          seekGalaxyTimeline(next, formatDayISO(windowStart, next), universe.stepCount)
+          seekGalaxyTimeline(next, universe.stepCount)
         }
         if (sceneRef.current) {
           const playback = universeFrame(universe, current.step, current.direction)
@@ -164,7 +151,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
         Math.round(fraction * (universe.stepCount - 1))
       )
     )
-    seekGalaxyTimeline(step, formatDayISO(windowStart, step), universe.stepCount)
+    seekGalaxyTimeline(step, universe.stepCount)
   }
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
     scrubToX(event.clientX, event.currentTarget)
@@ -174,76 +161,23 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
     scrubToX(event.clientX, event.currentTarget)
   }
 
-  const toggle = (): void => {
-    setGalaxyPlaying(!getGalaxyTimeline().playing)
-  }
-  const flipDirection = (): void => {
-    const current = getGalaxyTimeline().direction
-    setGalaxyDirection(current === 'forward' ? 'backward' : 'forward')
-  }
-  const jump = (fraction: number): void => {
-    if (!universe) return
-    const step = Math.max(
-      0,
-      Math.min(
-        universe.stepCount - 1,
-        Math.round(fraction * (universe.stepCount - 1))
-      )
-    )
-    seekGalaxyTimeline(step, formatDayISO(windowStart, step), universe.stepCount)
-  }
-
   const label = galaxyLabel(runtime)
   return (
-    <>
-      <canvas
-        aria-label={label}
-        data-chunk={GALAXY_CHUNK_MARKER}
-        onPointerDown={onPointerDown}
-        onPointerLeave={onPointerLeave}
-        onPointerMove={onPointerDrag}
-        onPointerUp={onPointerLeave}
-        ref={canvasRef}
-        role="img"
-        style={{ cursor: 'pointer', display: 'block', height: '100%', width: '100%' }}
-        tabIndex={0}
-      >
-        {label}. Each repo is a galaxy and each file is a star; contributions
-        light stars over the window.
-      </canvas>
-      <div
-        style={{
-          display: 'flex',
-          gap: '0.75rem',
-          marginTop: '0.4rem',
-          padding: '0 0.25rem',
-        }}
-      >
-        <button disabled={!universe} onClick={toggle} type="button">
-          {snapshot.playing ? 'pause' : 'play'}
-        </button>
-        <button disabled={!universe} onClick={flipDirection} type="button">
-          {DIRECTION_LABELS[snapshot.direction]}
-        </button>
-        <button disabled={!universe} onClick={() => jump(0)} type="button">
-          start
-        </button>
-        <button disabled={!universe} onClick={() => jump(1)} type="button">
-          end
-        </button>
-        <input
-          aria-label="scrub the contribution timeline"
-          disabled={!universe}
-          max="1"
-          min="0"
-          onChange={(event) => jump(Number(event.target.value))}
-          step="any"
-          style={{ flex: 1 }}
-          type="range"
-        />
-        <span>{snapshot.date}</span>
-      </div>
-    </>
+    <canvas
+      aria-label={label}
+      data-chunk={GALAXY_CHUNK_MARKER}
+      onPointerDown={onPointerDown}
+      onPointerLeave={onPointerLeave}
+      onPointerMove={onPointerDrag}
+      onPointerUp={onPointerLeave}
+      ref={canvasRef}
+      role="img"
+      style={{ cursor: 'pointer', display: 'block', height: '100%', width: '100%' }}
+      tabIndex={0}
+    >
+      {label}. Each repo is a galaxy and each file is a star; contributions
+      light stars over the window.
+    </canvas>
   )
 })
 

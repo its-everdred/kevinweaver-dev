@@ -1,5 +1,7 @@
 'use client'
 
+import { formatDayISO } from '@/lib/viz/driver'
+
 /** Playback direction for the shared timeline. */
 export type GalaxyDirection = 'forward' | 'backward'
 
@@ -15,6 +17,8 @@ export interface GalaxyTimelineSnapshot {
   readonly total: number
   /** Playback direction. */
   readonly direction: GalaxyDirection
+  /** ISO date of the first day in the window. */
+  readonly windowStartISO: string
 }
 
 let snapshot: GalaxyTimelineSnapshot = {
@@ -23,6 +27,7 @@ let snapshot: GalaxyTimelineSnapshot = {
   playing: true,
   total: 0,
   direction: 'forward',
+  windowStartISO: '',
 }
 const listeners = new Set<() => void>()
 
@@ -53,7 +58,8 @@ export function publishGalaxyTimeline(next: GalaxyTimelineSnapshot): void {
   if (
     next.step === snapshot.step &&
     next.playing === snapshot.playing &&
-    next.direction === snapshot.direction
+    next.direction === snapshot.direction &&
+    next.total === snapshot.total
   )
     return
   snapshot = next
@@ -63,17 +69,19 @@ export function publishGalaxyTimeline(next: GalaxyTimelineSnapshot): void {
 /**
  * @description Seeks the timeline to a specific day.
  * @param step Target day index (clamped to [0, total - 1]).
- * @param date ISO date label for the target day.
  * @param total Total step count.
  */
-export function seekGalaxyTimeline(step: number, date: string, total: number): void {
+export function seekGalaxyTimeline(step: number, total: number): void {
   const clamped = Math.max(0, Math.min(total - 1, step))
+  const date =
+    snapshot.windowStartISO && total > 0
+      ? formatDayISO(snapshot.windowStartISO, clamped)
+      : ''
   snapshot = {
+    ...snapshot,
     step: clamped,
     date,
-    playing: snapshot.playing,
     total,
-    direction: snapshot.direction,
   }
   notify()
 }

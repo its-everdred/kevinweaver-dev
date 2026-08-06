@@ -2,7 +2,6 @@
 
 import { memo, useEffect, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import { formatDayISO } from '@/lib/viz/driver'
 import {
   useInstrumentRuntime,
   type InstrumentRuntimeState,
@@ -27,7 +26,6 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
   const [snapshot, setSnapshot] = useState(() => getGalaxyTimeline())
   const label = ribbonLabel(runtime)
   const grid = viz?.render.grid
-  const windowStart = viz?.head.manifest.windowStart ?? ''
 
   useEffect(() => {
     return subscribeGalaxyTimeline(() => setSnapshot(getGalaxyTimeline()))
@@ -84,7 +82,7 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
     const rect = element.getBoundingClientRect()
     const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)))
     const step = Math.max(0, Math.min(grid.dayCount - 1, Math.round(fraction * (grid.dayCount - 1))))
-    seekGalaxyTimeline(step, formatDayISO(windowStart, step), grid.dayCount)
+    seekGalaxyTimeline(step, grid.dayCount)
   }
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
     scrubToX(event.clientX, event.currentTarget)

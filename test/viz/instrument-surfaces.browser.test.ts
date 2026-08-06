@@ -150,7 +150,7 @@ async function expectRibbonAlternativeAndIsolation(): Promise<void> {
   await waitFor(() => expect(painted(canvas)).toBe(true))
   // The ribbon scrubs the shared galaxy timeline on pointer down: a click at a
   // fraction of the width seeks the store to that day.
-  seekGalaxyTimeline(0, 'x', 100)
+  seekGalaxyTimeline(0, 100)
   fireEvent(canvas, pointer('pointerdown', 1))
   expect(getGalaxyTimeline().step).toBeGreaterThanOrEqual(0)
   // KW-025 note 4: the canvas is NOT wired to the table via aria-describedby —
