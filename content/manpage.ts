@@ -1,13 +1,6 @@
 import { fill } from './boot'
 
-export type ManSectionId =
-  | 'NAME'
-  | 'SYNOPSIS'
-  | 'DESCRIPTION'
-  | 'OPTIONS'
-  | 'EXIT STATUS'
-  | 'SEE ALSO'
-  | 'AUTHOR'
+export type ManSectionId = 'NAME' | 'DESCRIPTION' | 'OPTIONS' | 'AUTHOR'
 
 export interface ManBlock {
   readonly term: string | null
@@ -47,29 +40,16 @@ export const MAN_PAGE = [
     ],
   },
   {
-    id: 'SYNOPSIS',
-    abridged: true,
-    blocks: [
-      paragraph([
-        'kevinweaver [--lang=LIST] [--companies=LIST] [--seed=SEED]',
-        'kevinweaver --help',
-      ]),
-    ],
-  },
-  {
     id: 'DESCRIPTION',
     abridged: true,
     blocks: [
       paragraph([
-        'kevinweaver is a senior fullstack software engineer with experience across',
-        'fintech, ecommerce, healthcare, and developer tooling. Shipped customer-facing',
+        'kevinweaver is a senior fullstack software engineer. Shipped customer-facing',
         'features and platform APIs used by millions of users; designed and built',
         'smart-contract tooling, wallet infrastructure, and developer SDKs.',
         '',
         'Employed since February 2010. Currently a Senior Full Stack Software Engineer',
         'at Optimism, working on the Actions SDK (actions.optimism.io).',
-        '',
-        'Full employment history: git log --graph --all',
       ]),
     ],
   },
@@ -88,29 +68,6 @@ export const MAN_PAGE = [
       ]),
       term('--seed=SEED', [
         'Deterministic animation seed. Same seed renders the same frame.',
-      ]),
-    ],
-  },
-  {
-    id: 'EXIT STATUS',
-    abridged: false,
-    blocks: [
-      paragraph([
-        '0 on ship.',
-        '1 on scope change after estimate.',
-        '2 on blocked review.',
-      ]),
-    ],
-  },
-  {
-    id: 'SEE ALSO',
-    abridged: false,
-    blocks: [
-      paragraph([
-        'git-log(1), contact(1), resume.txt',
-        '',
-        'typescript - solidity - ruby - rails - react - hono - express - next -',
-        'postgresql - redis - mongodb - graphql - kubernetes',
       ]),
     ],
   },

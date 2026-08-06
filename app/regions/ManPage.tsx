@@ -28,6 +28,7 @@ const KW_MAN_CSS = `
   overflow-y:auto;overflow-x:hidden;max-height:100%;}
 .kw-man-sh{font-size:var(--fs-mono);line-height:var(--lh-code);color:var(--text-muted);}
 .kw-man-cmd,.kw-man-out,.kw-man-b,.kw-man-dt,.kw-man-dd,.kw-man-pre,.kw-man-chrome{white-space:pre;}
+.kw-man-b,.kw-man-dd{white-space:pre-wrap;word-break:break-word;}
 .kw-man-h{margin:1.4em 0 .35em;font-size:var(--fs-micro);font-weight:var(--fw-black);
   letter-spacing:var(--ls-caps);color:var(--text-faint);}
 .kw-man-sec:first-of-type .kw-man-h{margin-top:0;}

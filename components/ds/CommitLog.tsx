@@ -13,14 +13,20 @@ const HUE_VAR: Record<LogHue, string> = {
 }
 
 const COMMIT_LOG_CSS = `
-.kw-clog{list-style:none;margin:0;padding:0;font-family:var(--mono);font-size:var(--fs-mono);line-height:1.45;color:var(--text-body);}
-.kw-clog .role{margin:0;white-space:nowrap;}
-.kw-clog .org{color:var(--text-strong);font-weight:var(--fw-bold,700);}
-.kw-clog .years{color:var(--text-faint);}
-.kw-clog .entry{display:flex;flex-direction:column;gap:2px;padding:var(--sp-2,10px) 0;border-bottom:1px solid var(--bg2);}
-.kw-clog .entry:last-child{border-bottom:0;}
+.kw-clog table{width:100%;border-collapse:collapse;font-size:var(--fs-micro);}
+.kw-clog th,.kw-clog td{text-align:left;vertical-align:top;padding:var(--sp-1,6px) var(--sp-2,10px);border-bottom:1px solid var(--bg2);}
+.kw-clog thead th{color:var(--text-faint);font-weight:var(--fw-black);letter-spacing:var(--ls-caps);text-transform:uppercase;white-space:nowrap;}
+.kw-clog td.kw-clog-org{font-weight:var(--fw-bold,700);white-space:nowrap;}
+.kw-clog td.kw-clog-role{color:var(--text-body);}
+.kw-clog td.kw-clog-years{color:var(--text-faint);white-space:nowrap;}
+.kw-clog td.kw-clog-stack{color:var(--text-muted);}
+.kw-clog tbody tr:last-child td{border-bottom:0;}
 @media (max-width:720px){
-  .kw-clog .role{white-space:normal;}
+  .kw-clog thead{display:none;}
+  .kw-clog td{display:block;border:0;padding:2px 0;}
+  .kw-clog tr{border-bottom:1px solid var(--bg2);padding:var(--sp-2,10px) 0;display:block;}
+  .kw-clog tr:last-child{border-bottom:0;}
+  .kw-clog td.kw-clog-org{font-size:var(--fs-mono);}
 }
 `
 
@@ -34,11 +40,11 @@ export interface CommitLogProps {
 }
 
 /**
- * Renders the ordered career history as a git-log style list: each role is one
- * entry with the organization/title line followed by its date range line.
+ * Renders the ordered career history as a git-log style table with
+ * organization, description, dates, and languages columns.
  *
  * @param props - Ordered career rows and optional labelling overrides.
- * @returns Static role entries; no disclosure controls.
+ * @returns Static role rows; no disclosure controls.
  */
 export function CommitLog({
   commits,
@@ -47,26 +53,45 @@ export function CommitLog({
 }: CommitLogProps): ReactNode {
   const rootClassName = ['kw-clog', className].filter(Boolean).join(' ')
   return (
-    <ul aria-labelledby={labelledBy} className={rootClassName}>
+    <div className={rootClassName}>
       <style href="kw-commit-log" precedence="medium">
         {COMMIT_LOG_CSS}
       </style>
-      {commits.map((commit) => (
-        <li className="entry" key={commit.hash}>
-          <p className="role">
-            <span className="org" style={{ color: HUE_VAR[commit.hue] }}>
-              {commit.title.split('/')[0]}
-            </span>
-            {title(commit)}
-          </p>
-          <p className="years">{commit.years}</p>
-        </li>
-      ))}
-    </ul>
+      <table aria-labelledby={labelledBy}>
+        <thead>
+          <tr>
+            <th scope="col">organization</th>
+            <th scope="col">description</th>
+            <th scope="col">dates</th>
+            <th scope="col">languages</th>
+          </tr>
+        </thead>
+        <tbody>
+          {commits.map((commit) => (
+            <tr key={commit.hash}>
+              <td className="kw-clog-org" style={{ color: HUE_VAR[commit.hue] }}>
+                {organization(commit)}
+              </td>
+              <td className="kw-clog-role">
+                {role(commit)}
+                {commit.detail ? <div>{commit.detail}</div> : null}
+              </td>
+              <td className="kw-clog-years">{commit.years}</td>
+              <td className="kw-clog-stack">{commit.stack.join(', ')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
 
-function title(commit: CareerCommit): string {
+function organization(commit: CareerCommit): string {
+  const before = commit.title.split('/')[0]
+  return (before ?? commit.title).trim()
+}
+
+function role(commit: CareerCommit): string {
   const after = commit.title.indexOf('/')
-  return after < 0 ? '' : ` / ${commit.title.slice(after + 1).trim()}`
+  return after < 0 ? commit.title : commit.title.slice(after + 1).trim()
 }
