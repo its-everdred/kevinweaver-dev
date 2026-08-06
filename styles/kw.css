@@ -78,20 +78,22 @@ body {
 
 .kw-lower {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   flex: 1;
   min-height: 0;
   gap: var(--pane-gap);
 }
 
 .kw-lower > .kw-graph {
-  flex: 1 1 auto;
+  flex: 5 1 0;
   min-height: 22rem;
+  min-width: 0;
 }
 
 .kw-lower > .kw-tail {
-  flex: 0 0 auto;
-  height: 14rem;
+  flex: 1 1 0;
+  min-width: 0;
+  height: auto;
 }
 
 .kw-graph {
@@ -212,13 +214,11 @@ body {
   }
 
   .kw-graph {
-    flex: none;
     height: 26.25rem;
   }
 
   .kw-tail {
-    flex: none;
-    height: 13.125rem;
+    height: 26.25rem;
   }
 
   .kw-hide-md {
@@ -229,6 +229,19 @@ body {
 @media (max-width: 720px) {
   .kw-hide-sm {
     display: none;
+  }
+
+  .kw-lower {
+    flex-direction: column;
+  }
+
+  .kw-lower > .kw-graph {
+    flex: 1 1 auto;
+  }
+
+  .kw-lower > .kw-tail {
+    flex: 0 0 auto;
+    height: 14rem;
   }
 
   .kw-pad {

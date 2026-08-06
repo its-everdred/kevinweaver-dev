@@ -64,6 +64,7 @@ export function Instrument({ id, className, style }: InstrumentProps) {
         style={{ flex: '0 0 auto' }}
       >
         <Ribbon />
+        <TransportBar />
       </Pane>
       {head ? (
         <ContributionTable
@@ -77,11 +78,10 @@ export function Instrument({ id, className, style }: InstrumentProps) {
           as="section"
           bleed
           focus
-          footer={<TransportBar />}
           title="galaxies — repo universe"
           titleAs="h3"
           bodyClassName="kw-graph"
-          style={{ flex: 1, minWidth: 0 }}
+          style={{ flex: 5, minWidth: 0 }}
         >
           <GalaxyUniverseIsland />
         </Pane>

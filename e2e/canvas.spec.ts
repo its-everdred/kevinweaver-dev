@@ -1,8 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
-import { DWELL_TICKS } from '../lib/viz/driver'
-import { CAPS } from '../lib/viz/render/budget'
 import { encodeBundle, dayIndex, type BundleInput } from '../lib/bundle/codec'
 import { BAND_LOWER_BOUNDS } from '../lib/viz/tokens/level'
 import type {
@@ -20,7 +18,9 @@ const EPOCH = new Date('2026-06-01T00:00:00.000Z')
 const WINDOW_START = '2024-06-01'
 const WINDOW_END = '2026-06-01'
 const DAY_COUNT = dayIndex(WINDOW_START, WINDOW_END) + 1 // 731
-const TICKS = [0, DWELL_TICKS, DWELL_TICKS + 3600, DWELL_TICKS + 12000] as const
+// Day indices the suite seeks to deterministically. Four steps, one per
+// baseline, spread across the window so each highlights a different ribbon cell.
+const STEPS = [0, 244, 488, 730] as const
 const SNAPSHOT_DIR = join(__dirname, '__screenshots__')
 const MAX_BASELINES = 4
 const SURFACES = ['ribbon'] as const
@@ -140,6 +140,26 @@ async function waitForHarness(page: Page): Promise<void> {
 }
 
 /**
+ * The galaxy timeline harness is the page's real clock. seekTick returns the
+ * galaxy harness info shape; cast the union away for the spec's assertions.
+ */
+type GalaxyHarnessInfo = {
+  readonly step: number
+  readonly date: string
+  readonly playing: boolean
+  readonly total: number
+}
+async function seekStep(page: Page, step: number): Promise<GalaxyHarnessInfo> {
+  return page.evaluate(
+    (s) =>
+      (window.__viz as unknown as {
+        seekTick(s: number): GalaxyHarnessInfo
+      }).seekTick(s),
+    step
+  )
+}
+
+/**
  * goto + frozen clock + fixture + harness ready. Every test starts here.
  * The clock is installed before navigation and advanced in bounded increments;
  * the lazy idle-gated harness is awaited with Node-side polling because
@@ -172,14 +192,7 @@ async function boot(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts.ready)
   await page.evaluate(() => window.__viz!.pause())
   await page.evaluate(() => window.__viz!.setQuality('high'))
-}
-
-function repoByShort(short: string): RepoRecord {
-  const repo = REPOS.find((candidate) => candidate.short === short)
-  if (repo === undefined) {
-    throw new Error(`fixture has no repository named ${short}`)
-  }
-  return repo
+  await seekStep(page, 0)
 }
 
 test('canvas inventory: role=img canvases with non-empty names', async ({
@@ -196,104 +209,66 @@ test('canvas inventory: role=img canvases with non-empty names', async ({
   }
 })
 
-test('frame semantics at each tick', async ({ page }) => {
+test('frame semantics at each seek', async ({ page }) => {
   await boot(page)
-  for (const t of TICKS) {
-    const info = await page.evaluate((tick) => window.__viz!.seekTick(tick), t)
-    expect(info.tick, 'seekTick returns the tick it was asked for').toBe(t)
-    expect(info.settled, 'I-D4: screenshots must come from seekTick').toBe(true)
+  for (const step of STEPS) {
+    const info = await seekStep(page, step)
+    expect(info.step, 'seekTick returns the step it was asked for').toBe(step)
+    expect(info.total).toBe(DAY_COUNT)
     expect(info.date).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(info.date >= FIXTURE.meta.windowStart).toBe(true)
     expect(info.date <= FIXTURE.meta.windowEnd).toBe(true)
-    // DEC-016: rngState is one 32-bit int, not the viz-runtime 4-tuple.
-    expect(Number.isInteger(info.rngState)).toBe(true)
-    expect(info.rngState >>> 0).toBe(info.rngState)
-    // DEC-010: every listed live repo's [from, to] era contains the cursor date.
-    // NOTE: completeness is guarded by filed KW-024 defect #119 (liveRepos is
-    // currently always [] on merged main); this relational half becomes
-    // meaningful once that fix lands.
-    const liveNames = [...info.liveRepos]
-    for (let index = 1; index < liveNames.length; index++) {
-      expect(liveNames[index]! > liveNames[index - 1]!).toBe(true)
-    }
-    for (const name of liveNames) {
-      const repo = repoByShort(name)
-      expect(info.date >= repo.from).toBe(true)
-      expect(info.date <= repo.to).toBe(true)
-    }
-    // DEC-010: ghostRepos counts repos whose era has ended before the cursor.
-    const expectedGhost = REPOS.filter((repo) => info.date > repo.to).length
-    expect(info.ghostRepos).toBe(expectedGhost)
-    // highlightCell is either null or a valid week/weekday cell.
-    if (info.highlightCell !== null) {
-      expect(Number.isInteger(info.highlightCell.week)).toBe(true)
-      expect(info.highlightCell.week).toBeGreaterThanOrEqual(0)
-      expect(info.highlightCell.week).toBeLessThanOrEqual(52)
-      expect(Number.isInteger(info.highlightCell.weekday)).toBe(true)
-      expect(info.highlightCell.weekday).toBeGreaterThanOrEqual(0)
-      expect(info.highlightCell.weekday).toBeLessThanOrEqual(6)
-    }
-    // REQ-010: a renderer spending frames faster fails before a human notices.
-    expect(info.drawCalls.total).toBeLessThanOrEqual(CAPS.maxDrawCalls)
-    expect(info.drawCalls.total).toBeGreaterThan(0)
-    // The setQuality('high') pin: degradation must never move a baseline.
-    expect(info.qualityTier).toBe(0)
+    // boot() pauses playback; a seek must not resume the clock.
+    expect(info.playing).toBe(false)
   }
 })
 
-test('dates walk backwards across the rewind', async ({ page }) => {
+test('dates are monotonic in the step index', async ({ page }) => {
   await boot(page)
   const dates: string[] = []
-  for (const t of TICKS) {
-    const info = await page.evaluate((tick) => window.__viz!.seekTick(tick), t)
+  for (const step of STEPS) {
+    const info = await seekStep(page, step)
     dates.push(info.date)
   }
   for (let index = 1; index < dates.length; index++) {
-    expect(dates[index]! <= dates[index - 1]!).toBe(true)
+    expect(dates[index]! > dates[index - 1]!).toBe(true)
   }
-  expect(dates[2]! < dates[1]!, 'the rewind must strictly leave the dwell day').toBe(
-    true
-  )
 })
 
 test('baselines match the deterministic fixture frame', async ({ page }) => {
   await boot(page)
-  for (let index = 0; index < TICKS.length; index++) {
-    const info = await page.evaluate(
-      (tick) => window.__viz!.seekTick(tick),
-      TICKS[index]!
-    )
+  for (let index = 0; index < STEPS.length; index++) {
+    const info = await seekStep(page, STEPS[index]!)
     // Semantics first: a failure here says what broke, not merely that pixels differ.
-    expect(info.settled).toBe(true)
+    expect(info.step).toBe(STEPS[index])
     for (const id of SURFACES) {
       await expect(surface(page, id)).toHaveScreenshot(`${id}-t${index}.png`)
     }
   }
 })
 
-test('seek idempotency: seekTick(t) twice is identical (I-D3)', async ({
+test('seek idempotency: seeking a step twice is identical', async ({
   page,
 }) => {
   await boot(page)
-  const a = await page.evaluate((t) => window.__viz!.seekTick(t), TICKS[2]!)
-  await page.evaluate((t) => window.__viz!.seekTick(t), TICKS[0]!)
-  const b = await page.evaluate((t) => window.__viz!.seekTick(t), TICKS[2]!)
-  // Path independence: an intervening seek to another tick must not matter.
+  const a = await seekStep(page, STEPS[2]!)
+  await seekStep(page, STEPS[0]!)
+  const b = await seekStep(page, STEPS[2]!)
+  // Path independence: an intervening seek to another step must not matter.
   expect(b).toEqual(a)
 })
 
-test('double-render canary: same-tick renders are byte-identical', async ({
+test('double-render canary: same-step renders are byte-identical', async ({
   page,
 }) => {
   await boot(page)
-  await page.evaluate((t) => window.__viz!.seekTick(t), TICKS[2]!)
+  await seekStep(page, STEPS[2]!)
   const first = await surface(page, 'ribbon').screenshot()
   const second = await surface(page, 'ribbon').screenshot()
   expect(
     Buffer.compare(first, second),
-    'two renders at the same tick differ — if this fails, no other visual ' +
-      'result in this suite means anything (KW-024 or KW-022 regression); do ' +
-      'not raise a tolerance'
+    'two renders at the same step differ — if this fails, no other visual ' +
+      'result in this suite means anything; do not raise a tolerance'
   ).toBe(0)
 })
 

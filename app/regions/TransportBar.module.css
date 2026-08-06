@@ -98,6 +98,13 @@
   color: var(--text-dim);
 }
 
+.dateLabel {
+  margin-left: auto;
+  font-size: var(--fs-micro);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
 .jumpBirth .mark {
   color: var(--purple);
 }

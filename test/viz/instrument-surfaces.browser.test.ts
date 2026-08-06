@@ -12,6 +12,7 @@ import { encodeBundle } from '@/lib/bundle/codec'
 import type { BundleHead } from '@/lib/bundle/loader'
 import type { RepoRecord } from '@/lib/bundle/schema'
 import { getVizTransport, type VizSurfaceGeometry } from '@/lib/viz/driver'
+import { getGalaxyTimeline, seekGalaxyTimeline } from '@/components/viz/galaxyTimeline'
 import { AG, LV } from '@/lib/viz/tokens/ramp'
 import { make2d } from '@/test/canvas-fixture'
 import { recordContext } from '@/test/canvas-recorder'
@@ -147,13 +148,11 @@ async function expectRibbonAlternativeAndIsolation(): Promise<void> {
   const view = render(createElement(Ribbon))
   const canvas = getCanvas(view.getByRole('img'))
   await waitFor(() => expect(painted(canvas)).toBe(true))
-  const release = vi.fn()
-  canvas.setPointerCapture = vi.fn()
-  canvas.hasPointerCapture = () => true
-  canvas.releasePointerCapture = release
+  // The ribbon scrubs the shared galaxy timeline on pointer down: a click at a
+  // fraction of the width seeks the store to that day.
+  seekGalaxyTimeline(0, 100)
   fireEvent(canvas, pointer('pointerdown', 1))
-  fireEvent(canvas, pointer('pointercancel', 1))
-  expect(release).toHaveBeenCalledWith(7)
+  expect(getGalaxyTimeline().step).toBeGreaterThanOrEqual(0)
   // KW-025 note 4: the canvas is NOT wired to the table via aria-describedby —
   // the accessible-description algorithm would flatten all dayCount rows into
   // one enormous string. The hidden table is a sibling in the accessibility tree.

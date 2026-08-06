@@ -28,6 +28,7 @@ const KW_MAN_CSS = `
   overflow-y:auto;overflow-x:hidden;max-height:100%;}
 .kw-man-sh{font-size:var(--fs-mono);line-height:var(--lh-code);color:var(--text-muted);}
 .kw-man-cmd,.kw-man-out,.kw-man-b,.kw-man-dt,.kw-man-dd,.kw-man-pre,.kw-man-chrome{white-space:pre;}
+.kw-man-b,.kw-man-dd{white-space:pre-wrap;word-break:break-word;}
 .kw-man-h{margin:1.4em 0 .35em;font-size:var(--fs-micro);font-weight:var(--fw-black);
   letter-spacing:var(--ls-caps);color:var(--text-faint);}
 .kw-man-sec:first-of-type .kw-man-h{margin-top:0;}
@@ -40,7 +41,10 @@ const KW_MAN_CSS = `
 .kw-man-sh>.kw-man-cmd:first-child{margin-top:0;}
 .kw-man-out{margin:0;}
 .kw-man-chrome{display:flex;gap:2ch;margin:0 0 1.2em;color:var(--text-faint);}
+.kw-man-chrome>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.kw-man-chrome>:nth-child(1){flex:0 0 auto;}
 .kw-man-chrome>:nth-child(2){flex:1 1 auto;text-align:center;}
+.kw-man-chrome>:nth-child(3){flex:0 0 auto;}
 .kw-man-doc>.kw-man-chrome:last-of-type{margin:1.6em 0 0;}
 .kw-man-hint{display:none;margin:1.2em 0 0;padding-left:7ch;color:var(--text-faint);}
 @media (max-width:1080px){
