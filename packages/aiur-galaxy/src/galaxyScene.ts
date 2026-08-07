@@ -82,8 +82,16 @@ export interface GalaxyScene {
   /** One label per repo, in layout order, hidden until revealed. */
   readonly labels: readonly RepoLabel[]
   readonly contributors: SceneContributor[]
-  /** Promotes the stars this frame names, re-aims the beams, sets the labels. */
-  setFrame(layout: UniverseLayout, frame: UniverseFrame): GalaxyFrameStats
+  /**
+   * Promotes the stars this frame names, re-aims the beams, sets the labels.
+   * @param reach How much of each beam is drawn, from `beamReach`: the day's
+   * beams grow out of their contributor node and retract back into it.
+   */
+  setFrame(
+    layout: UniverseLayout,
+    frame: UniverseFrame,
+    reach?: number
+  ): GalaxyFrameStats
   /** Marks the repo the viewer is highlighting, whose label stays revealed. */
   setHighlight(repoId: number | null): void
   /**
@@ -146,15 +154,17 @@ export interface BeamField {
   /**
    * Aims one beam per current contribution; caps and reports the overflow.
    * Beams end where the disc's turn has carried their star, not where the
-   * layout left it at rest.
+   * layout left it at rest, and `reach` is how much of that distance is drawn:
+   * 1 is a whole beam, 0 one retracted into the node it radiates from.
    */
   setFrame(
     layout: UniverseLayout,
     frame: UniverseFrame,
     origins: readonly BeamOrigin[],
-    turn?: DiscTurn
+    turn?: DiscTurn,
+    reach?: number
   ): BeamStats
-  /** Re-anchors the drawn beams as their contributor nodes ease into place. */
+  /** Re-anchors the drawn beams as their contributor nodes glide into place. */
   setOrigins(origins: readonly BeamOrigin[]): void
   dispose(): void
 }
@@ -293,10 +303,10 @@ export function createGalaxyScene(
     beams: beamField.lines,
     labels: labels.meshes,
     contributors,
-    setFrame(layout, frame) {
+    setFrame(layout, frame, reach = 1) {
       frameShown = frame
       const promoted = starField.setFrame(layout, frame)
-      const beams = beamField.setFrame(layout, frame, contributorOrigins(), turn)
+      const beams = beamField.setFrame(layout, frame, contributorOrigins(), turn, reach)
       return {
         promoted,
         beams: beams.drawn,
@@ -515,20 +525,33 @@ export function createBeamField(
 
   const actorColors = [toColor(theme.contributor), toColor(theme.agent)] as const
   const anchors = [new Vector3(), new Vector3()] as const
-  /** Actor of each drawn beam, so an eased node re-anchors only its own. */
+  /** Actor of each drawn beam, so a gliding node re-anchors only its own. */
   const beamActors: UniverseActor[] = []
+  /** Where each drawn beam's star is, so a part-drawn beam can be re-aimed. */
+  const targets = new Float32Array(maxBeams * 3)
+  /** How much of each beam is drawn, held so a re-anchor keeps the fraction. */
+  let reachDrawn = 1
 
   const anchor = (origins: readonly BeamOrigin[]): void => {
     for (const origin of origins) anchors[origin.actor]?.set(origin.x, origin.y, origin.z)
   }
 
-  const writeOrigin = (beam: number, actor: UniverseActor): void => {
+  const reachFrom = (origin: number, star: number | undefined): number =>
+    origin * (1 - reachDrawn) + (star ?? origin) * reachDrawn
+
+  const writeBeam = (beam: number, actor: UniverseActor): void => {
     const point = anchors[actor]
     if (!point) return
     const offset = beam * 6
+    const target = beam * 3
     positions[offset] = point.x
     positions[offset + 1] = point.y
     positions[offset + 2] = point.z
+    // The far end is weighted between the node and the star rather than
+    // offset from the node, so a whole beam ends exactly on its star.
+    positions[offset + 3] = reachFrom(point.x, targets[target])
+    positions[offset + 4] = reachFrom(point.y, targets[target + 1])
+    positions[offset + 5] = reachFrom(point.z, targets[target + 2])
   }
 
   /** Uploads only the beams in the draw range, not the whole capped buffer. */
@@ -540,8 +563,9 @@ export function createBeamField(
 
   return {
     lines,
-    setFrame(layout, frame, origins, turn = DISC_STILL) {
+    setFrame(layout, frame, origins, turn = DISC_STILL, reach = 1) {
       anchor(origins)
+      reachDrawn = reach
       beamActors.length = 0
       let drawn = 0
       let dropped = 0
@@ -552,11 +576,11 @@ export function createBeamField(
           dropped++
           continue
         }
-        const offset = drawn * 6
-        writeOrigin(drawn, contribution.actor)
-        positions[offset + 3] = worldX(turnX(turn, star.x, star.y))
-        positions[offset + 4] = worldY(turnY(turn, star.x, star.y))
-        positions[offset + 5] = worldZ(star.z)
+        const target = drawn * 3
+        targets[target] = worldX(turnX(turn, star.x, star.y))
+        targets[target + 1] = worldY(turnY(turn, star.x, star.y))
+        targets[target + 2] = worldZ(star.z)
+        writeBeam(drawn, contribution.actor)
         const beamColor = actorColors[contribution.actor] ?? actorColors[0]
         writeColor(colors, drawn * 2, beamColor)
         writeColor(colors, drawn * 2 + 1, beamColor)
@@ -573,7 +597,7 @@ export function createBeamField(
       for (let beam = 0; beam < beamActors.length; beam++) {
         const actor = beamActors[beam]
         if (actor === undefined) continue
-        writeOrigin(beam, actor)
+        writeBeam(beam, actor)
       }
       flush(position, beamActors.length)
     },

@@ -14,15 +14,12 @@ import {
 import { layoutUniverse } from '@/packages/aiur-galaxy/src/galaxy'
 import { discSpin } from '@/packages/aiur-galaxy/src/galaxyWorld'
 import {
-  nextWindowStep,
   playbackWindowEnd,
   universeFrame,
 } from '@/packages/aiur-galaxy/src/universePlayback'
 import { resolveContributors } from '@/packages/aiur-galaxy/src/contributors'
-import type {
-  UniverseActor,
-  UniverseSnapshot,
-} from '@/packages/aiur-galaxy/src/types'
+import type { UniverseSnapshot } from '@/packages/aiur-galaxy/src/types'
+import { createGalaxyDayClock } from './galaxyDayClock'
 import {
   getGalaxyTimeline,
   publishGalaxyTimeline,
@@ -31,9 +28,6 @@ import {
 import { installGalaxyTestHarness } from './galaxyTestHarness'
 import type { PointerPosition } from './useGalaxyPointer'
 
-/** One day of playback per second. */
-const STEP_MS = 1000
-const EASE = 0.12
 /**
  * Playback runs the rolling one-year window from the most recent day toward
  * the past. Sweeping the whole history forward at one day per second would run
@@ -111,22 +105,17 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
     const observer = new ResizeObserver(resize)
     observer.observe(canvas)
 
+    const days = createGalaxyDayClock(universe)
     let raf = 0
-    let last = performance.now()
     /** Wall clock the disc's turn is measured from, never the playback step. */
-    const opened = last
+    const opened = performance.now()
     let overflow = 0
-    const eased: Partial<Record<UniverseActor, { x: number; y: number }>> = {}
     const frame = (now: number): void => {
       const clock = getGalaxyTimeline()
       if (clock.total === universe.stepCount) {
-        if (!reducedMotion && now - last >= STEP_MS && clock.playing) {
-          last = now
-          seekGalaxyTimeline(
-            nextWindowStep(clock.step, universe.stepCount, clock.direction),
-            universe.stepCount
-          )
-        }
+        const animated = !reducedMotion && clock.playing
+        const day = days.advance(clock.step, clock.direction, now, animated)
+        if (day !== clock.step) seekGalaxyTimeline(day, universe.stepCount)
         if (live) {
           // The camera is read here rather than pushed on change so a scene
           // rebuilt for newly loaded data adopts the viewer's camera instead of
@@ -141,10 +130,10 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
               : null
           )
           const playback = universeFrame(universe, clock.step, clock.direction)
-          const stats = live.setFrame(layout, playback)
+          const stats = live.setFrame(layout, playback, days.reach(now, animated))
           overflow = surfaceBeamOverflow(canvas, stats.beamOverflow, overflow)
           const targets = resolveContributors(layout, playback)
-          live.setContributors(easedContributors(eased, targets))
+          live.setContributors(days.glide.at(targets, days.phase(now, animated)))
           live.render()
         }
       }
@@ -180,24 +169,4 @@ function surfaceBeamOverflow(
   if (overflow > 0) canvas.dataset.beamOverflow = String(overflow)
   else delete canvas.dataset.beamOverflow
   return overflow
-}
-
-function easedContributors(
-  current: Partial<Record<UniverseActor, { x: number; y: number }>>,
-  targets: readonly { actor: UniverseActor; x: number; y: number; active: boolean }[]
-): readonly { actor: UniverseActor; x: number; y: number }[] {
-  for (const target of targets) {
-    const existing = current[target.actor]
-    if (!existing) {
-      current[target.actor] = { x: target.x, y: target.y }
-      continue
-    }
-    existing.x += (target.x - existing.x) * EASE
-    existing.y += (target.y - existing.y) * EASE
-  }
-  return targets.map((target) => ({
-    actor: target.actor,
-    x: current[target.actor]?.x ?? target.x,
-    y: current[target.actor]?.y ?? target.y,
-  }))
 }
