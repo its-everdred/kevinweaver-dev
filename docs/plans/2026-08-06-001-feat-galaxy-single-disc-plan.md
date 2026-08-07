@@ -46,7 +46,7 @@ Underneath the symptom is a representational problem the current design cannot s
 
 - **Radius encodes recency, not size.** A repo's distance from the galactic center is set by its most recent activity: the newest work sits in the core, the oldest on the rim. This makes the galaxy readable as a timeline at a glance and defuses the `aiur` dominance problem, because volume no longer buys position. (session-settled: user-directed — chosen over size-ordered or hash-scattered placement: "cluster the most recently active repos near the center... older projects further out on arms".)
 
-- **Labels are revealed, not permanent.** A label appears when its repo is highlighted by the viewer, and when the repo receives a contribution — fading out over the following few days of playback. Seeing 60 names at once was tried and rejected once the disc was full: the frame reads as noise rather than a galaxy. Identity is now on demand and on activity. (session-settled: user-directed — chosen over always-on labels, which the operator initially asked for and then reversed after seeing the built result: "lets hide repo labels unless the user highlights, or when contributions have been made".)
+- **Labels are revealed, not permanent.** Hidden by default. A contribution highlights the owning repo's label and keeps it lit for a long stretch of playback, so recent work stays named as the year scrolls past. Hovering reveals whatever repos sit under the pointer, and that reveal ends with the hover. Seeing 60 names at once was tried and rejected once the disc was full: the frame read as noise rather than a galaxy. Identity is now on activity and on demand. (session-settled: user-directed — chosen over always-on labels, which the operator initially asked for and then reversed after seeing the built result.)
 
 - **Zapped stars stay bright forever.** A star's brightness is cumulative history, not current state. Unzapped stars are dim but visible; a contribution promotes a star permanently. The playback therefore paints a brightening galaxy rather than a blinking one. (session-settled: user-directed — "stars should glow brighter once zapped, lets leave them bright".)
 
@@ -66,7 +66,7 @@ Underneath the symptom is a representational problem the current design cannot s
 - R2. A repo's radial position is a function of its most recent contribution date: the most recently active repo sits nearest the center and the least recently active sits nearest the rim.
 - R3. Every repo's stars are distributed along the arm at that repo's radius, spread widely enough that the disc reads as a star field rather than as stars glued to thin arm curves. Adjacent repos blend into a continuous arm rather than forming a visible concentric ring.
 - R4. Every file in every repo is a star in the scene, with no per-repo cap that silently drops files.
-- R5. A repo's label is hidden by default and revealed on two triggers: the viewer highlighting that repo, and the repo receiving a contribution. A contribution-revealed label fades out over the following few days of playback.
+- R5. A repo's label is hidden by default and revealed on exactly two triggers. An actor contributing to the repo highlights its label, which then persists for a long stretch of playback before fading. The viewer hovering a region of the galaxy reveals the labels of repos there, and that reveal ends when the hover does.
 - R6. Star placement is deterministic: the same input data produces byte-identical geometry across renders, with no `Math.random` and no wall-clock input.
 
 **Contribution playback**
