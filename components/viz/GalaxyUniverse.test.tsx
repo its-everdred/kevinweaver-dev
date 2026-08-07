@@ -62,7 +62,7 @@ interface Orbit {
 }
 
 function galaxyCanvas(): HTMLCanvasElement {
-  const canvas = screen.getByRole('img', { name: /repository galaxies/i })
+  const canvas = screen.getByRole('img', { name: /repository map/i })
   if (!(canvas instanceof HTMLCanvasElement)) throw new Error('not a canvas')
   return canvas
 }
@@ -147,7 +147,7 @@ describe('the galaxy canvas text alternative', () => {
     render(<GalaxyUniverse />)
     const canvas = galaxyCanvas()
     expect(canvas.dataset.chunk).toBe('kw-galaxy-universe')
-    expect(canvas.getAttribute('aria-label')).toMatch(/repository galaxies/i)
+    expect(canvas.getAttribute('aria-label')).toMatch(/repository map/i)
     expect(canvas.textContent).toMatch(/most recently active repos/i)
     expect(canvas.tabIndex).toBe(0)
   })

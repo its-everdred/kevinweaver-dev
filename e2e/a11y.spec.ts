@@ -162,7 +162,7 @@ test('canvas exposes a name and a real text equivalent @a11y', async ({
     if (graph) graph.scrollIntoView({ block: 'center' })
   })
   const ribbon = page.getByRole('img', { name: /contribution grid/i })
-  const galaxies = page.getByRole('img', { name: /repository galaxies/i })
+  const galaxies = page.getByRole('img', { name: /repository map/i })
   for (const canvas of [ribbon, galaxies]) {
     await expect(canvas).toBeVisible()
     expect(await canvas.evaluate((el) => el.tagName)).toBe('CANVAS')

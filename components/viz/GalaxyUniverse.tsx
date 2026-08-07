@@ -19,12 +19,12 @@ import styles from './GalaxyUniverse.module.css'
 export const GALAXY_CHUNK_MARKER = 'kw-galaxy-universe'
 
 function galaxyLabel(runtime: InstrumentRuntimeState): string {
-  if (runtime.status === 'unavailable') return 'Repository galaxies unavailable.'
-  if (runtime.status === 'loading') return 'Repository galaxies loading.'
+  if (runtime.status === 'unavailable') return 'Repository map unavailable.'
+  if (runtime.status === 'loading') return 'Repository map loading.'
   // The camera hint belongs in the name: a canvas with an `aria-label` never
   // announces its fallback subtree, so this is the only place a keyboard user
   // is told that the arrow and plus/minus keys drive the view.
-  return 'Repository galaxies: one spiral disc where every repo is an arm and every file a star, brightening across the contribution window. Drag or use the arrow keys to rotate it, and pinch, press plus or minus, or use the zoom buttons to change the distance.'
+  return 'Repository map: one spiral disc where every repo is an arm and every file a star, brightening across the contribution window. Drag or use the arrow keys to rotate it, and pinch, press plus or minus, or use the zoom buttons to change the distance.'
 }
 
 /**
