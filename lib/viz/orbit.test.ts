@@ -31,15 +31,18 @@ describe('orbit state', () => {
     ])
   })
 
-  it('starts face-on to the disc at the scene build distance', () => {
+  it('starts tilted above the disc, looking down at it', () => {
+    // The opening view is a plate seen from across the table rather than a flat
+    // face-on target: the camera sits as far above the disc plane as it does in
+    // front of it, which is what a 45 degree polar angle buys.
     expect(DEFAULT_ORBIT.azimuth).toBe(0)
-    expect(DEFAULT_ORBIT.polar).toBeCloseTo(Math.PI / 2, 12)
-    expect(orbitPosition(DEFAULT_ORBIT).x).toBeCloseTo(0, 12)
-    expect(orbitPosition(DEFAULT_ORBIT).y).toBeCloseTo(0, 12)
-    expect(orbitPosition(DEFAULT_ORBIT).z).toBeCloseTo(
-      DEFAULT_ORBIT.distance,
-      12
-    )
+    expect(DEFAULT_ORBIT.polar).toBeCloseTo(Math.PI / 4, 12)
+    const view = orbitPosition(DEFAULT_ORBIT)
+    expect(view.x).toBeCloseTo(0, 12)
+    expect(view.y).toBeGreaterThan(0)
+    expect(view.y).toBeCloseTo(view.z, 12)
+    // And far enough back to hold the disc, which spans 6 world units.
+    expect(DEFAULT_ORBIT.distance).toBeGreaterThan(5)
   })
 })
 
@@ -74,7 +77,8 @@ describe('rotation', () => {
     const spun = rotate(DEFAULT_ORBIT, TWO_PI * 3, 0)
     expect(spun.azimuth).toBeGreaterThan(-Math.PI)
     expect(spun.azimuth).toBeLessThanOrEqual(Math.PI)
-    expect(orbitPosition(spun).z).toBeCloseTo(DEFAULT_ORBIT.distance, 9)
+    // A full spin returns the camera to where it started, whatever the tilt.
+    expect(orbitPosition(spun).z).toBeCloseTo(orbitPosition(DEFAULT_ORBIT).z, 9)
   })
 
   it('leaves the dolly distance untouched', () => {

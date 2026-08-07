@@ -18,6 +18,11 @@ import {
   type InstrumentRuntimeState,
 } from './instrumentRuntime'
 import {
+  clearGalaxySelection,
+  getGalaxySelection,
+  publishGalaxySelection,
+} from './galaxySelection'
+import {
   getGalaxyTimeline,
   publishGalaxyTimeline,
   seekGalaxyTimeline,
@@ -140,6 +145,7 @@ beforeEach(() => {
     windowStartISO: HEAD.manifest.windowStart,
   })
   seekGalaxyTimeline(START_STEP, TOTAL)
+  clearGalaxySelection()
 })
 
 describe('the galaxy canvas text alternative', () => {
@@ -283,6 +289,70 @@ describe('reduced motion', () => {
     expect(orbitOf(canvas).distance).toBeLessThan(at_rest.distance)
     drag(canvas, [10, 10], [80, 60])
     expect(orbitOf(canvas).azimuth).not.toBe(at_rest.azimuth)
+  })
+})
+
+describe('clicking the galaxy selects a repo', () => {
+  /** A repo the pane is already showing, so a clear is observable. */
+  function preselect(): void {
+    publishGalaxySelection({
+      repoId: 1,
+      name: 'fixture/beta',
+      fileCount: 4,
+      lastStep: 3,
+    })
+  }
+
+  function press(canvas: HTMLCanvasElement, at: readonly [number, number]): void {
+    fireEvent.pointerDown(canvas, {
+      pointerId: 1,
+      clientX: at[0],
+      clientY: at[1],
+      buttons: 1,
+    })
+  }
+
+  function lift(canvas: HTMLCanvasElement, at: readonly [number, number]): void {
+    fireEvent.pointerUp(canvas, { pointerId: 1, clientX: at[0], clientY: at[1] })
+  }
+
+  it('clears the selection when the click finds no repo', () => {
+    render(<GalaxyUniverse />)
+    const canvas = galaxyCanvas()
+    preselect()
+    press(canvas, [300, 200])
+    lift(canvas, [300, 200])
+    expect(getGalaxySelection().repoId).toBeNull()
+    expect(getGalaxySelection().name).toBeNull()
+  })
+
+  it('leaves the selection alone when the pointer was dragged', () => {
+    render(<GalaxyUniverse />)
+    const canvas = galaxyCanvas()
+    preselect()
+    // The same gesture that rotates the camera must not also pick a repo, or
+    // every orbit would reselect whatever the pointer happened to land on.
+    drag(canvas, [100, 100], [260, 180])
+    lift(canvas, [260, 180])
+    expect(getGalaxySelection().repoId).toBe(1)
+  })
+
+  it('forgives the hand shake a real click has in it', () => {
+    render(<GalaxyUniverse />)
+    const canvas = galaxyCanvas()
+    preselect()
+    drag(canvas, [100, 100], [102, 101])
+    lift(canvas, [102, 101])
+    expect(getGalaxySelection().repoId).toBeNull()
+  })
+
+  it('keeps the camera answering the same gesture', () => {
+    render(<GalaxyUniverse />)
+    const canvas = galaxyCanvas()
+    const before = orbitOf(canvas)
+    drag(canvas, [100, 100], [260, 180])
+    lift(canvas, [260, 180])
+    expect(orbitOf(canvas).azimuth).not.toBe(before.azimuth)
   })
 })
 

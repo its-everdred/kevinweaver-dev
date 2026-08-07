@@ -17,6 +17,13 @@ import {
 const ZOOM_STEP = 1.25
 /** Radians one arrow key turns the camera. */
 const KEY_TURN = Math.PI / 24
+/**
+ * Client pixels a pointer may travel and still count as a click. Every drag
+ * starts as a press, so without a slop the same gesture that rotates the disc
+ * would also pick whatever arm it happened to end over; with one, a hand that
+ * shakes by a pixel or two still clicks.
+ */
+const CLICK_SLOP = 6
 
 /** Where each active pointer last was, in client pixels. */
 type Pointers = Map<number, { x: number; y: number }>
@@ -25,6 +32,10 @@ interface Gesture {
   readonly pointers: Pointers
   /** Distance between the first two pointers on the previous move, or 0. */
   span: number
+  /** Where the current gesture began, or null when no pointer is down. */
+  origin: { x: number; y: number } | null
+  /** True once the gesture has travelled far enough to be a drag, not a click. */
+  dragged: boolean
 }
 
 /** Camera controls shared by the canvas, the zoom buttons, and the keyboard. */
@@ -35,6 +46,11 @@ export interface GalaxyCamera {
   readonly orbitRef: RefObject<OrbitState>
   readonly zoomIn: () => void
   readonly zoomOut: () => void
+  /**
+   * Whether the gesture this pointer-up ends was a click rather than a drag.
+   * Read it before handing the event on: `onPointerUp` retires the gesture.
+   */
+  readonly isClick: (event: ReactPointerEvent<HTMLCanvasElement>) => boolean
   readonly onKeyDown: (event: ReactKeyboardEvent<HTMLCanvasElement>) => void
   readonly onPointerCancel: (
     event: ReactPointerEvent<HTMLCanvasElement>
@@ -57,7 +73,12 @@ export interface GalaxyCamera {
 export function useGalaxyCamera(): GalaxyCamera {
   const [orbit, setOrbit] = useState<OrbitState>(DEFAULT_ORBIT)
   const orbitRef = useRef<OrbitState>(DEFAULT_ORBIT)
-  const gesture = useRef<Gesture>({ pointers: new Map(), span: 0 })
+  const gesture = useRef<Gesture>({
+    pointers: new Map(),
+    span: 0,
+    origin: null,
+    dragged: false,
+  })
 
   const apply = useCallback((action: OrbitAction): void => {
     // Read through the ref, not through state: a gesture can dispatch several
@@ -73,6 +94,13 @@ export function useGalaxyCamera(): GalaxyCamera {
       const { pointers } = gesture.current
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
       gesture.current.span = pinchSpan(pointers)
+      if (pointers.size === 1) {
+        gesture.current.origin = { x: event.clientX, y: event.clientY }
+        gesture.current.dragged = false
+        return
+      }
+      // A second finger is a pinch. Pinches are never clicks.
+      gesture.current.dragged = true
     },
     []
   )
@@ -85,6 +113,15 @@ export function useGalaxyCamera(): GalaxyCamera {
       const dx = event.clientX - previous.x
       const dy = event.clientY - previous.y
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
+      // A gesture that has once travelled past the slop stays a drag, even if
+      // it wanders back: the camera has already moved, so the pointer-up is
+      // the end of a rotation and not a pick.
+      const origin = gesture.current.origin
+      if (
+        origin &&
+        Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > CLICK_SLOP
+      )
+        gesture.current.dragged = true
       if (pointers.size > 1) {
         apply({ type: 'dolly', factor: pinchFactor(gesture.current) })
         return
@@ -104,6 +141,18 @@ export function useGalaxyCamera(): GalaxyCamera {
       const { pointers } = gesture.current
       pointers.delete(event.pointerId)
       gesture.current.span = pinchSpan(pointers)
+      if (pointers.size === 0) gesture.current.origin = null
+    },
+    []
+  )
+
+  const isClick = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>): boolean => {
+      const { origin, dragged } = gesture.current
+      if (!origin || dragged) return false
+      return (
+        Math.hypot(event.clientX - origin.x, event.clientY - origin.y) <= CLICK_SLOP
+      )
     },
     []
   )
@@ -117,6 +166,8 @@ export function useGalaxyCamera(): GalaxyCamera {
         release(event.currentTarget, pointerId)
       pointers.clear()
       gesture.current.span = 0
+      // A gesture that left the canvas has no click in it either.
+      gesture.current.origin = null
     },
     []
   )
@@ -142,6 +193,7 @@ export function useGalaxyCamera(): GalaxyCamera {
       () => apply({ type: 'dolly', factor: ZOOM_STEP }),
       [apply]
     ),
+    isClick,
     onKeyDown,
     onPointerCancel: onPointerUp,
     onPointerDown,

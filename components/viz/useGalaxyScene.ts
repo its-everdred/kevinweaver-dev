@@ -17,7 +17,7 @@ import {
   playbackWindowEnd,
   universeFrame,
 } from '@/packages/aiur-galaxy/src/universePlayback'
-import { resolveContributors } from '@/packages/aiur-galaxy/src/universeRender'
+import { resolveContributors } from '@/packages/aiur-galaxy/src/contributors'
 import type {
   UniverseActor,
   UniverseSnapshot,
@@ -52,6 +52,11 @@ export interface GalaxySceneHost {
   readonly orbitRef: RefObject<OrbitState>
   /** The hover position, for the repo highlight. */
   readonly pointerRef: RefObject<PointerPosition | null>
+  /**
+   * Filled with the live scene for as long as it exists, so a click can reach
+   * the pick without the pointer hook owning any of the scene's lifetime.
+   */
+  readonly sceneRef: RefObject<GalaxyScene | null>
 }
 
 /**
@@ -63,7 +68,7 @@ export interface GalaxySceneHost {
  * @param host The canvas, data, and interaction refs to render from.
  */
 export function useGalaxyScene(host: GalaxySceneHost): void {
-  const { canvasRef, universe, windowStart, orbitRef, pointerRef } = host
+  const { canvasRef, universe, windowStart, orbitRef, pointerRef, sceneRef } = host
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -76,6 +81,7 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
       return
     }
     let live: GalaxyScene | null = scene
+    sceneRef.current = scene
 
     // Initialize the shared clock from this universe's bounds. Reduced-motion
     // users see a static day: playback only advances on an explicit seek.
@@ -133,11 +139,7 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
           const playback = universeFrame(universe, clock.step, clock.direction)
           const stats = live.setFrame(layout, playback)
           overflow = surfaceBeamOverflow(canvas, stats.beamOverflow, overflow)
-          const metrics = {
-            width: Math.round(canvas.clientWidth * dpr),
-            height: Math.round(canvas.clientHeight * dpr),
-          }
-          const targets = resolveContributors(layout, playback, metrics)
+          const targets = resolveContributors(layout, playback)
           live.setContributors(easedContributors(eased, targets))
           live.render()
         }
@@ -150,9 +152,10 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
       cancelAnimationFrame(raf)
       removeHarness()
       live = null
+      sceneRef.current = null
       scene?.dispose()
     }
-  }, [canvasRef, orbitRef, pointerRef, universe, windowStart])
+  }, [canvasRef, orbitRef, pointerRef, sceneRef, universe, windowStart])
 }
 
 /**

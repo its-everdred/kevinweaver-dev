@@ -83,6 +83,13 @@ export interface GalaxyScene {
    * pointer and the surface are in the same units, CSS pixels at the call site.
    */
   pickRepo(x: number, y: number, width: number, height: number): number | null
+  /**
+   * Selects the repo nearest a click, painting its stars in the selection
+   * color and holding its label revealed; a click with no arm inside the pick
+   * radius clears the selection.
+   * @returns The arm now selected, or null when the click cleared it.
+   */
+  selectAt(x: number, y: number, width: number, height: number): RepoArm | null
   /** Moves contributor nodes to eased positions, dragging their beams along. */
   setContributors(nodes: readonly { actor: UniverseActor; x: number; y: number }[]): void
   /** Places the camera at a world position, aimed at the disc center. */
@@ -146,6 +153,7 @@ export const MAX_BEAMS = 2048
 const BEAM_OPACITY = 0.75
 /** How near a pointer must come to an arm anchor to highlight it, in pixels. */
 const PICK_RADIUS = 56
+
 
 function addContributorNode(
   scene: Scene,
@@ -221,6 +229,12 @@ export function createGalaxyScene(
   // The repo the viewer is highlighting, held here so a pointer move and a
   // step advance reach the labels through the same path.
   let highlight: number | null = null
+  /** The repo the viewer has clicked, which outlives any number of frames. */
+  let selected: RepoArm | null = null
+  // The last frame rendered, so a click can give a deselected repo back the
+  // colors its step earns. Null until the first frame, where there is nothing
+  // on screen to restore anyway.
+  let frameShown: UniverseFrame | null = null
 
   return {
     renderer,
@@ -231,13 +245,14 @@ export function createGalaxyScene(
     labels: labels.meshes,
     contributors,
     setFrame(layout, frame) {
+      frameShown = frame
       const promoted = starField.setFrame(layout, frame)
       const beams = beamField.setFrame(layout, frame, contributorOrigins())
       return {
         promoted,
         beams: beams.drawn,
         beamOverflow: beams.dropped,
-        labels: labels.setFrame(frame, highlight),
+        labels: labels.setFrame(frame, highlight, selected?.repoId ?? null),
       }
     },
     setHighlight(repoId) {
@@ -245,6 +260,21 @@ export function createGalaxyScene(
     },
     pickRepo(x, y, width, height) {
       return pickRepoArm(options.layout.repos, camera, { x, y }, { width, height })
+    },
+    selectAt(x, y, width, height) {
+      const repoId = pickRepoArm(
+        options.layout.repos,
+        camera,
+        { x, y },
+        { width, height }
+      )
+      selected =
+        repoId === null
+          ? null
+          : (options.layout.repos.find((arm) => arm.repoId === repoId) ?? null)
+      starField.setSelection(options.layout, frameShown, selected?.repoId ?? null)
+      if (frameShown) labels.setFrame(frameShown, highlight, selected?.repoId ?? null)
+      return selected
     },
     setContributors(nodes) {
       // Hide every contributor first; only nodes present in the current frame

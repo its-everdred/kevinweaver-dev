@@ -50,11 +50,17 @@ export type OrbitAction =
       readonly factor: number
     }
 
-/** Face-on to the disc, at the distance the scene builds its camera with. */
+/**
+ * The opening view: tilted 45 degrees above the disc and pulled back far enough
+ * to hold the whole thing in frame, so the galaxy reads as a plate seen from
+ * across the table rather than as a flat face-on target. `polar` is measured
+ * down from the up axis, so `PI / 4` puts the camera halfway between overhead
+ * and edge-on.
+ */
 export const DEFAULT_ORBIT: OrbitState = {
   azimuth: 0,
-  polar: Math.PI / 2,
-  distance: 2.6,
+  polar: Math.PI / 4,
+  distance: 6,
 }
 
 function clamp(value: number, low: number, high: number): number {

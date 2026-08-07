@@ -197,10 +197,11 @@ describe('layoutUniverse', () => {
     // wedges are the space between the arms: at least 15% of the ring's stars
     // must land there, against the 33% a structureless field would score.
     expect(sparsestThirdShare(layout, 0.16, 0.24)).toBeGreaterThanOrEqual(0.15)
-    // And the arms must survive the spreading: the busiest wedge still carries
-    // well over its share, so the disc reads as a star field that has spiral
-    // structure rather than as uniform noise.
-    expect(peakOverMean(layout, 0.16, 0.24)).toBeGreaterThanOrEqual(1.3)
+    // And the arms must be legible, not merely present: the busiest wedge
+    // carries nearly twice its share. The previous 1.3 bound passed at a
+    // scatter wide enough that the spiral read as fog, so it is raised here to
+    // the contrast the arms actually have to hold.
+    expect(peakOverMean(layout, 0.16, 0.24)).toBeGreaterThanOrEqual(1.9)
   })
 
   it('keeps a one-file repo and a 7449-file repo in range', () => {

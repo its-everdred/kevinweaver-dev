@@ -1,4 +1,5 @@
 import { DISC_FIELD_RADIUS, starKey } from './galaxy'
+import { resolveContributors, starFor, type ContributorNode } from './contributors'
 import type { StarPosition, UniverseLayout } from './galaxy'
 import type { UniverseFrame } from './universePlayback'
 import type { UniverseActor } from './types'
@@ -50,14 +51,6 @@ export interface StarHit {
   readonly y: number
 }
 
-/** A contributor node to draw, with its label and per-actor color. */
-export interface ContributorNode {
-  readonly actor: UniverseActor
-  readonly x: number
-  readonly y: number
-  readonly active: boolean
-}
-
 /** Public draw state for one galaxy-cluster frame. */
 export interface UniverseRenderState {
   readonly layout: UniverseLayout
@@ -74,35 +67,6 @@ const HIT_RADIUS_PX = 8
 
 function starRadiusPx(metrics: UniverseMetrics): number {
   return Math.max(1, Math.min(3, metrics.width / 900))
-}
-
-/**
- * @description Resolves contributor node positions from a frame and layout.
- * @param layout The universe layout.
- * @param frame The current universe frame.
- * @param metrics Surface dimensions.
- * @returns One contributor node per actor that has current contributions,
- * positioned at the centroid of its current stars; absent actors are omitted.
- */
-export function resolveContributors(
-  layout: UniverseLayout,
-  frame: UniverseFrame,
-  metrics: UniverseMetrics
-): readonly ContributorNode[] {
-  const nodes: ContributorNode[] = []
-  for (const actor of [0, 1] as const) {
-    const points: { x: number; y: number }[] = []
-    for (const contribution of frame.currentContributions) {
-      if (contribution.actor !== actor) continue
-      const point = starPositionFor(layout, metrics, contribution.repo, contribution.file)
-      if (point) points.push(point)
-    }
-    if (points.length === 0) continue
-    const cx = points.reduce((sum, p) => sum + p.x, 0) / points.length
-    const cy = points.reduce((sum, p) => sum + p.y, 0) / points.length
-    nodes.push({ actor, x: cx / metrics.width, y: cy / metrics.height, active: true })
-  }
-  return nodes
 }
 
 /**

@@ -152,6 +152,18 @@ describe('createRepoLabels', () => {
     labels.dispose()
   })
 
+  it('keeps the selected repo named while it stays selected', () => {
+    stubCanvasDocument()
+    const source = layout()
+    const labels = createRepoLabels(source.repos, THEME)
+    // No hover, no contribution on this step: only the selection reveals it.
+    expect(labels.setFrame(frameAt(5), null, 2)).toBeGreaterThan(0)
+    expect(opacityOf(source, labels, 2)).toBe(1)
+    labels.setFrame(frameAt(5), null, null)
+    expect(opacityOf(source, labels, 2)).toBe(0)
+    labels.dispose()
+  })
+
   it('releases every label texture and the shared plane on dispose', () => {
     stubCanvasDocument()
     const source = layout()

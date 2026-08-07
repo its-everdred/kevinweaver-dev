@@ -67,7 +67,7 @@ const ANGULAR_SMEAR = ARM_WINDING * RADIAL_SMEAR
  * arms, half a turn apart, overlap in the space between them, so that space is
  * populated while the arms stay the densest part of the ring.
  */
-const ANGULAR_JITTER = 1.9
+const ANGULAR_JITTER = 1.5
 /** Cross-arm radial scatter, which decouples a star's radius from its angle. */
 const RADIAL_JITTER = 0.055
 const DISC_THICKNESS = 0.09
@@ -217,7 +217,7 @@ function scatter(key: string, axis: string): number {
 /**
  * @description Deterministic string hash returning a fraction in [0, 1).
  */
-function hash01(input: string): number {
+export function hash01(input: string): number {
   let h = 2166136261
   for (let i = 0; i < input.length; i++) {
     h ^= input.charCodeAt(i)

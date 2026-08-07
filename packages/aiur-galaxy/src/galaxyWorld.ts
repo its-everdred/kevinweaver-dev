@@ -28,7 +28,10 @@ export const DEFAULT_THEME: GalaxySceneTheme = {
   selectedStar: 0xffa64d,
   contributor: 0x61afef,
   agent: 0xc678dd,
-  label: 0xd8dee9,
+  // Terminal green, the same shade as the contribution graph's densest band. A
+  // repo name is the only text inside the disc, so colouring it away from the
+  // blue-white star ramp keeps it reading as a label rather than a hot star.
+  label: 0x39d353,
 }
 
 /** Field-to-world scale of the disc, per axis. */

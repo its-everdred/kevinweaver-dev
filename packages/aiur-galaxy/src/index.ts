@@ -52,11 +52,10 @@ export {
   universeLiveAt,
   type UniverseFrame,
 } from './universePlayback'
+export { resolveContributors, starFor, type ContributorNode } from './contributors'
 export {
   DEFAULT_UNIVERSE_THEME,
   renderUniverse,
-  resolveContributors,
-  type ContributorNode,
   type StarHit,
   type UniverseMetrics,
   type UniversePointer,

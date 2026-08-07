@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { type OrbitState } from '@/lib/viz/orbit'
 // Per module, not through the barrel: see the note in useGalaxyScene.ts.
 import { buildUniverse } from '@/packages/aiur-galaxy/src/buildUniverse'
+import type { GalaxyScene } from '@/packages/aiur-galaxy/src/galaxyScene'
 import type { UniverseActor } from '@/packages/aiur-galaxy/src/types'
 import {
   useInstrumentRuntime,
@@ -39,8 +40,11 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   const runtime = useInstrumentRuntime()
   const viz = runtime.status === 'ready' ? runtime.viz : null
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  // The scene is owned by the render-loop hook and read by the pointer hook,
+  // which is where a click has to reach the pick.
+  const sceneRef = useRef<GalaxyScene | null>(null)
   const camera = useGalaxyCamera()
-  const pointer = useGalaxyPointer(camera)
+  const pointer = useGalaxyPointer(camera, sceneRef)
 
   const universe = useMemo(() => {
     if (!viz) return null
@@ -60,6 +64,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
     windowStart: viz?.head.manifest.windowStart ?? '',
     orbitRef: camera.orbitRef,
     pointerRef: pointer.pointerRef,
+    sceneRef,
   })
 
   const label = galaxyLabel(runtime)
@@ -74,7 +79,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
         onPointerDown={camera.onPointerDown}
         onPointerLeave={pointer.onPointerLeave}
         onPointerMove={pointer.onPointerMove}
-        onPointerUp={camera.onPointerUp}
+        onPointerUp={pointer.onPointerUp}
         ref={canvasRef}
         role="img"
         style={{
