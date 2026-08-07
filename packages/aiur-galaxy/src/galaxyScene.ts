@@ -1,21 +1,41 @@
-import * as THREE from 'three'
+// Named imports rather than `import * as THREE`: this module is the whole of
+// the deferred island's three.js surface, and naming it keeps that surface
+// reviewable against the first-load budget instead of hiding it behind a
+// namespace nobody can audit.
+import {
+  BufferAttribute,
+  BufferGeometry,
+  DynamicDrawUsage,
+  LineBasicMaterial,
+  LineSegments,
+  Material,
+  Mesh,
+  MeshBasicMaterial,
+  PerspectiveCamera,
+  PlaneGeometry,
+  Points,
+  Scene,
+  Vector3,
+  WebGLRenderer,
+} from 'three'
 import { starKey } from './galaxy'
-import type { RepoArm, StarPosition, UniverseLayout } from './galaxy'
-import { RECENT_REPO_HOLD, RECENT_REPO_STEPS } from './universePlayback'
+import type { RepoArm, UniverseLayout } from './galaxy'
 import type { UniverseFrame } from './universePlayback'
 import type { UniverseActor } from './types'
-import { STAR_FRAGMENT_SHADER, STAR_VERTEX_SHADER } from './galaxyShader'
+import { createRepoLabels, type RepoLabel } from './galaxyLabels'
+import { createStarField } from './galaxyStars'
+import {
+  DEFAULT_THEME,
+  faceCamera,
+  toColor,
+  worldX,
+  worldY,
+  worldZ,
+  writeColor,
+  type GalaxySceneTheme,
+} from './galaxyWorld'
 
-/** Host-agnostic theme mapped to three.js colors. */
-export interface GalaxySceneTheme {
-  readonly background: number
-  readonly star: number
-  readonly liveStar: number
-  readonly currentStar: number
-  readonly contributor: number
-  readonly agent: number
-  readonly label: number
-}
+export type { GalaxySceneTheme } from './galaxyWorld'
 
 /** Options for creating the three.js galaxy scene. */
 export interface GalaxySceneOptions {
@@ -27,7 +47,7 @@ export interface GalaxySceneOptions {
 /** A contributor node (kw or AK) drawn in the scene. */
 export interface SceneContributor {
   readonly actor: UniverseActor
-  readonly mesh: THREE.Mesh
+  readonly mesh: Mesh<PlaneGeometry, MeshBasicMaterial>
 }
 
 /** What one frame cost, so the host can surface a beam budget overrun. */
@@ -38,21 +58,21 @@ export interface GalaxyFrameStats {
   readonly beams: number
   /** Contributions on this step that produced no beam. Never silent. */
   readonly beamOverflow: number
-  /** Label sprites revealed this frame; each one is a draw call. */
+  /** Labels revealed this frame; each one is a draw call. */
   readonly labels: number
 }
 
 /** Owns the three.js renderer, scene, camera, star field, beams, and labels. */
 export interface GalaxyScene {
-  readonly renderer: THREE.WebGLRenderer
-  readonly scene: THREE.Scene
-  readonly camera: THREE.PerspectiveCamera
+  readonly renderer: WebGLRenderer
+  readonly scene: Scene
+  readonly camera: PerspectiveCamera
   /** The whole disc, as one Points object. */
-  readonly stars: THREE.Points
+  readonly stars: Points
   /** Every zap beam for the current step, as one LineSegments object. */
-  readonly beams: THREE.LineSegments
-  /** One label sprite per repo, in layout order, hidden until revealed. */
-  readonly labels: readonly THREE.Sprite[]
+  readonly beams: LineSegments
+  /** One label per repo, in layout order, hidden until revealed. */
+  readonly labels: readonly RepoLabel[]
   readonly contributors: SceneContributor[]
   /** Promotes the stars this frame names, re-aims the beams, sets the labels. */
   setFrame(layout: UniverseLayout, frame: UniverseFrame): GalaxyFrameStats
@@ -72,28 +92,6 @@ export interface GalaxyScene {
   /** Renders one frame. */
   render(): void
   /** Releases GPU resources. */
-  dispose(): void
-}
-
-/** The disc's single star field, with brightness that only ever increases. */
-export interface StarField {
-  readonly points: THREE.Points
-  /**
-   * Promotes the vertices this frame names and demotes the step it leaves.
-   * Returns how many vertices were written, which is 0 for a repeated step.
-   */
-  setFrame(layout: UniverseLayout, frame: UniverseFrame): number
-  dispose(): void
-}
-
-/** The repo labels, one sprite per arm segment, hidden until revealed. */
-export interface RepoLabels {
-  readonly sprites: readonly THREE.Sprite[]
-  /**
-   * Reveals the labels this frame justifies and hides every other one.
-   * @returns How many sprites are visible, which is their draw-call count.
-   */
-  setFrame(frame: UniverseFrame, highlight: number | null): number
   dispose(): void
 }
 
@@ -122,7 +120,7 @@ export interface BeamStats {
 
 /** Every zap beam for a step, in one reusable LineSegments object. */
 export interface BeamField {
-  readonly lines: THREE.LineSegments
+  readonly lines: LineSegments
   /** Aims one beam per current contribution; caps and reports the overflow. */
   setFrame(
     layout: UniverseLayout,
@@ -134,11 +132,10 @@ export interface BeamField {
   dispose(): void
 }
 
-/** Field-to-world scale of the disc, per axis. */
-const WORLD_WIDTH = 6
-const WORLD_HEIGHT = 4
 /** World depth of the contributor nodes, just in front of the disc plane. */
 const CONTRIBUTOR_DEPTH = 0.5
+/** World size of a contributor node's billboard. */
+const CONTRIBUTOR_SIZE = 0.12
 /** Distance the camera is built at, face-on to the disc, in world units. */
 const CAMERA_DISTANCE = 2.6
 /**
@@ -150,81 +147,18 @@ const BEAM_OPACITY = 0.75
 /** How near a pointer must come to an arm anchor to highlight it, in pixels. */
 const PICK_RADIUS = 56
 
-const DEFAULT_THEME: GalaxySceneTheme = {
-  background: 0x1d2021,
-  // Untouched stars clear a 4.5:1 contrast ratio against the background. The
-  // former 0x5c6370 measured 2.7:1 and read as empty space, which is why 58 of
-  // 60 repos looked missing rather than merely quiet.
-  star: 0x8b98ab,
-  liveStar: 0xb7d3ef,
-  currentStar: 0xd8f2b0,
-  contributor: 0x61afef,
-  agent: 0xc678dd,
-  label: 0xd8dee9,
-}
-
-function toColor(value: number): THREE.Color {
-  return new THREE.Color(value)
-}
-
-function worldX(field: number): number {
-  return (field - 0.5) * WORLD_WIDTH
-}
-
-function worldY(field: number): number {
-  return (field - 0.5) * WORLD_HEIGHT
-}
-
-function worldZ(field: number): number {
-  return (field - 0.5) * WORLD_HEIGHT
-}
-
-function shortName(name: string): string {
-  const slash = name.lastIndexOf('/')
-  return slash < 0 ? name : name.slice(slash + 1)
-}
-
-function writeColor(array: Float32Array, index: number, color: THREE.Color): void {
-  const offset = index * 3
-  array[offset] = color.r
-  array[offset + 1] = color.g
-  array[offset + 2] = color.b
-}
-
-function createLabelSprite(name: string, color: number): THREE.Sprite {
-  const canvas = document.createElement('canvas')
-  canvas.width = 512
-  canvas.height = 64
-  const ctx = canvas.getContext('2d')
-  if (ctx) {
-    ctx.font = '600 40px monospace'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    const rgb = new THREE.Color(color)
-    ctx.fillStyle = `rgb(${Math.round(rgb.r * 255)},${Math.round(rgb.g * 255)},${Math.round(rgb.b * 255)})`
-    ctx.fillText(shortName(name), 256, 32)
-  }
-  const texture = new THREE.CanvasTexture(canvas)
-  texture.minFilter = THREE.LinearFilter
-  const material = new THREE.SpriteMaterial({
-    map: texture,
-    transparent: true,
-    depthWrite: false,
-  })
-  const sprite = new THREE.Sprite(material)
-  sprite.scale.set(1.4, 0.175, 1)
-  return sprite
-}
-
 function addContributorNode(
-  scene: THREE.Scene,
+  scene: Scene,
   contributors: SceneContributor[],
   actor: UniverseActor,
   color: number
 ): void {
-  const geometry = new THREE.SphereGeometry(0.06, 12, 12)
-  const material = new THREE.MeshBasicMaterial({ color })
-  const mesh = new THREE.Mesh(geometry, material)
+  // A billboarded plane rather than a sphere: at a dozen screen pixels the two
+  // are the same picture, and `SphereGeometry` is weight in the deferred
+  // island that the first-load budget cannot pay for.
+  const geometry = new PlaneGeometry(CONTRIBUTOR_SIZE, CONTRIBUTOR_SIZE)
+  const material = new MeshBasicMaterial({ color })
+  const mesh = new Mesh(geometry, material)
   mesh.position.set(0, 0, CONTRIBUTOR_DEPTH)
   scene.add(mesh)
   contributors.push({ actor, mesh })
@@ -235,22 +169,22 @@ function addContributorNode(
  * @param canvas The canvas the renderer draws into.
  * @param options Theme colors and the layout to render.
  * @returns An owned scene holding one star field, one beam field, and one
- * label sprite per repo.
+ * label per repo.
  */
 export function createGalaxyScene(
   canvas: HTMLCanvasElement,
   options: GalaxySceneOptions
 ): GalaxyScene {
   const theme = { ...DEFAULT_THEME, ...options.theme }
-  const renderer = new THREE.WebGLRenderer({
+  const renderer = new WebGLRenderer({
     canvas,
     antialias: true,
     alpha: true,
     preserveDrawingBuffer: true,
   })
   renderer.setClearColor(theme.background, 1)
-  const scene = new THREE.Scene()
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
+  const scene = new Scene()
+  const camera = new PerspectiveCamera(60, 1, 0.1, 100)
   placeCamera(camera, 0, 0, CAMERA_DISTANCE)
 
   const contributors: SceneContributor[] = []
@@ -264,7 +198,17 @@ export function createGalaxyScene(
   const labels = createRepoLabels(options.layout.repos, theme)
   scene.add(starField.points)
   scene.add(beamField.lines)
-  for (const sprite of labels.sprites) scene.add(sprite)
+  for (const label of labels.meshes) scene.add(label)
+
+  /** Every flat object that has to keep facing the viewer as the disc turns. */
+  const orient = (): void => {
+    labels.faceCamera(camera)
+    faceCamera(
+      camera,
+      contributors.map((contributor) => contributor.mesh)
+    )
+  }
+  orient()
 
   const contributorOrigins = (): readonly BeamOrigin[] =>
     contributors.map((contributor) => ({
@@ -284,7 +228,7 @@ export function createGalaxyScene(
     camera,
     stars: starField.points,
     beams: beamField.lines,
-    labels: labels.sprites,
+    labels: labels.meshes,
     contributors,
     setFrame(layout, frame) {
       const promoted = starField.setFrame(layout, frame)
@@ -324,6 +268,7 @@ export function createGalaxyScene(
     },
     setCamera(x, y, z) {
       placeCamera(camera, x, y, z)
+      orient()
     },
     resize(width, height) {
       renderer.setSize(width, height, false)
@@ -339,7 +284,7 @@ export function createGalaxyScene(
       for (const contributor of contributors) {
         contributor.mesh.geometry.dispose()
         const material = contributor.mesh.material
-        if (material instanceof THREE.Material) material.dispose()
+        if (material instanceof Material) material.dispose()
       }
       renderer.dispose()
     },
@@ -356,7 +301,7 @@ export function createGalaxyScene(
  * @param z World z.
  */
 export function placeCamera(
-  camera: THREE.PerspectiveCamera,
+  camera: PerspectiveCamera,
   x: number,
   y: number,
   z: number
@@ -373,209 +318,12 @@ export function placeCamera(
  * @param height Drawing buffer height in pixels; a collapsed pane reads as 1.
  */
 export function resizeCamera(
-  camera: THREE.PerspectiveCamera,
+  camera: PerspectiveCamera,
   width: number,
   height: number
 ): void {
   camera.aspect = Math.max(1, width) / Math.max(1, height)
   camera.updateProjectionMatrix()
-}
-
-/**
- * @description Builds the Points object for the whole disc. One geometry holds
- * every star, in layout order, so a vertex index is a layout index.
- * @param layout The layout; star positions are already in field space.
- * @param theme Color palette.
- * @returns A three.js Points object with every star at its untouched color.
- */
-export function buildGalaxyPoints(
-  layout: UniverseLayout,
-  theme: GalaxySceneTheme
-): THREE.Points {
-  const count = layout.stars.length
-  const positions = new Float32Array(count * 3)
-  const colors = new Float32Array(count * 3)
-  const sizes = new Float32Array(count)
-  const scales = new Float32Array(count).fill(1)
-  const starColor = toColor(theme.star)
-
-  for (let index = 0; index < count; index++) {
-    const star = layout.stars[index]
-    if (!star) continue
-    const offset = index * 3
-    positions[offset] = worldX(star.x)
-    positions[offset + 1] = worldY(star.y)
-    positions[offset + 2] = worldZ(star.z)
-    writeColor(colors, index, starColor)
-    sizes[index] = starSize(star)
-  }
-
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-  const color = new THREE.BufferAttribute(colors, 3)
-  // Brightness is the only attribute playback mutates, and it mutates a
-  // handful of vertices per step.
-  color.setUsage(THREE.DynamicDrawUsage)
-  geometry.setAttribute('color', color)
-  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
-  geometry.setAttribute('scale', new THREE.BufferAttribute(scales, 1))
-
-  const material = new THREE.ShaderMaterial({
-    vertexShader: STAR_VERTEX_SHADER,
-    fragmentShader: STAR_FRAGMENT_SHADER,
-    transparent: true,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    vertexColors: true,
-  })
-
-  return new THREE.Points(geometry, material)
-}
-
-/** Deterministic per-star size, from stable identifiers rather than a clock. */
-function starSize(star: StarPosition): number {
-  return 0.09 + ((star.repoId + star.file.length) % 8) * 0.008
-}
-
-/**
- * @description Creates the disc's star field, where brightness is cumulative
- * history rather than current state: a star only ever moves from untouched to
- * live, and only on the step that names it. Per-step cost is proportional to
- * that step's contribution count, never to the total star count.
- * @param layout The layout to build the field from.
- * @param theme Color palette.
- * @returns The Points object plus its step-driven color updates.
- */
-export function createStarField(
-  layout: UniverseLayout,
-  theme: GalaxySceneTheme
-): StarField {
-  const points = buildGalaxyPoints(layout, theme)
-  const attribute = points.geometry.getAttribute('color') as THREE.BufferAttribute
-  const colors = attribute.array as Float32Array
-  const untouched = toColor(theme.star)
-  const live = toColor(theme.liveStar)
-  const current = toColor(theme.currentStar)
-  // Outside the clamped step range in both directions, so the first frame
-  // resyncs against the frame's live set instead of advancing into it.
-  let lastStep = -2
-  let lastCurrent: readonly string[] = []
-
-  const paint = (
-    source: UniverseLayout,
-    keys: Iterable<string>,
-    color: THREE.Color
-  ): number => {
-    let written = 0
-    for (const key of keys) {
-      const index = source.starIndex.get(key)
-      if (index === undefined) continue
-      writeColor(colors, index, color)
-      written++
-    }
-    return written
-  }
-
-  /** Returns every vertex to untouched, so a seek starts from a dark disc. */
-  const reset = (): void => {
-    for (let index = 0; index < layout.starCount; index++)
-      writeColor(colors, index, untouched)
-  }
-
-  return {
-    points,
-    setFrame(source, frame) {
-      if (frame.step === lastStep) return 0
-      // A single step, in either direction, only has to demote the step it
-      // leaves. A seek lands anywhere, including the roll-over from the
-      // window's oldest day back to its newest, so it rebuilds the field from
-      // this step's live set: leaving the previous pass's stars lit would make
-      // every pass after the first replay over an already bright disc.
-      const seeked = Math.abs(frame.step - lastStep) !== 1
-      if (seeked) reset()
-      const written = seeked
-        ? paint(source, frame.liveFiles, live)
-        : paint(source, lastCurrent, live)
-      const promoted = written + paint(source, frame.currentFiles, current)
-      lastStep = frame.step
-      lastCurrent = frame.currentFiles
-      if (seeked || promoted > 0) attribute.needsUpdate = true
-      return promoted
-    },
-    dispose() {
-      points.geometry.dispose()
-      const material = points.material
-      if (material instanceof THREE.Material) material.dispose()
-    },
-  }
-}
-
-/**
- * @description Creates one label sprite per repo, positioned at that repo's arm
- * segment and hidden until something reveals it: the viewer highlighting that
- * repo, or the repo receiving a contribution, after which the label fades out
- * over the following few days of playback. Sixty always-on labels were sixty
- * draw calls and 7.5 MiB of texture for a name nobody was reading; a revealed
- * label is one the viewer has a reason to read.
- * @param repos The layout's arm segments, in recency order.
- * @param theme Color palette.
- * @returns The sprites, their per-frame reveal, and their disposal.
- */
-export function createRepoLabels(
-  repos: readonly RepoArm[],
-  theme: GalaxySceneTheme
-): RepoLabels {
-  const sprites: THREE.Sprite[] = []
-  for (const repo of repos) {
-    const sprite = createLabelSprite(repo.name, theme.label)
-    sprite.position.set(worldX(repo.x), worldY(repo.y), worldZ(repo.z))
-    sprite.visible = false
-    sprite.material.opacity = 0
-    sprites.push(sprite)
-  }
-  return {
-    sprites,
-    setFrame(frame, highlight) {
-      let visible = 0
-      for (let index = 0; index < repos.length; index++) {
-        const repo = repos[index]
-        const sprite = sprites[index]
-        if (!repo || !sprite) continue
-        const opacity =
-          repo.repoId === highlight
-            ? 1
-            : contributionOpacity(frame.recentRepos.get(repo.repoId))
-        sprite.visible = opacity > 0
-        sprite.material.opacity = opacity
-        if (sprite.visible) visible++
-      }
-      return visible
-    },
-    dispose() {
-      for (const sprite of sprites) {
-        // The sprite geometry is shared across every three.js sprite; only the
-        // material and its canvas texture belong to this label.
-        const material = sprite.material
-        if (material.map) material.map.dispose()
-        material.dispose()
-      }
-    },
-  }
-}
-
-/**
- * @description Opacity of a label revealed by a contribution. Derived from the
- * frame's own recency rather than accumulated across frames, so scrubbing to a
- * day shows exactly what playing to it would, with no animation state to drift.
- * @param age Steps of playback since the contribution, or undefined when the
- * repo has aged out of the frame's recent set.
- * @returns An opacity in [0, 1]; 0 means the label costs no draw call.
- */
-function contributionOpacity(age: number | undefined): number {
-  if (age === undefined || age >= RECENT_REPO_STEPS) return 0
-  const hold = RECENT_REPO_STEPS * RECENT_REPO_HOLD
-  if (age <= hold) return 1
-  return 1 - (age - hold) / (RECENT_REPO_STEPS - hold)
 }
 
 /**
@@ -587,11 +335,11 @@ function contributionOpacity(age: number | undefined): number {
  */
 export function repoScreenPosition(
   repo: RepoArm,
-  camera: THREE.PerspectiveCamera,
+  camera: PerspectiveCamera,
   metrics: { readonly width: number; readonly height: number }
 ): ArmScreenPoint {
   camera.updateMatrixWorld()
-  const projected = new THREE.Vector3(
+  const projected = new Vector3(
     worldX(repo.x),
     worldY(repo.y),
     worldZ(repo.z)
@@ -615,7 +363,7 @@ export function repoScreenPosition(
  */
 export function pickRepoArm(
   repos: readonly RepoArm[],
-  camera: THREE.PerspectiveCamera,
+  camera: PerspectiveCamera,
   pointer: { readonly x: number; readonly y: number },
   metrics: { readonly width: number; readonly height: number }
 ): number | null {
@@ -646,27 +394,27 @@ export function createBeamField(
 ): BeamField {
   const positions = new Float32Array(maxBeams * 6)
   const colors = new Float32Array(maxBeams * 6)
-  const geometry = new THREE.BufferGeometry()
-  const position = new THREE.BufferAttribute(positions, 3)
-  const color = new THREE.BufferAttribute(colors, 3)
-  position.setUsage(THREE.DynamicDrawUsage)
-  color.setUsage(THREE.DynamicDrawUsage)
+  const geometry = new BufferGeometry()
+  const position = new BufferAttribute(positions, 3)
+  const color = new BufferAttribute(colors, 3)
+  position.setUsage(DynamicDrawUsage)
+  color.setUsage(DynamicDrawUsage)
   geometry.setAttribute('position', position)
   geometry.setAttribute('color', color)
   geometry.setDrawRange(0, 0)
-  const material = new THREE.LineBasicMaterial({
+  const material = new LineBasicMaterial({
     vertexColors: true,
     transparent: true,
     opacity: BEAM_OPACITY,
     depthWrite: false,
   })
-  const lines = new THREE.LineSegments(geometry, material)
+  const lines = new LineSegments(geometry, material)
   // The draw range covers a fraction of the preallocated buffer, so the
   // bounding sphere three.js would compute from it is meaningless.
   lines.frustumCulled = false
 
   const actorColors = [toColor(theme.contributor), toColor(theme.agent)] as const
-  const anchors = [new THREE.Vector3(), new THREE.Vector3()] as const
+  const anchors = [new Vector3(), new Vector3()] as const
   /** Actor of each drawn beam, so an eased node re-anchors only its own. */
   const beamActors: UniverseActor[] = []
 
@@ -684,7 +432,7 @@ export function createBeamField(
   }
 
   /** Uploads only the beams in the draw range, not the whole capped buffer. */
-  const flush = (attribute: THREE.BufferAttribute, drawn: number): void => {
+  const flush = (attribute: BufferAttribute, drawn: number): void => {
     attribute.clearUpdateRanges()
     attribute.addUpdateRange(0, drawn * 6)
     attribute.needsUpdate = true

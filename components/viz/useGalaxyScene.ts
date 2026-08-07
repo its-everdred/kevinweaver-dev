@@ -4,17 +4,24 @@ import { useEffect } from 'react'
 import type { RefObject } from 'react'
 import { formatDayISO } from '@/lib/viz/driver'
 import { orbitPosition, type OrbitState } from '@/lib/viz/orbit'
+// Imported per module rather than through the package barrel. The barrel also
+// re-exports the canvas-2D `renderUniverse`, which nothing in the app calls;
+// pulling it into the lazy island puts the deferred-JS budget over its cap.
 import {
   createGalaxyScene,
-  layoutUniverse,
+  type GalaxyScene,
+} from '@/packages/aiur-galaxy/src/galaxyScene'
+import { layoutUniverse } from '@/packages/aiur-galaxy/src/galaxy'
+import {
   nextWindowStep,
   playbackWindowEnd,
-  resolveContributors,
   universeFrame,
-  type GalaxyScene,
-  type UniverseActor,
-  type UniverseSnapshot,
-} from '@/packages/aiur-galaxy/src'
+} from '@/packages/aiur-galaxy/src/universePlayback'
+import { resolveContributors } from '@/packages/aiur-galaxy/src/universeRender'
+import type {
+  UniverseActor,
+  UniverseSnapshot,
+} from '@/packages/aiur-galaxy/src/types'
 import {
   getGalaxyTimeline,
   publishGalaxyTimeline,

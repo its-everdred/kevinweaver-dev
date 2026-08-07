@@ -3,7 +3,9 @@
 import { memo, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { type OrbitState } from '@/lib/viz/orbit'
-import { buildUniverse, type UniverseActor } from '@/packages/aiur-galaxy/src'
+// Per module, not through the barrel: see the note in useGalaxyScene.ts.
+import { buildUniverse } from '@/packages/aiur-galaxy/src/buildUniverse'
+import type { UniverseActor } from '@/packages/aiur-galaxy/src/types'
 import {
   useInstrumentRuntime,
   type InstrumentRuntimeState,
