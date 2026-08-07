@@ -175,8 +175,7 @@ function publish(head: BundleHead): void {
   notify()
   // The replaced driver still owns surfaces until React commits and detaches
   // them, so it is destroyed a macrotask later rather than under the notify.
-  if (stale)
-    window.setTimeout(() => stale.driver.destroy(), AFTER_COMMIT_MS)
+  if (stale) window.setTimeout(() => stale.driver.destroy(), AFTER_COMMIT_MS)
 }
 /**
  * `BundleHead.events` is the loader's own array, which grows as chunks land, so

@@ -12,6 +12,7 @@ import { encodeBundle } from '@/lib/bundle/codec'
 import type { BundleHead } from '@/lib/bundle/loader'
 import type { RepoRecord, SortableEvent } from '@/lib/bundle/schema'
 import { getVizTransport, type VizSurfaceGeometry } from '@/lib/viz/driver'
+// prettier-ignore
 import { getGalaxyTimeline, seekGalaxyTimeline } from '@/components/viz/galaxyTimeline'
 import { AG, LV } from '@/lib/viz/tokens/ramp'
 import { make2d } from '@/test/canvas-fixture'
@@ -352,11 +353,11 @@ function pumpBundle(): Map<string, string> {
   const events: SortableEvent[] = [
     pumpEvent(repos, 0, 0, 'a.ts', 'a'),
     pumpEvent(repos, 0, 0, 'b.ts', 'b'),
-    ...repos.slice(1).flatMap((_, index) => [
-      pumpEvent(repos, index + 1, 1, 'mid.ts', 'm'),
-      pumpEvent(repos, index + 1, 2, 'old.ts', 'o'),
-    ]),
   ]
+  for (let id = 1; id < PUMP_REPOS; id += 1) {
+    events.push(pumpEvent(repos, id, 1, 'mid.ts', 'm'))
+    events.push(pumpEvent(repos, id, 2, 'old.ts', 'o'))
+  }
   // prettier-ignore
   const input = { meta: { ...HEAD.manifest, repoCount: PUMP_REPOS }, repos, grid: HEAD.grid, events }
   return new Map(encodeBundle(input, { chunkSize: 2 }).files)
