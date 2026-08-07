@@ -253,18 +253,51 @@ describe('the contribution grid as the seek surface', () => {
     expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START + 70)
   })
 
-  it('walks a week per column of drag, past the window into older history', () => {
+  it('pulls the strip with the pointer, a week per column of travel', () => {
     render(<Ribbon />)
     const grabbed = clientAt(0)
     fireEvent.pointerDown(ribbonCanvas(), { pointerId: 1, ...grabbed })
     fireEvent.pointerMove(ribbonCanvas(), {
       pointerId: 1,
       buttons: 1,
+      clientX: grabbed.clientX + 300,
+      clientY: grabbed.clientY,
+    })
+    // The squares follow the hand like a sheet of paper: dragging right slides
+    // them right and uncovers what was off the left edge, so 300 px of travel
+    // is 21 columns further back, 147 days.
+    expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START - 147)
+    fireEvent.pointerMove(ribbonCanvas(), {
+      pointerId: 1,
+      buttons: 1,
       clientX: grabbed.clientX - 300,
       clientY: grabbed.clientY,
     })
-    // 300 px left of the grab is 21 columns of travel, 147 days.
-    expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START - 147)
+    // Same travel the other way, same distance forward. Only the transport's
+    // progress bar seeks with the pointer instead of against it.
+    expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START + 147)
+  })
+
+  it('walks down a column the same way it walks across the strip', () => {
+    render(<Ribbon />)
+    const grabbed = clientAt(0)
+    fireEvent.pointerDown(ribbonCanvas(), { pointerId: 1, ...grabbed })
+    fireEvent.pointerMove(ribbonCanvas(), {
+      pointerId: 1,
+      buttons: 1,
+      clientX: grabbed.clientX,
+      clientY: grabbed.clientY + 3 * STEP_PX,
+    })
+    // Three weekday rows of downward pull is three days back, not forward: the
+    // two axes have to agree, or a diagonal drag walks both ways at once.
+    expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START - 3)
+    fireEvent.pointerMove(ribbonCanvas(), {
+      pointerId: 1,
+      buttons: 1,
+      clientX: grabbed.clientX + 2 * STEP_PX,
+      clientY: grabbed.clientY + 3 * STEP_PX,
+    })
+    expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START - 17)
   })
 
   it('clamps a drag that runs off the oldest end of the history', () => {
@@ -274,7 +307,7 @@ describe('the contribution grid as the seek surface', () => {
     fireEvent.pointerMove(ribbonCanvas(), {
       pointerId: 1,
       buttons: 1,
-      clientX: grabbed.clientX - 10_000,
+      clientX: grabbed.clientX + 10_000,
       clientY: grabbed.clientY,
     })
     expect(getGalaxyTimeline().step).toBe(0)
@@ -300,8 +333,9 @@ describe('the contribution grid as the seek surface', () => {
       clientX: -200,
       clientY: grabbed.clientY,
     })
-    // 200 px left of the canvas is 201 px from the grab: 14 columns, 98 days.
-    expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START - 98)
+    // 200 px left of the canvas is 201 px from the grab: 14 columns of pull,
+    // 98 days forward.
+    expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START + 98)
     fireEvent.pointerUp(ribbonCanvas(), { pointerId: 7 })
     expect(captured.has(7)).toBe(false)
   })

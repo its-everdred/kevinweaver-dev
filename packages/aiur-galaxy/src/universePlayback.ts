@@ -109,6 +109,52 @@ export function nextWindowStep(
   return current === start || current === 0 ? end : current - 1
 }
 
+/**
+ * @description Flags which days of a timeline carry contributions, so playback
+ * can tell a green day from a grey one without searching the log for it. Built
+ * once per universe: the log is over a hundred thousand contributions long and
+ * the frame path runs sixty times a second.
+ * @param snapshot The universe snapshot.
+ * @returns One flag per step, 1 where the day carries at least one contribution.
+ */
+export function activeSteps(snapshot: UniverseSnapshot): Uint8Array {
+  const active = new Uint8Array(Math.max(0, snapshot.stepCount))
+  for (const contribution of snapshot.contributions)
+    if (contribution.step >= 0 && contribution.step < active.length)
+      active[contribution.step] = 1
+  return active
+}
+
+/**
+ * @description Advances to the next day carrying contributions, in the
+ * direction of travel. Three days in five are empty, and an empty day draws no
+ * contributor node and no beam, so stepping onto one spends a whole slot on a
+ * frame with nothing in it.
+ * @param step The current step, which is left where it is: a day reached by
+ * seeking is the viewer's, and only where playback goes next is decided here.
+ * @param stepCount Timeline length.
+ * @param direction Playback direction.
+ * @param active Per-step flags from `activeSteps`.
+ * @returns The next active step in that direction, wrapping with the window;
+ * or the next step alone when no day is active, so playback still advances.
+ */
+export function nextActiveWindowStep(
+  step: number,
+  stepCount: number,
+  direction: PlaybackDirection,
+  active: ArrayLike<number>
+): number {
+  const first = nextWindowStep(step, stepCount, direction)
+  let candidate = first
+  // Bounded by the timeline: the window rolls over at its edge, so a history
+  // with nothing in it would otherwise be walked forever.
+  for (let visited = 0; visited < stepCount; visited++) {
+    if (active[candidate]) return candidate
+    candidate = nextWindowStep(candidate, stepCount, direction)
+  }
+  return first
+}
+
 function key(repo: number, file: string): string {
   return `${repo}:${file}`
 }

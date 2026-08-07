@@ -1,19 +1,31 @@
 import type { UniverseEvent, UniverseRepoInput } from './buildUniverse'
+import type { UniverseActor } from './types'
 
 /**
  * The `private` repo is synthesized, not observed.
  *
- * Private contributions reach the payload as `grid.p`: one aggregate count per
- * calendar month, and nothing finer. There are no private events, no private
- * repo names, and no private file paths anywhere in the bundle, and none can be
- * derived from what is there, because GitHub does not publish them. So the
- * stars this module makes are volume, not file history. A star here means "one
- * private contribution happened this month"; it does not name a file, a repo,
- * or a commit, and nothing downstream should be read as though it does.
+ * The contribution calendar counts a day green for pull requests, issues,
+ * reviews, and work in repositories that were never cloned, so most green days
+ * name nothing the file history can place: of the payload's 1193 green days,
+ * 847 carry no file event at all. Those days drew no beam and resolved no
+ * contributor node, which is the `kw` marker disappearing mid-playback while
+ * the contribution graph underneath it still showed colour.
  *
- * What is real: the monthly totals, and therefore the repo's size and the days
- * that carry weight. What is invented: which day inside a month a contribution
- * landed on, and the identity of every star.
+ * This module gives those days somewhere to point. What is real: which days
+ * were green, how much each one counted, and which actor it counted for. What
+ * is invented: every star. A star here means "one of that day's contributions
+ * landed somewhere"; it does not name a file, a repo, or a commit, and nothing
+ * downstream should be read as though it does. The paths say `unplaced/` and
+ * are drawn from a fixed pool rather than minted per contribution, so the repo
+ * stays the size of a large real one instead of dwarfing the whole disc.
+ *
+ * Private work is part of this rather than separate from it, which is why the
+ * monthly `grid.privateMonthly` totals are no longer synthesized on their own.
+ * They are a subset of the daily calendar, not an addition to it: in the
+ * payload no month's private total exceeds that month's calendar total, and
+ * the earliest months match it exactly. Standing them up separately counted
+ * the same contributions twice and, worse, spread them evenly across days the
+ * calendar left grey, so 537 days drew beams the contribution graph denied.
  */
 
 /**
@@ -25,18 +37,49 @@ export const PRIVATE_REPO_ID = -1
 /** Name the synthesized repo carries wherever a repo name is shown. */
 export const PRIVATE_REPO_NAME = 'private'
 
-/** Contributions are the human's: the payload carries no actor split for them. */
-const PRIVATE_ACTOR = 0
-const MS_PER_DAY = 86_400_000
+/**
+ * Distinct paths the synthesized repo may ever name, and so its star ceiling.
+ * The pool is bounded rather than grown per contribution because a fresh path
+ * each time would be some 22,000 stars, three times the largest real repo in
+ * the payload; 512 places it seventh, a large galaxy among large galaxies.
+ */
+export const PRIVATE_PATH_POOL = 512
+/**
+ * Most stars one synthesized day may light. Days the history can place touch
+ * 18 files at the median and 79 at the upper quartile, so this sits between
+ * the two: high enough that a busy day reads as busy, low enough that the
+ * payload's busiest green day cannot ask for more beams than a step may draw.
+ */
+export const MAX_PRIVATE_DAY_FILES = 48
 
-/** The monthly private totals, and the timeline they are laid onto. */
+/**
+ * Files a day touches per calendar contribution, measured over the 346 days
+ * the payload can both count and place. A day's multiplier is interpolated
+ * across these quartiles, so half of the synthesized days sit below the median
+ * and the band as a whole matches the days the history can vouch for.
+ */
+const RATIO_LOW = 2
+const RATIO_MEDIAN = 5
+const RATIO_HIGH = 15
+/** Both actors, in the order `grid.human` and `grid.agent` are read. */
+const ACTORS: readonly UniverseActor[] = [0, 1]
+/** Distinct salts keep a day's size and its slice of the pool independent. */
+const SIZE_SALT = 0x5f356495
+const SLOT_SALT = 0x27d4eb2d
+const UINT32 = 4_294_967_296
+
+/** The daily calendar, and which of its days the file history already places. */
 export interface PrivateVolume {
-  /** Private contribution counts, one per month, oldest month first. */
-  readonly monthly: readonly number[]
-  /** ISO month (`YYYY-MM`) that `monthly[0]` counts. */
-  readonly startMonth: string
-  /** ISO day (`YYYY-MM-DD`) of timeline step 0, the oldest day. */
-  readonly windowStart: string
+  /**
+   * Human contributions per timeline step, oldest step first. The calendar is
+   * indexed from the oldest day, so an entry's index IS its step, where a
+   * bundle event instead counts its day back from the newest.
+   */
+  readonly human: readonly number[]
+  /** Agent contributions per timeline step, indexed the same way. */
+  readonly agent: readonly number[]
+  /** Steps that already carry real file events, and so need nothing invented. */
+  readonly covered: ReadonlySet<number>
   /** Timeline length in steps; one step is one day. */
   readonly stepCount: number
 }
@@ -48,19 +91,21 @@ export interface PrivateRepo {
 }
 
 /**
- * @description Synthesizes one ordinary-looking repo from the monthly private
- * totals, so private work has a place in the disc instead of being silently
- * absent from a galaxy that claims to show a contribution history. Everything
- * downstream (layout, stars, labels, beams, hit-testing, the repo pane) then
- * treats it as any other repo, with no special case.
- * @param volume The monthly counts and the timeline to spread them over.
- * @returns The repo and its events, or undefined when there is no volume.
+ * @description Synthesizes one ordinary-looking repo from the green days the
+ * file history cannot place, so every day the contribution graph colours in
+ * also fires beams instead of leaving the galaxy silent and the contributor
+ * node unresolved. Everything downstream (layout, stars, labels, beams,
+ * hit-testing, the repo pane) then treats it as any other repo, with no
+ * special case.
+ * @param volume The daily calendar and the steps already covered by events.
+ * @returns The repo and its events, or undefined when nothing is unplaced.
  */
 export function privateRepo(volume: PrivateVolume): PrivateRepo | undefined {
   const events: UniverseEvent[] = []
-  for (let index = 0; index < volume.monthly.length; index++) {
-    const count = volume.monthly[index] ?? 0
-    if (count > 0) appendMonth(events, volume, index, count)
+  for (let step = 0; step < volume.stepCount; step++) {
+    if (volume.covered.has(step)) continue
+    for (const actor of ACTORS)
+      appendDay(events, step, actor, series(volume, actor)[step] ?? 0)
   }
   if (events.length === 0) return undefined
   return { repo: { id: PRIVATE_REPO_ID, name: PRIVATE_REPO_NAME }, events }
@@ -70,7 +115,7 @@ export function privateRepo(volume: PrivateVolume): PrivateRepo | undefined {
  * @description Sorts the synthesized repo ahead of every real one, which is
  * what puts it at ordinal 0 and so at the disc's core. Radius encodes recency
  * everywhere else, so this is a deliberate exception, stated here rather than
- * left to emerge from whichever month private work last landed in.
+ * left to emerge from whichever day unplaced work last landed on.
  * @param repoId The repo being ordered.
  * @returns 0 for the private repo, 1 for every real one.
  */
@@ -78,71 +123,66 @@ export function corePin(repoId: number): number {
   return repoId === PRIVATE_REPO_ID ? 0 : 1
 }
 
+/** The calendar series an actor is counted in. */
+function series(volume: PrivateVolume, actor: UniverseActor): readonly number[] {
+  return actor === 0 ? volume.human : volume.agent
+}
+
 /**
- * @description Spreads one month's count across that month's days and appends
- * one event per contribution. The running floor hands each day its share with
- * no accumulated rounding drift, so a month's whole count is placed and a month
- * quieter than it is long still spans the month rather than stacking on day one.
- * Contributions whose day falls outside the timeline are dropped, not clamped:
- * piling them onto the first or last step would invent a spike.
+ * @description Appends one day's stand-in contributions for one actor. The
+ * stars are consecutive slots of the shared pool from a hashed starting point,
+ * so a day lights a scattered handful of the repo rather than the same corner
+ * every time, and no day can mint a star the pool does not already hold.
  */
-function appendMonth(
+function appendDay(
   events: UniverseEvent[],
-  volume: PrivateVolume,
-  index: number,
-  count: number
+  step: number,
+  actor: UniverseActor,
+  counted: number
 ): void {
-  const [year, month] = monthAt(volume.startMonth, index)
-  const days = daysInMonth(year, month)
-  const firstStep = stepOfDay(volume.windowStart, year, month)
-  let placed = 0
-  for (let day = 0; day < days; day++) {
-    const through = Math.floor(((day + 1) * count) / days)
-    const step = firstStep + day
-    if (step >= 0 && step < volume.stepCount)
-      for (let ordinal = placed; ordinal < through; ordinal++)
-        events.push({
-          repo: PRIVATE_REPO_ID,
-          path: syntheticPath(year, month, ordinal),
-          step,
-          actor: PRIVATE_ACTOR,
-        })
-    placed = through
-  }
+  if (counted <= 0) return
+  const files = dayFiles(counted, step, actor)
+  const offset = mix(step, SLOT_SALT + actor) % PRIVATE_PATH_POOL
+  for (let index = 0; index < files; index++)
+    events.push({
+      repo: PRIVATE_REPO_ID,
+      path: slotPath((offset + index) % PRIVATE_PATH_POOL),
+      step,
+      actor,
+    })
+}
+
+/**
+ * @description How many stars one day lights: its calendar count times a
+ * multiplier drawn from the measured quartile band. The operator asked for a
+ * random amount in a reasonable range, but the renders are screenshot tested,
+ * so the draw is a hash of the day rather than actual randomness.
+ */
+function dayFiles(counted: number, step: number, actor: UniverseActor): number {
+  const fraction = mix(step, SIZE_SALT + actor) / UINT32
+  const ratio =
+    fraction < 0.5
+      ? RATIO_LOW + (RATIO_MEDIAN - RATIO_LOW) * fraction * 2
+      : RATIO_MEDIAN + (RATIO_HIGH - RATIO_MEDIAN) * (fraction - 0.5) * 2
+  return Math.min(MAX_PRIVATE_DAY_FILES, Math.max(1, Math.round(counted * ratio)))
 }
 
 /**
  * @description Names one synthesized star. Deliberately not file-shaped: it
- * carries the month it came from and its ordinal within that month, because
- * that is the whole of what the payload knows, and a name like `src/index.ts`
- * would claim knowledge of private files that does not exist.
+ * carries only its slot in the pool, because a name like `src/index.ts` would
+ * claim knowledge of what these days touched that no part of the payload has.
  */
-function syntheticPath(year: number, month: number, ordinal: number): string {
-  return `${year}-${pad(month, 2)}/${pad(ordinal + 1, 3)}`
+function slotPath(slot: number): string {
+  return `unplaced/${String(slot + 1).padStart(3, '0')}`
 }
 
-/** The calendar year and 1-based month `index` months after `startMonth`. */
-function monthAt(startMonth: string, index: number): readonly [number, number] {
-  const year = Number(startMonth.slice(0, 4))
-  const total = Number(startMonth.slice(5, 7)) - 1 + index
-  return [year + Math.floor(total / 12), (total % 12) + 1]
-}
-
-/** Days in a 1-based calendar month; day 0 of the next month is this one's last. */
-function daysInMonth(year: number, month: number): number {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate()
-}
-
-/** Timeline step of a month's first day, counted from the window's first day. */
-function stepOfDay(windowStart: string, year: number, month: number): number {
-  const start = Date.UTC(
-    Number(windowStart.slice(0, 4)),
-    Number(windowStart.slice(5, 7)) - 1,
-    Number(windowStart.slice(8, 10))
-  )
-  return Math.round((Date.UTC(year, month - 1, 1) - start) / MS_PER_DAY)
-}
-
-function pad(value: number, width: number): string {
-  return String(value).padStart(width, '0')
+/**
+ * @description Deterministic 32-bit mix of one step, so the same payload
+ * places the same stars on every build. Consecutive steps have to scatter, not
+ * drift, or a run of days would climb through the band together.
+ */
+function mix(step: number, salt: number): number {
+  let hash = Math.imul(step ^ salt, 0x85ebca6b)
+  hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35)
+  return (hash ^ (hash >>> 16)) >>> 0
 }

@@ -126,3 +126,12 @@
 .hint {
   color: var(--text-faint);
 }
+
+/* The synthesized `private` repo needs a sentence the real repos do not: it is
+   an aggregate of many repositories, and its stars are contribution volume
+   rather than named files. */
+.note {
+  margin: 0;
+  color: var(--text-comment);
+  text-wrap: pretty;
+}

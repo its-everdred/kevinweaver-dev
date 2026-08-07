@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import {
   PLAYBACK_WINDOW_STEPS,
   RECENT_REPO_STEPS,
+  activeSteps,
   clampStep,
+  nextActiveWindowStep,
   nextUniverseStep,
   nextWindowStep,
   playbackWindowEnd,
@@ -171,6 +173,60 @@ describe('the rolling playback window', () => {
   it('stays on the one valid step of an empty or single-day timeline', () => {
     expect(nextWindowStep(0, 0, 'backward')).toBe(-1)
     expect(nextWindowStep(0, 1, 'backward')).toBe(0)
+  })
+})
+
+describe('the days playback dwells on', () => {
+  /**
+   * Twelve days carrying three green ones: a pair, a long grey run, and a
+   * single. The payload has the same shape at scale — 2,356 of its 6,056 days
+   * are green — so most of a pass is a day with no node and no beam on it.
+   */
+  const SPARSE: UniverseSnapshot = {
+    repos: [{ id: 0, name: 'a/r1', files: ['a.ts'] }],
+    contributions: [
+      { step: 2, repo: 0, file: 'a.ts', actor: 0 },
+      { step: 3, repo: 0, file: 'a.ts', actor: 0 },
+      { step: 9, repo: 0, file: 'a.ts', actor: 0 },
+    ],
+    stepCount: 12,
+  }
+  const GREEN = activeSteps(SPARSE)
+
+  it('flags every day that carries a contribution, and no other', () => {
+    expect([...GREEN]).toEqual([0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 0])
+  })
+
+  it('flags a day per step even when the log runs out early', () => {
+    expect(activeSteps({ ...SPARSE, contributions: [] })).toHaveLength(12)
+    expect(activeSteps({ ...SPARSE, stepCount: 0 })).toHaveLength(0)
+  })
+
+  it('advances to the next green day instead of onto a grey one', () => {
+    expect(nextActiveWindowStep(9, SPARSE.stepCount, 'backward', GREEN)).toBe(3)
+    expect(nextActiveWindowStep(3, SPARSE.stepCount, 'backward', GREEN)).toBe(2)
+    expect(nextActiveWindowStep(3, SPARSE.stepCount, 'forward', GREEN)).toBe(9)
+  })
+
+  it('carries a day reached by seeking off to the next green one', () => {
+    // Only where playback goes next is decided here, never where it is now: a
+    // viewer who scrubs onto a grey day is shown that day, and the skip takes
+    // over from it in the direction of travel.
+    expect(nextActiveWindowStep(6, SPARSE.stepCount, 'backward', GREEN)).toBe(3)
+    expect(nextActiveWindowStep(6, SPARSE.stepCount, 'forward', GREEN)).toBe(9)
+  })
+
+  it('wraps from the oldest green day round to the newest', () => {
+    // Backward playback runs out of green days below step 2. The window's own
+    // rollover puts it back on the most recent day, and the skip carries it on
+    // to the newest day with anything on it.
+    expect(nextActiveWindowStep(2, SPARSE.stepCount, 'backward', GREEN)).toBe(9)
+  })
+
+  it('still advances a day at a time when no day is green at all', () => {
+    const grey = new Uint8Array(SPARSE.stepCount)
+    expect(nextActiveWindowStep(5, SPARSE.stepCount, 'backward', grey)).toBe(4)
+    expect(nextActiveWindowStep(0, 0, 'backward', grey)).toBe(-1)
   })
 })
 

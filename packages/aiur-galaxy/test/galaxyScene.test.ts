@@ -10,6 +10,15 @@ import {
   resizeCamera,
 } from '../src/galaxyScene'
 import { createStarField } from '../src/galaxyStars'
+import {
+  DISC_STILL,
+  discTurn,
+  turnX,
+  turnY,
+  worldX,
+  worldY,
+  worldZ,
+} from '../src/galaxyWorld'
 import type { RepoArm } from '../src/galaxy'
 import {
   ORIGINS,
@@ -63,6 +72,70 @@ describe('createBeamField', () => {
     expect(vertexOf(ends, 2)).toEqual([ORIGINS[1]?.x, ORIGINS[1]?.y, ORIGINS[1]?.z])
     expect(vertexOf(ends, 3)).toEqual(vertexOf(stars, indexOf(source, 1, 'd.ts')))
     field.dispose()
+    beams.dispose()
+  })
+
+  it('aims each beam at where the turning disc has carried its star', () => {
+    const source = layout()
+    const beams = createBeamField(THEME)
+    const turn = discTurn(Math.PI / 2)
+    beams.setFrame(source, frameAt(0), ORIGINS, turn)
+    const ends = beams.lines.geometry.getAttribute('position') as BufferAttribute
+    const star = source.stars[indexOf(source, 0, 'a.ts')]
+    if (!star) throw new Error('the fixture lost its star')
+    // The star field turns as a whole; a beam is written one point at a time.
+    // Aiming a beam at the star's resting place would miss it by the whole
+    // angle the disc has turned through since the page opened.
+    expect(vertexOf(ends, 1)).toEqual(
+      [
+        worldX(turnX(turn, star.x, star.y)),
+        worldY(turnY(turn, star.x, star.y)),
+        worldZ(star.z),
+      ].map(Math.fround)
+    )
+    beams.dispose()
+  })
+
+  it('draws a beam back into its node as the day ends', () => {
+    const source = layout()
+    const beams = createBeamField(THEME)
+    beams.setFrame(source, frameAt(0), ORIGINS, DISC_STILL, 0)
+    const ends = beams.lines.geometry.getAttribute('position') as BufferAttribute
+    // Both ends of the line sit on the square it radiates from: the beam has
+    // retracted into it rather than vanishing off the star it reached.
+    expect(vertexOf(ends, 0)).toEqual([ORIGINS[0]?.x, ORIGINS[0]?.y, ORIGINS[0]?.z])
+    expect(vertexOf(ends, 1)).toEqual([ORIGINS[0]?.x, ORIGINS[0]?.y, ORIGINS[0]?.z])
+    beams.dispose()
+  })
+
+  it('draws a beam part of the way out of its node as the day opens', () => {
+    const source = layout()
+    const beams = createBeamField(THEME)
+    beams.setFrame(source, frameAt(0), ORIGINS, DISC_STILL, 0.5)
+    const ends = beams.lines.geometry.getAttribute('position') as BufferAttribute
+    const star = source.stars[indexOf(source, 0, 'a.ts')]
+    const origin = ORIGINS[0]
+    if (!star || !origin) throw new Error('the fixture lost its star')
+    // The star end is held in a float32 buffer, so the half-drawn beam is
+    // measured from the rounded point the whole beam would have reached.
+    const full = [worldX(star.x), worldY(star.y), worldZ(star.z)].map(Math.fround)
+    const half = [origin.x, origin.y, origin.z].map(
+      (from, axis) => from + ((full[axis] ?? 0) - from) * 0.5
+    )
+    expect(vertexOf(ends, 1)).toEqual(half.map(Math.fround))
+    beams.dispose()
+  })
+
+  it('keeps a part-drawn beam anchored to a node that is still moving', () => {
+    const source = layout()
+    const beams = createBeamField(THEME)
+    beams.setFrame(source, frameAt(0), ORIGINS, DISC_STILL, 0)
+    // The node glides while its beams grow, so a re-anchor has to carry the
+    // far end with it. Leaving it where the last write put it strands a
+    // retracted beam behind the square instead of holding it inside it.
+    beams.setOrigins([{ actor: 0, x: 2, y: 2, z: 2 }])
+    const ends = beams.lines.geometry.getAttribute('position') as BufferAttribute
+    expect(vertexOf(ends, 1)).toEqual([2, 2, 2])
     beams.dispose()
   })
 
@@ -136,6 +209,18 @@ describe('pickRepoArm', () => {
     const camera = viewFrom(0, 2.6)
     expect(pickRepoArm(ARMS, camera, { x: 0, y: 0 }, METRICS)).toBeNull()
     expect(pickRepoArm([], camera, { x: 300, y: 200 }, METRICS)).toBeNull()
+  })
+
+  it('picks the arm where the turning disc has carried it', () => {
+    const camera = viewFrom(0, 2.6)
+    const turn = discTurn(Math.PI / 2)
+    for (const repo of ARMS) {
+      const turned = repoScreenPosition(repo, camera, METRICS, turn)
+      expect(pickRepoArm(ARMS, camera, turned, METRICS, turn)).toBe(repo.repoId)
+      // The same pointer against a disc believed to be at rest lands on empty
+      // space: hover has to follow the stars, not the layout's resting place.
+      expect(pickRepoArm(ARMS, camera, turned, METRICS)).toBeNull()
+    }
   })
 
   it('never picks an arm the camera has moved past', () => {

@@ -124,6 +124,25 @@ describe('RepoInfo', () => {
     expect(value('last active')).toBe('2026-02-05')
   })
 
+  it('explains that the private repo aggregates every private repository', () => {
+    ready()
+    publishGalaxySelection({
+      repoId: -1,
+      name: 'private',
+      fileCount: 479,
+      lastStep: 3,
+    })
+    render(<RepoInfo />)
+
+    // It aggregates many repositories and its stars are volume, not named
+    // files — a claim the pane has to make, because every other repo in the
+    // disc means the literal opposite.
+    expect(screen.getByText(/every private repository/i)).toBeInTheDocument()
+    // And it is not a GitHub URL: github.com/private is somebody else's page.
+    expect(screen.queryByRole('link', { name: 'private' })).toBeNull()
+    expect(screen.getByText('private')).toBeInTheDocument()
+  })
+
   it('reveals a dismiss control that returns the pane to the day list', () => {
     ready()
     publishGalaxySelection({

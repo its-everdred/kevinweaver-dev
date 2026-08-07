@@ -61,6 +61,9 @@ export function RepoInfo(): ReactNode {
   const name = isRepoPinned(selection)
     ? (selection.name ?? record?.name ?? null)
     : null
+  // Real repos carry their payload index as an id; the synthesized `private`
+  // repo is the only one with a negative id, so it needs no magic name match.
+  const synthetic = (selection.repoId ?? 0) < 0
   const rows = name
     ? buildRows(selection, record, viz?.head.manifest.windowStart ?? '')
     : []
@@ -76,14 +79,18 @@ export function RepoInfo(): ReactNode {
       {name ? (
         <>
           <p className={styles.head}>
-            <a
-              className={styles.name}
-              href={`https://github.com/${name}`}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {name}
-            </a>
+            {synthetic ? (
+              <span className={styles.name}>{name}</span>
+            ) : (
+              <a
+                className={styles.name}
+                href={`https://github.com/${name}`}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {name}
+              </a>
+            )}
             <button
               aria-label="Show the day's repos"
               className={styles.dismiss}
@@ -93,6 +100,13 @@ export function RepoInfo(): ReactNode {
               <span aria-hidden="true">✕</span>
             </button>
           </p>
+          {synthetic ? (
+            <p className={styles.note}>
+              every private repository, counted together. GitHub reports private
+              work as totals only, so these are contribution volumes rather than
+              named files.
+            </p>
+          ) : null}
           <dl className={styles.rows}>
             {rows.map((row) => (
               <Fragment key={row.label}>

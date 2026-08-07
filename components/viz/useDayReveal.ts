@@ -52,17 +52,33 @@ export function useDayClock(): DayClock {
   return day
 }
 
+/** The slice of a day's contributions the pane is showing. */
+export interface DayRange {
+  /** First contribution rendered, counting 0 from the day's most recent. */
+  readonly start: number
+  /** One past the last contribution rendered. */
+  readonly end: number
+}
+
 /**
- * @description Resolves how many of a day's lines are visible. The count is
- * derived from how far the step has progressed through its one-second slot, not
- * accumulated in a timer of its own, so it stays locked to the clock every
- * other surface reads and a seek needs no teardown. A day that was jumped to, a
- * paused clock, and a reduced-motion viewer all get the day whole.
+ * @description Resolves which of a day's lines the pane is showing. The reveal
+ * is derived from how far the step has progressed through its one-second slot,
+ * not accumulated in a timer of its own, so it stays locked to the clock every
+ * other surface reads and a seek needs no teardown. What comes back is a window
+ * onto the day rather than a count from its top: the pane holds a fixed number
+ * of rows, so once the reveal passes that number the window slides, dropping a
+ * line off the top for every line it brings in. That is the difference between
+ * a log that fills once and one the viewer can watch move.
  * @param clock The day being drawn.
  * @param total Contributions that day carries.
- * @returns Lines to render, counting from the most recent.
+ * @param capacity Rows the pane can show at once.
+ * @returns The contiguous slice to render, most recent of the slice first.
  */
-export function useDayReveal(clock: DayClock, total: number): number {
+export function useDayReveal(
+  clock: DayClock,
+  total: number,
+  capacity: number
+): DayRange {
   const [reveal, setReveal] = useState({ step: -1, count: 0 })
 
   useEffect(() => {
@@ -72,18 +88,30 @@ export function useDayReveal(clock: DayClock, total: number): number {
     const tick = (stamp: number): void => {
       const elapsed = stamp - started
       const shown = Math.min(total, Math.floor((elapsed * total) / STEP_MS) + 1)
-      setReveal({ step: clock.step, count: shown })
+      // A short day advances the window on a handful of the slot's sixty
+      // frames; re-rendering on the rest of them would repaint the same rows.
+      setReveal((current) =>
+        current.step === clock.step && current.count === shown
+          ? current
+          : { step: clock.step, count: shown }
+      )
       if (shown < total) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [clock, total])
 
-  if (!clock.streaming || total <= 1) return total
+  // A day at rest — paused, sought, or read under reduced motion — shows its
+  // head, which is the whole day as far as the pane was ever able to show it.
+  // Resting on wherever a half-run reveal stopped would make the same day look
+  // different depending on when the viewer paused.
+  if (!clock.streaming || total <= 1)
+    return { start: 0, end: Math.min(total, capacity) }
   // Until the step's first frame runs, a streamed day is its most recent line
-  // alone; the frames after it walk the rest of the day out at a constant rate.
-  if (reveal.step !== clock.step) return 1
-  return Math.min(reveal.count, total)
+  // alone; the frames after it walk the rest of the day past the window at a
+  // constant rate, reaching the day's oldest line as the slot ends.
+  const shown = reveal.step === clock.step ? Math.min(reveal.count, total) : 1
+  return { start: Math.max(0, shown - capacity), end: shown }
 }
 
 /**

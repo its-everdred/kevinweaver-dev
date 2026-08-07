@@ -1,17 +1,15 @@
 import {
-  AdditiveBlending,
   BufferAttribute,
   BufferGeometry,
   DynamicDrawUsage,
   Material,
   Points,
-  ShaderMaterial,
 } from 'three'
 import type { Color } from 'three'
 import { hash01, starKey } from './galaxy'
 import type { StarPosition, UniverseLayout } from './galaxy'
 import type { UniverseFrame } from './universePlayback'
-import { STAR_FRAGMENT_SHADER, STAR_VERTEX_SHADER } from './galaxyShader'
+import { createPointMaterial } from './galaxyShader'
 import {
   toColor,
   worldX,
@@ -87,16 +85,7 @@ export function buildGalaxyPoints(
   geometry.setAttribute('softness', new BufferAttribute(softness, 1))
   geometry.setAttribute('brightness', new BufferAttribute(brightness, 1))
 
-  const material = new ShaderMaterial({
-    vertexShader: STAR_VERTEX_SHADER,
-    fragmentShader: STAR_FRAGMENT_SHADER,
-    transparent: true,
-    depthWrite: false,
-    blending: AdditiveBlending,
-    vertexColors: true,
-  })
-
-  return new Points(geometry, material)
+  return new Points(geometry, createPointMaterial())
 }
 
 /** How one star is drawn: none of it changes after the field is built. */

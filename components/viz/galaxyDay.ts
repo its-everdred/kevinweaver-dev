@@ -66,7 +66,10 @@ export function dayContributions(
  * @param repoId The repo to count.
  * @returns How many files the repo owns.
  */
-export function repoFileCount(repoOf: ArrayLike<number>, repoId: number): number {
+export function repoFileCount(
+  repoOf: ArrayLike<number>,
+  repoId: number
+): number {
   let count = 0
   for (let index = 0; index < repoOf.length; index += 1)
     if (repoOf[index] === repoId) count += 1

@@ -12,16 +12,17 @@ import {
   type GalaxyScene,
 } from '@/packages/aiur-galaxy/src/galaxyScene'
 import { layoutUniverse } from '@/packages/aiur-galaxy/src/galaxy'
+import { discSpin } from '@/packages/aiur-galaxy/src/galaxyWorld'
 import {
-  nextWindowStep,
   playbackWindowEnd,
   universeFrame,
 } from '@/packages/aiur-galaxy/src/universePlayback'
 import { resolveContributors } from '@/packages/aiur-galaxy/src/contributors'
 import type {
-  UniverseActor,
+  PlaybackDirection,
   UniverseSnapshot,
 } from '@/packages/aiur-galaxy/src/types'
+import { createGalaxyDayClock } from './galaxyDayClock'
 import {
   getGalaxyTimeline,
   publishGalaxyTimeline,
@@ -30,9 +31,6 @@ import {
 import { installGalaxyTestHarness } from './galaxyTestHarness'
 import type { PointerPosition } from './useGalaxyPointer'
 
-/** One day of playback per second. */
-const STEP_MS = 1000
-const EASE = 0.12
 /**
  * Playback runs the rolling one-year window from the most recent day toward
  * the past. Sweeping the whole history forward at one day per second would run
@@ -40,6 +38,15 @@ const EASE = 0.12
  * reachable by seeking.
  */
 const DIRECTION = 'backward'
+
+/**
+ * Milliseconds between rendered frames — thirty a second. The disc is a slow
+ * scene by construction: a day lasts a second and the turn covers a degree and
+ * a half in it, so half the frames a display offers carry no visible change.
+ * Skipping them is the difference between a galaxy a weak machine can hold on
+ * screen and one that saturates it.
+ */
+const FRAME_MS = 1000 / 30
 
 /** What the galaxy render loop needs from its host component. */
 export interface GalaxySceneHost {
@@ -110,19 +117,77 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
     const observer = new ResizeObserver(resize)
     observer.observe(canvas)
 
+    const days = createGalaxyDayClock(universe)
     let raf = 0
-    let last = performance.now()
+    /** Wall clock the disc's turn is measured from, never the playback step. */
+    const opened = performance.now()
     let overflow = 0
-    const eased: Partial<Record<UniverseActor, { x: number; y: number }>> = {}
+    /**
+     * The playback frame, held across the frames that share a day. Building one
+     * walks the whole contribution log — 138,634 entries at the full history —
+     * and allocates a key per live file, so doing it per animation frame cost
+     * millions of allocations a second and stalled the page outright. What it
+     * returns depends only on the step and the direction.
+     */
+    let cached: ReturnType<typeof universeFrame> | null = null
+    let cachedStep = Number.NaN
+    let cachedDirection = ''
+    /**
+     * The contributor targets for that same day. Resolving them walks the day's
+     * contributions through the star index, so it belongs on the step, not on
+     * the animation frame; the glide between them is what moves per frame.
+     */
+    let cachedTargets: ReturnType<typeof resolveContributors> = []
+    const frameAt = (
+      step: number,
+      direction: PlaybackDirection
+    ): ReturnType<typeof universeFrame> => {
+      if (cached && step === cachedStep && direction === cachedDirection)
+        return cached
+      cached = universeFrame(universe, step, direction)
+      cachedStep = step
+      cachedDirection = direction
+      cachedTargets = resolveContributors(layout, cached)
+      return cached
+    }
+    /**
+     * What the last rendered frame depended on. Under reduced motion nothing
+     * advances on its own — no turn, no playback, no transition — so once a
+     * frame is on screen it stays correct until the viewer seeks, hovers, or
+     * moves the camera. Re-rendering it sixty times a second is work nobody
+     * asked for, and "every infinite animation stops" is the rule reduced
+     * motion is asking us to honour, not merely a request to hold the day still.
+     */
+    let settled = ''
+    /**
+     * Wall-clock time of the last rendered frame, so the loop can draw at
+     * `FRAME_MS` rather than at whatever rate the display offers. Nothing here
+     * moves fast enough to need 60 fps: the day changes once a second and the
+     * disc turns a degree and a half in that time. Drawing this scene twice as
+     * often as it changes costs a phone its battery and a weak machine its
+     * responsiveness, and buys no visible smoothness.
+     */
+    let drawn = Number.NEGATIVE_INFINITY
     const frame = (now: number): void => {
       const clock = getGalaxyTimeline()
       if (clock.total === universe.stepCount) {
-        if (!reducedMotion && now - last >= STEP_MS && clock.playing) {
-          last = now
-          seekGalaxyTimeline(
-            nextWindowStep(clock.step, universe.stepCount, clock.direction),
-            universe.stepCount
-          )
+        const animated = !reducedMotion && clock.playing
+        const day = days.advance(clock.step, clock.direction, now, animated)
+        if (day !== clock.step) seekGalaxyTimeline(day, universe.stepCount)
+        if (now - drawn < FRAME_MS) {
+          raf = requestAnimationFrame(frame)
+          return
+        }
+        drawn = now
+        if (reducedMotion && live) {
+          const hover = pointerRef.current
+          const orbit = orbitRef.current
+          const state = `${clock.step} ${clock.direction} ${hover?.x ?? ''},${hover?.y ?? ''} ${orbit.azimuth},${orbit.polar},${orbit.distance}`
+          if (state === settled) {
+            raf = requestAnimationFrame(frame)
+            return
+          }
+          settled = state
         }
         if (live) {
           // The camera is read here rather than pushed on change so a scene
@@ -130,17 +195,19 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
           // snapping back to the build framing.
           const view = orbitPosition(orbitRef.current)
           live.setCamera(view.x, view.y, view.z)
+          live.setRotation(discSpin(now - opened, reducedMotion))
           const hover = pointerRef.current
           live.setHighlight(
             hover
               ? live.pickRepo(hover.x, hover.y, canvas.clientWidth, canvas.clientHeight)
               : null
           )
-          const playback = universeFrame(universe, clock.step, clock.direction)
-          const stats = live.setFrame(layout, playback)
+          const playback = frameAt(clock.step, clock.direction)
+          const stats = live.setFrame(layout, playback, days.reach(now, animated))
           overflow = surfaceBeamOverflow(canvas, stats.beamOverflow, overflow)
-          const targets = resolveContributors(layout, playback)
-          live.setContributors(easedContributors(eased, targets))
+          live.setContributors(
+            days.glide.at(cachedTargets, days.phase(now, animated))
+          )
           live.render()
         }
       }
@@ -176,24 +243,4 @@ function surfaceBeamOverflow(
   if (overflow > 0) canvas.dataset.beamOverflow = String(overflow)
   else delete canvas.dataset.beamOverflow
   return overflow
-}
-
-function easedContributors(
-  current: Partial<Record<UniverseActor, { x: number; y: number }>>,
-  targets: readonly { actor: UniverseActor; x: number; y: number; active: boolean }[]
-): readonly { actor: UniverseActor; x: number; y: number }[] {
-  for (const target of targets) {
-    const existing = current[target.actor]
-    if (!existing) {
-      current[target.actor] = { x: target.x, y: target.y }
-      continue
-    }
-    existing.x += (target.x - existing.x) * EASE
-    existing.y += (target.y - existing.y) * EASE
-  }
-  return targets.map((target) => ({
-    actor: target.actor,
-    x: current[target.actor]?.x ?? target.x,
-    y: current[target.actor]?.y ?? target.y,
-  }))
 }
