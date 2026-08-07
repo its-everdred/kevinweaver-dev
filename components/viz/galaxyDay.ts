@@ -56,6 +56,23 @@ export function dayContributions(
  * @param step The current timeline step.
  * @returns One entry per repository, empty for a day with no contributions.
  */
+/**
+ * @description Counts the files a repo owns, which is not the number of stars
+ * the disc draws for it: the layout folds a large repo's files onto fewer
+ * vertices, so a `RepoArm`'s star count reports a fraction of the truth. Both
+ * the day list and a clicked repo read this, so the pane cannot disagree with
+ * itself about the same repo.
+ * @param repoOf Per-file repo ownership from the decoded payload.
+ * @param repoId The repo to count.
+ * @returns How many files the repo owns.
+ */
+export function repoFileCount(repoOf: ArrayLike<number>, repoId: number): number {
+  let count = 0
+  for (let index = 0; index < repoOf.length; index += 1)
+    if (repoOf[index] === repoId) count += 1
+  return count
+}
+
 export function dayRepos(
   head: BundleHead | null,
   step: number

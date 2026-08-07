@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import type { DayRepo } from './galaxyDay'
+import { repoFileCount, type DayRepo } from './galaxyDay'
 import { publishGalaxySelection } from './galaxySelection'
 import type { InstrumentViz } from './instrumentRuntime'
 import styles from './RepoInfo.module.css'
@@ -57,16 +57,7 @@ function pinRepo(repo: DayRepo, step: number, viz: InstrumentViz | null): void {
   publishGalaxySelection({
     repoId: repo.id,
     name: repo.name,
-    fileCount: starCount(viz, repo.id),
+    fileCount: viz ? repoFileCount(viz.input.repoOf, repo.id) : null,
     lastStep: step,
   })
-}
-
-function starCount(viz: InstrumentViz | null, repoId: number): number | null {
-  if (!viz) return null
-  const owners = viz.input.repoOf
-  let count = 0
-  for (let index = 0; index < owners.length; index += 1)
-    if (owners[index] === repoId) count += 1
-  return count
 }
