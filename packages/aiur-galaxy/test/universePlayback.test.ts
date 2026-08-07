@@ -82,11 +82,16 @@ describe('universeFrame', () => {
 })
 
 describe('the frame recency window', () => {
-  /** One repo, one contribution, and room on both sides of it to age out. */
+  /**
+   * One repo, one contribution, and a full recency window of room on both
+   * sides of it, so the contribution can age out in either direction without
+   * the step clamping against the end of the timeline.
+   */
+  const TOUCH_STEP = RECENT_REPO_STEPS + 5
   const TRAIL: UniverseSnapshot = {
     repos: [{ id: 7, name: 'a/trail', files: ['t.ts'] }],
-    contributions: [{ step: 5, repo: 7, file: 't.ts', actor: 0 }],
-    stepCount: 12,
+    contributions: [{ step: TOUCH_STEP, repo: 7, file: 't.ts', actor: 0 }],
+    stepCount: TOUCH_STEP + RECENT_REPO_STEPS + 5,
   }
 
   function ageAt(step: number, direction: 'forward' | 'backward'): number | undefined {
@@ -94,24 +99,25 @@ describe('the frame recency window', () => {
   }
 
   it('reports zero steps of age on the step a repo contributes', () => {
-    expect(ageAt(5, 'forward')).toBe(0)
-    expect(ageAt(5, 'backward')).toBe(0)
+    expect(ageAt(TOUCH_STEP, 'forward')).toBe(0)
+    expect(ageAt(TOUCH_STEP, 'backward')).toBe(0)
   })
 
   it('ages a repo in playback order, not in calendar order', () => {
     // Forward playback leaves the contribution behind; backward playback
     // approaches it from the future, so its trail runs the other way.
-    expect([6, 7, 8].map((step) => ageAt(step, 'forward'))).toEqual([1, 2, 3])
-    expect([4, 3, 2].map((step) => ageAt(step, 'backward'))).toEqual([1, 2, 3])
+    expect([1, 2, 3].map((n) => ageAt(TOUCH_STEP + n, 'forward'))).toEqual([1, 2, 3])
+    expect([1, 2, 3].map((n) => ageAt(TOUCH_STEP - n, 'backward'))).toEqual([1, 2, 3])
   })
 
   it('drops a repo once it ages past the recency window', () => {
-    expect(RECENT_REPO_STEPS).toBe(4)
-    expect(ageAt(5 + RECENT_REPO_STEPS, 'forward')).toBeUndefined()
-    expect(ageAt(5 - RECENT_REPO_STEPS, 'backward')).toBeUndefined()
+    // Asserted against the constant, not a copy of its value: the window is a
+    // tuning knob, and pinning the number here only breaks on every retune.
+    expect(ageAt(TOUCH_STEP + RECENT_REPO_STEPS, 'forward')).toBeUndefined()
+    expect(ageAt(TOUCH_STEP - RECENT_REPO_STEPS, 'backward')).toBeUndefined()
     // A step the other direction has not reached yet is not recent either.
-    expect(ageAt(4, 'forward')).toBeUndefined()
-    expect(ageAt(6, 'backward')).toBeUndefined()
+    expect(ageAt(TOUCH_STEP - 1, 'forward')).toBeUndefined()
+    expect(ageAt(TOUCH_STEP + 1, 'backward')).toBeUndefined()
   })
 
   it('keeps the freshest contribution when a repo has several', () => {

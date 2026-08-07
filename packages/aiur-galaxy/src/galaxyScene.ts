@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { starKey } from './galaxy'
 import type { RepoArm, StarPosition, UniverseLayout } from './galaxy'
-import { RECENT_REPO_STEPS } from './universePlayback'
+import { RECENT_REPO_HOLD, RECENT_REPO_STEPS } from './universePlayback'
 import type { UniverseFrame } from './universePlayback'
 import type { UniverseActor } from './types'
 import { STAR_FRAGMENT_SHADER, STAR_VERTEX_SHADER } from './galaxyShader'
@@ -573,7 +573,9 @@ export function createRepoLabels(
  */
 function contributionOpacity(age: number | undefined): number {
   if (age === undefined || age >= RECENT_REPO_STEPS) return 0
-  return 1 - age / RECENT_REPO_STEPS
+  const hold = RECENT_REPO_STEPS * RECENT_REPO_HOLD
+  if (age <= hold) return 1
+  return 1 - (age - hold) / (RECENT_REPO_STEPS - hold)
 }
 
 /**

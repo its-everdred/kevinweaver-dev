@@ -38,10 +38,18 @@ export const PLAYBACK_WINDOW_STEPS = 365
 
 /**
  * Steps a repo stays in a frame's recent set after contributing. One step is
- * one day, so a repo is "recent" for the few days of playback that follow its
- * contribution and then ages out.
+ * one day, so a contribution keeps a repo named for roughly six weeks of the
+ * rolling year — long enough to read as "recently worked on" rather than as a
+ * label that blinks past in the four seconds after its commit.
  */
-export const RECENT_REPO_STEPS = 4
+export const RECENT_REPO_STEPS = 45
+
+/**
+ * Fraction of `RECENT_REPO_STEPS` a revealed label holds at full opacity before
+ * it begins to fade. Holding first, then fading, keeps the label readable for
+ * most of its life instead of dimming from the moment it appears.
+ */
+export const RECENT_REPO_HOLD = 0.6
 
 /**
  * @description Clamps a step index into the universe timeline's valid range.

@@ -13,7 +13,11 @@ import {
 } from '../src/galaxyScene'
 import type { RepoLabels } from '../src/galaxyScene'
 import { layoutUniverse, starKey } from '../src/galaxy'
-import { universeFrame } from '../src/universePlayback'
+import {
+  RECENT_REPO_HOLD,
+  RECENT_REPO_STEPS,
+  universeFrame,
+} from '../src/universePlayback'
 import type { UniverseFrame } from '../src/universePlayback'
 import type { RepoArm, UniverseLayout } from '../src/galaxy'
 import type { PlaybackDirection, UniverseSnapshot } from '../src/types'
@@ -267,11 +271,16 @@ describe('createStarField', () => {
 })
 
 describe('createRepoLabels', () => {
-  /** One repo with one contribution, and room on both sides to age out. */
+  /**
+   * One repo with one contribution, and a full recency window of room on both
+   * sides, so the label can age out in either direction without the step
+   * clamping against the end of the timeline.
+   */
+  const TOUCH_STEP = RECENT_REPO_STEPS + 5
   const TRAIL: UniverseSnapshot = {
     repos: [{ id: 7, name: 'a/trail', files: ['t.ts'] }],
-    contributions: [{ step: 5, repo: 7, file: 't.ts', actor: 0 }],
-    stepCount: 12,
+    contributions: [{ step: TOUCH_STEP, repo: 7, file: 't.ts', actor: 0 }],
+    stepCount: TOUCH_STEP + RECENT_REPO_STEPS + 5,
   }
 
   function opacityOf(source: UniverseLayout, labels: RepoLabels, repoId: number): number {
@@ -315,19 +324,45 @@ describe('createRepoLabels', () => {
     labels.dispose()
   })
 
-  it('fades a contribution-revealed label out over the following days', () => {
-    expect(trail([5, 6, 7, 8, 9], 'forward')).toEqual([1, 0.75, 0.5, 0.25, 0])
+  it('holds a contribution-revealed label lit, then fades it out', () => {
+    const hold = Math.floor(RECENT_REPO_STEPS * RECENT_REPO_HOLD)
+    const steps = [
+      TOUCH_STEP,
+      TOUCH_STEP + hold,
+      TOUCH_STEP + RECENT_REPO_STEPS - 1,
+      TOUCH_STEP + RECENT_REPO_STEPS,
+    ]
+    const [lit, stillLit, fading, gone] = trail(steps, 'forward')
+    // A contribution keeps its repo named for most of the window rather than
+    // dimming from the moment it lands.
+    expect(lit).toBe(1)
+    expect(stillLit).toBe(1)
+    expect(fading).toBeGreaterThan(0)
+    expect(fading).toBeLessThan(1)
+    expect(gone).toBe(0)
   })
 
   it('fades in playback order, so a backward pass trails the other way', () => {
-    expect(trail([5, 4, 3, 2, 1], 'backward')).toEqual([1, 0.75, 0.5, 0.25, 0])
+    const hold = Math.floor(RECENT_REPO_STEPS * RECENT_REPO_HOLD)
+    const [lit, stillLit, gone] = trail(
+      [TOUCH_STEP, TOUCH_STEP - hold, TOUCH_STEP - RECENT_REPO_STEPS],
+      'backward'
+    )
+    expect(lit).toBe(1)
+    expect(stillLit).toBe(1)
+    expect(gone).toBe(0)
   })
 
   it('resolves the same opacity from a seek as from a walk', () => {
     // The fade is derived from the step, never accumulated across frames, so
     // scrubbing to a day matches having played to it.
-    expect(trail([5, 6, 7], 'forward').at(-1)).toBe(trail([7], 'forward').at(-1))
-    expect(trail([0, 11, 6], 'forward').at(-1)).toBe(0.75)
+    const late = TOUCH_STEP + RECENT_REPO_STEPS - 1
+    expect(trail([TOUCH_STEP, TOUCH_STEP + 1, late], 'forward').at(-1)).toBe(
+      trail([late], 'forward').at(-1)
+    )
+    expect(trail([0, TOUCH_STEP + 2, late], 'forward').at(-1)).toBe(
+      trail([late], 'forward').at(-1)
+    )
   })
 
   it('reveals a highlighted repo whatever the step, and hides it again', () => {
