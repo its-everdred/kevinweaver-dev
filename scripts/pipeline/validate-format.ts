@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
-import { decodeDictSlice } from '../../lib/bundle/codec.ts'
+import { decodeDictSlice, decodeIntegrity } from '../../lib/bundle/codec.ts'
 import type { EncodedBundle } from './encode.ts'
 import type { Finding, ChunkColumns } from './validate-types.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
@@ -46,10 +46,18 @@ export function validateJson(
     add(findings, 'E_JSON', 'A bundle resource is not valid JSON.')
 }
 export function validateIntegrity(
-  integrity: Readonly<Record<string, string>>,
   files: ReadonlyMap<string, string>,
   findings: Finding[]
 ): void {
+  const integrity = readIntegrity(files.get('integrity.json'))
+  if (!integrity) {
+    add(
+      findings,
+      'E_INTEGRITY',
+      'The integrity map integrity.json is missing or malformed.'
+    )
+    return
+  }
   Object.entries(integrity).forEach(([path, expected]) => {
     const text = files.get(path)
     const actual = text
@@ -101,6 +109,16 @@ function json(text: string): boolean {
     return true
   } catch {
     return false
+  }
+}
+function readIntegrity(
+  text: string | undefined
+): Readonly<Record<string, string>> | undefined {
+  if (text === undefined) return undefined
+  try {
+    return decodeIntegrity(text)
+  } catch {
+    return undefined
   }
 }
 function record(text: string): Record<string, unknown> | undefined {

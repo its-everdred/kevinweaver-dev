@@ -1,0 +1,35 @@
+/* The column beside the galaxy: the clicked repo on top, the events log on the
+   bottom, each taking half the galaxy's height. `.kw-lower` gives the row a
+   definite height, so `min-height: 0` is what lets both panes clip their own
+   overflow instead of the log stretching the row. */
+.side {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: var(--pane-gap);
+  min-width: 0;
+  min-height: 0;
+}
+
+.sidePane {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Below the instrument's full-height breakpoint the row is sized by its
+   content, so the column carries the height the galaxy pane is given. */
+@media (max-width: 1080px) {
+  .side {
+    height: 26.25rem;
+  }
+}
+
+/* Stacked under the galaxy: two halves of the height the log alone used to
+   take, so neither pane collapses to an unreadable strip. */
+@media (max-width: 720px) {
+  .side {
+    flex: 0 0 auto;
+    height: 28rem;
+  }
+}

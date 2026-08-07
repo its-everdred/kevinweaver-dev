@@ -79,7 +79,7 @@ function validateResources(
 ): void {
   validateJson(resources.files, findings)
   validateManifestBytes(bundle.manifest, resources.files, findings)
-  validateIntegrity(bundle.manifest.integrity, resources.files, findings)
+  validateIntegrity(resources.files, findings)
   validateCanonicalBytes(resources, findings)
   validateShape(bundle, resources, findings)
   validateRegression(bundle, prev, resources.decoded?.repos ?? [], findings)

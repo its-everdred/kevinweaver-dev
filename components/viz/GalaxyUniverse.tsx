@@ -1,39 +1,31 @@
 'use client'
 
-import { memo, useEffect, useMemo, useRef } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import { formatDayISO } from '@/lib/viz/driver'
-import {
-  buildUniverse,
-  createGalaxyScene,
-  layoutUniverse,
-  nextUniverseStep,
-  resolveContributors,
-  universeFrame,
-  type GalaxyScene,
-  type UniverseActor,
-} from '@/packages/aiur-galaxy/src'
+import { memo, useMemo, useRef } from 'react'
+import type { ReactNode } from 'react'
+import { type OrbitState } from '@/lib/viz/orbit'
+// Per module, not through the barrel: see the note in useGalaxyScene.ts.
+import { buildUniverse } from '@/packages/aiur-galaxy/src/buildUniverse'
+import type { GalaxyScene } from '@/packages/aiur-galaxy/src/galaxyScene'
+import type { UniverseActor } from '@/packages/aiur-galaxy/src/types'
 import {
   useInstrumentRuntime,
   type InstrumentRuntimeState,
 } from './instrumentRuntime'
-import {
-  getGalaxyTimeline,
-  publishGalaxyTimeline,
-  seekGalaxyTimeline,
-} from './galaxyTimeline'
-import { installGalaxyTestHarness } from './galaxyTestHarness'
+import { useGalaxyCamera } from './useGalaxyCamera'
+import { useGalaxyPointer } from './useGalaxyPointer'
+import { useGalaxyScene } from './useGalaxyScene'
+import styles from './GalaxyUniverse.module.css'
 
 /** Stable identifier used to locate the separately requested galaxy chunk. */
 export const GALAXY_CHUNK_MARKER = 'kw-galaxy-universe'
 
-const STEP_MS = 1000
-const EASE = 0.12
-
 function galaxyLabel(runtime: InstrumentRuntimeState): string {
-  if (runtime.status === 'unavailable') return 'Repository galaxies unavailable'
-  if (runtime.status === 'loading') return 'Repository galaxies loading'
-  return 'Repository galaxies: every repo is a galaxy, every file a star, across the contribution window.'
+  if (runtime.status === 'unavailable') return 'Repository map unavailable.'
+  if (runtime.status === 'loading') return 'Repository map loading.'
+  // The camera hint belongs in the name: a canvas with an `aria-label` never
+  // announces its fallback subtree, so this is the only place a keyboard user
+  // is told that the arrow and plus/minus keys drive the view.
+  return 'Repository map: one spiral disc where every repo is an arm and every file a star, brightening across the contribution window. Drag or use the arrow keys to rotate it, and pinch, press plus or minus, or use the zoom buttons to change the distance.'
 }
 
 /**
@@ -48,9 +40,11 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   const runtime = useInstrumentRuntime()
   const viz = runtime.status === 'ready' ? runtime.viz : null
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const pointerRef = useRef<{ x: number; y: number } | null>(null)
+  // The scene is owned by the render-loop hook and read by the pointer hook,
+  // which is where a click has to reach the pick.
   const sceneRef = useRef<GalaxyScene | null>(null)
-  const contributorRef = useRef<Partial<Record<UniverseActor, { x: number; y: number }>>>({})
+  const camera = useGalaxyCamera()
+  const pointer = useGalaxyPointer(camera, sceneRef)
 
   const universe = useMemo(() => {
     if (!viz) return null
@@ -64,146 +58,75 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
     return buildUniverse(repos, events, viz.head.manifest.dayCount)
   }, [viz])
 
-  const windowStart = viz?.head.manifest.windowStart ?? ''
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || !universe) return
-    const layout = layoutUniverse(universe)
-    let scene: GalaxyScene | null = null
-    try {
-      scene = createGalaxyScene(canvas, { layout })
-    } catch {
-      return
-    }
-    sceneRef.current = scene
-
-    // Initialize the shared clock from this universe's bounds. Reduced-motion
-    // users see a static day: playback only advances on an explicit seek.
-    const reducedMotion = window.matchMedia(
-      '(prefers-reduced-motion: reduce)'
-    ).matches
-    publishGalaxyTimeline({
-      step: 0,
-      date: formatDayISO(windowStart, 0),
-      playing: !reducedMotion,
-      total: universe.stepCount,
-      direction: 'forward',
-      windowStartISO: windowStart,
-    })
-    const removeHarness = installGalaxyTestHarness(universe.stepCount)
-
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
-    const resize = (): void => {
-      if (!sceneRef.current) return
-      sceneRef.current.resize(
-        Math.round(canvas.clientWidth * dpr),
-        Math.round(canvas.clientHeight * dpr)
-      )
-    }
-    resize()
-    const observer = new ResizeObserver(resize)
-    observer.observe(canvas)
-
-    let raf = 0
-    let last = performance.now()
-    const frame = (now: number): void => {
-      const current = getGalaxyTimeline()
-      if (current.total === universe.stepCount) {
-        if (!reducedMotion && now - last >= STEP_MS && current.playing) {
-          last = now
-          const next = nextUniverseStep(
-            universeFrame(universe, current.step, current.direction),
-            current.direction
-          )
-          seekGalaxyTimeline(next, universe.stepCount)
-        }
-        if (sceneRef.current) {
-          const playback = universeFrame(universe, current.step, current.direction)
-          sceneRef.current.setFrame(layout, playback)
-          const metrics = {
-            width: Math.round(canvas.clientWidth * dpr),
-            height: Math.round(canvas.clientHeight * dpr),
-          }
-          const targets = resolveContributors(layout, playback, metrics)
-          const contributors = easedContributors(contributorRef.current, targets)
-          sceneRef.current.setContributors(contributors)
-          sceneRef.current.render()
-        }
-      }
-      raf = requestAnimationFrame(frame)
-    }
-    raf = requestAnimationFrame(frame)
-    return () => {
-      observer.disconnect()
-      cancelAnimationFrame(raf)
-      removeHarness()
-      sceneRef.current = null
-      scene?.dispose()
-    }
-  }, [universe, windowStart])
-
-  const onPointerLeave = (): void => {
-    pointerRef.current = null
-  }
-
-  const scrubToX = (clientX: number, element: HTMLCanvasElement): void => {
-    if (!universe) return
-    const rect = element.getBoundingClientRect()
-    const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)))
-    const step = Math.max(
-      0,
-      Math.min(
-        universe.stepCount - 1,
-        Math.round(fraction * (universe.stepCount - 1))
-      )
-    )
-    seekGalaxyTimeline(step, universe.stepCount)
-  }
-  const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
-    scrubToX(event.clientX, event.currentTarget)
-  }
-  const onPointerDrag = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
-    if (!event.buttons) return
-    scrubToX(event.clientX, event.currentTarget)
-  }
+  useGalaxyScene({
+    canvasRef,
+    universe,
+    windowStart: viz?.head.manifest.windowStart ?? '',
+    orbitRef: camera.orbitRef,
+    pointerRef: pointer.pointerRef,
+    sceneRef,
+  })
 
   const label = galaxyLabel(runtime)
   return (
-    <canvas
-      aria-label={label}
-      data-chunk={GALAXY_CHUNK_MARKER}
-      onPointerDown={onPointerDown}
-      onPointerLeave={onPointerLeave}
-      onPointerMove={onPointerDrag}
-      onPointerUp={onPointerLeave}
-      ref={canvasRef}
-      role="img"
-      style={{ cursor: 'pointer', display: 'block', height: '100%', width: '100%' }}
-      tabIndex={0}
-    >
-      {label}. Each repo is a galaxy and each file is a star; contributions
-      light stars over the window.
-    </canvas>
+    <div className={styles.stage}>
+      <canvas
+        aria-label={label}
+        data-chunk={GALAXY_CHUNK_MARKER}
+        data-orbit={formatOrbit(camera.orbit)}
+        onKeyDown={camera.onKeyDown}
+        onPointerCancel={camera.onPointerCancel}
+        onPointerDown={camera.onPointerDown}
+        onPointerLeave={pointer.onPointerLeave}
+        onPointerMove={pointer.onPointerMove}
+        onPointerUp={pointer.onPointerUp}
+        ref={canvasRef}
+        role="img"
+        style={{
+          cursor: 'grab',
+          display: 'block',
+          height: '100%',
+          // Without this the browser claims the pinch and the drag as a scroll
+          // or a page zoom, and neither gesture ever reaches the camera.
+          touchAction: 'none',
+          width: '100%',
+        }}
+        tabIndex={0}
+      >
+        {label} The most recently active repos sit in the core and the oldest on
+        the rim; contributions light stars permanently over the window.
+      </canvas>
+      <div className={styles.zoomGroup}>
+        <button
+          aria-label="Zoom in"
+          className={styles.zoom}
+          onClick={camera.zoomIn}
+          type="button"
+        >
+          <span aria-hidden="true">+</span>
+        </button>
+        <button
+          aria-label="Zoom out"
+          className={styles.zoom}
+          onClick={camera.zoomOut}
+          type="button"
+        >
+          <span aria-hidden="true">−</span>
+        </button>
+      </div>
+    </div>
   )
 })
 
-function easedContributors(
-  current: Partial<Record<UniverseActor, { x: number; y: number }>>,
-  targets: readonly { actor: UniverseActor; x: number; y: number; active: boolean }[]
-): readonly { actor: UniverseActor; x: number; y: number }[] {
-  for (const target of targets) {
-    const existing = current[target.actor]
-    if (!existing) {
-      current[target.actor] = { x: target.x, y: target.y }
-      continue
-    }
-    existing.x += (target.x - existing.x) * EASE
-    existing.y += (target.y - existing.y) * EASE
-  }
-  return targets.map((target) => ({
-    actor: target.actor,
-    x: current[target.actor]?.x ?? target.x,
-    y: current[target.actor]?.y ?? target.y,
-  }))
+/**
+ * @description Surfaces the camera on the canvas, the way `data-beam-overflow`
+ * surfaces the beam budget: the orbit is otherwise invisible to anything
+ * outside the WebGL context.
+ * @param orbit The current camera orbit.
+ * @returns Azimuth, polar angle, and distance, space separated.
+ */
+function formatOrbit(orbit: OrbitState): string {
+  return [orbit.azimuth, orbit.polar, orbit.distance]
+    .map((term) => term.toFixed(3))
+    .join(' ')
 }

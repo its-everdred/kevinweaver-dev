@@ -25,7 +25,7 @@ export const CAREER_LOG = [
     detail:
       'technical architect for the Actions SDK (actions.optimism.io): connects embedded wallets to DeFi protocols. Supports allow/block listing, configuration for assets, markets, chains, and other infra providers',
     stack: ['TypeScript', 'Hono', 'Vite', 'React', 'Solidity', 'Kubernetes'],
-    hue: 'aqua',
+    hue: 'red',
     lane: 'role',
     root: false,
     body: [],
@@ -48,7 +48,7 @@ export const CAREER_LOG = [
       'MongoDB',
       'GraphQL',
     ],
-    hue: 'aqua',
+    hue: 'orange',
     lane: 'role',
     root: false,
     body: [],
@@ -62,7 +62,7 @@ export const CAREER_LOG = [
     detail:
       'built open source smart contract dev tools: Truffle, L2 bridging, EVM debugging. Managed OS contributions, led cross-org educational effort',
     stack: ['TypeScript', 'Solidity'],
-    hue: 'blue',
+    hue: 'yellow',
     lane: 'role',
     root: false,
     body: [],
@@ -76,7 +76,7 @@ export const CAREER_LOG = [
     detail:
       'tech lead shipped customer facing features earning $millions in revenue, serving millions of users. Designed microservice APIs utilized across the org',
     stack: ['Ruby', 'Rails', 'React', 'TypeScript', 'PostgreSQL', 'GraphQL'],
-    hue: 'orange',
+    hue: 'green',
     lane: 'role',
     root: false,
     body: [],
@@ -90,7 +90,7 @@ export const CAREER_LOG = [
     detail:
       'co-founded a medical records and billing software company. Wrote and shipped the product',
     stack: ['Ruby', 'Rails', 'JavaScript'],
-    hue: 'yellow',
+    hue: 'blue',
     lane: 'role',
     root: false,
     body: [],
@@ -104,7 +104,7 @@ export const CAREER_LOG = [
     detail:
       'founded a software consulting firm. Built CMS, eCommerce, and healthcare web applications',
     stack: ['PHP', 'JavaScript'],
-    hue: 'green',
+    hue: 'purple',
     lane: 'role',
     root: false,
     body: [],

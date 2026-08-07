@@ -1,20 +1,32 @@
 export { buildFileDag } from './buildDag'
 export { buildUniverse, type UniverseEvent, type UniverseRepoInput } from './buildUniverse'
 export {
-  buildGalaxyPoints,
   createGalaxyScene,
+  pickRepoArm,
+  repoScreenPosition,
+  type ArmScreenPoint,
+  type GalaxyFrameStats,
   type GalaxyScene,
   type GalaxySceneOptions,
   type GalaxySceneTheme,
   type SceneContributor,
 } from './galaxyScene'
+export { createRepoLabels, type RepoLabel, type RepoLabels } from './galaxyLabels'
+export { buildGalaxyPoints, createStarField, type StarField } from './galaxyStars'
 export { STAR_FRAGMENT_SHADER, STAR_VERTEX_SHADER } from './galaxyShader'
 export {
   layoutDag,
   type DagLayout,
   type DagPosition,
 } from './layout'
-export { layoutUniverse, type GalaxyLayout, type StarPosition, type UniverseLayout } from './galaxy'
+export {
+  DISC_FIELD_RADIUS,
+  layoutUniverse,
+  starKey,
+  type RepoArm,
+  type StarPosition,
+  type UniverseLayout,
+} from './galaxy'
 export {
   clampCommitIndex,
   liveFilesAt,
@@ -29,17 +41,21 @@ export {
   type RenderMetrics,
 } from './render'
 export {
+  PLAYBACK_WINDOW_STEPS,
+  RECENT_REPO_STEPS,
   clampStep,
   nextUniverseStep,
+  nextWindowStep,
+  playbackWindowEnd,
+  playbackWindowStart,
   universeFrame,
   universeLiveAt,
   type UniverseFrame,
 } from './universePlayback'
+export { resolveContributors, starFor, type ContributorNode } from './contributors'
 export {
   DEFAULT_UNIVERSE_THEME,
   renderUniverse,
-  resolveContributors,
-  type ContributorNode,
   type StarHit,
   type UniverseMetrics,
   type UniversePointer,

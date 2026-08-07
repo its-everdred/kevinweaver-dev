@@ -1,6 +1,7 @@
-import type { GalaxyLayout, StarPosition, UniverseLayout } from './galaxy'
+import { DISC_FIELD_RADIUS, starKey } from './galaxy'
+import type { ContributorNode } from './contributors'
+import type { StarPosition, UniverseLayout } from './galaxy'
 import type { UniverseFrame } from './universePlayback'
-import type { UniverseActor } from './types'
 
 /** Theme colors injected by the host so the renderer stays host-agnostic. */
 export interface UniverseTheme {
@@ -49,14 +50,6 @@ export interface StarHit {
   readonly y: number
 }
 
-/** A contributor node to draw, with its label and per-actor color. */
-export interface ContributorNode {
-  readonly actor: UniverseActor
-  readonly x: number
-  readonly y: number
-  readonly active: boolean
-}
-
 /** Public draw state for one galaxy-cluster frame. */
 export interface UniverseRenderState {
   readonly layout: UniverseLayout
@@ -66,41 +59,13 @@ export interface UniverseRenderState {
   readonly contributors: readonly ContributorNode[]
 }
 
-function starKey(repoId: number, file: string): string {
-  return `${repoId}:${file}`
-}
+/** Fraction of each axis the disc halo covers, just outside the star field. */
+const HALO_SCALE = DISC_FIELD_RADIUS + 0.02
+const LABEL_OFFSET_PX = 8
+const HIT_RADIUS_PX = 8
 
 function starRadiusPx(metrics: UniverseMetrics): number {
   return Math.max(1, Math.min(3, metrics.width / 900))
-}
-
-/**
- * @description Resolves contributor node positions from a frame and layout.
- * @param layout The universe layout.
- * @param frame The current universe frame.
- * @param metrics Surface dimensions.
- * @returns One contributor node per actor that has current contributions,
- * positioned at the centroid of its current stars; absent actors are omitted.
- */
-export function resolveContributors(
-  layout: UniverseLayout,
-  frame: UniverseFrame,
-  metrics: UniverseMetrics
-): readonly ContributorNode[] {
-  const nodes: ContributorNode[] = []
-  for (const actor of [0, 1] as const) {
-    const points: { x: number; y: number }[] = []
-    for (const contribution of frame.currentContributions) {
-      if (contribution.actor !== actor) continue
-      const point = starPositionFor(layout, metrics, contribution.repo, contribution.file)
-      if (point) points.push(point)
-    }
-    if (points.length === 0) continue
-    const cx = points.reduce((sum, p) => sum + p.x, 0) / points.length
-    const cy = points.reduce((sum, p) => sum + p.y, 0) / points.length
-    nodes.push({ actor, x: cx / metrics.width, y: cy / metrics.height, active: true })
-  }
-  return nodes
 }
 
 /**
@@ -122,7 +87,8 @@ export function renderUniverse(
 
   const px = starRadiusPx(metrics)
   const hit = hoverHit(metrics, state)
-  drawGalaxyStars(ctx, metrics, state, theme, px)
+  drawDiscCore(ctx, metrics, theme, px)
+  drawStars(ctx, metrics, state, theme, px)
   drawCurrentStars(ctx, metrics, state, theme, px)
   drawContributorBeams(ctx, metrics, state, theme)
   drawContributors(ctx, metrics, state, theme)
@@ -131,65 +97,55 @@ export function renderUniverse(
   drawProgress(ctx, metrics, state, theme)
 }
 
-function starPixel(
+function starPixel(metrics: UniverseMetrics, star: StarPosition): { x: number; y: number } {
+  return { x: star.x * metrics.width, y: star.y * metrics.height }
+}
+
+function isLive(state: UniverseRenderState, star: StarPosition): boolean {
+  return state.frame.liveFiles.has(starKey(star.repoId, star.file))
+}
+
+function isCurrent(state: UniverseRenderState, star: StarPosition): boolean {
+  return state.frame.currentFiles.includes(starKey(star.repoId, star.file))
+}
+
+function drawDiscCore(
+  ctx: CanvasRenderingContext2D,
   metrics: UniverseMetrics,
-  galaxy: GalaxyLayout,
-  star: StarPosition
-): { x: number; y: number } {
-  const cx = galaxy.x * metrics.width
-  const cy = galaxy.y * metrics.height
-  const radiusPx = galaxy.radius * Math.min(metrics.width, metrics.height)
-  return {
-    x: cx + (star.x - 0.5) * radiusPx * 2,
-    y: cy + (star.y - 0.5) * radiusPx * 2,
-  }
+  theme: UniverseTheme,
+  px: number
+): void {
+  const cx = metrics.width / 2
+  const cy = metrics.height / 2
+  // One halo for the whole disc: the universe is a single galaxy, not sixty.
+  ctx.fillStyle = theme.galaxyHalo
+  ctx.beginPath()
+  ctx.ellipse(cx, cy, metrics.width * HALO_SCALE, metrics.height * HALO_SCALE, 0, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = theme.galaxyCore
+  ctx.beginPath()
+  ctx.arc(cx, cy, Math.max(2, px * 2.4), 0, Math.PI * 2)
+  ctx.fill()
 }
 
-function isLive(state: UniverseRenderState, galaxy: GalaxyLayout, star: StarPosition): boolean {
-  return state.frame.liveFiles.has(starKey(galaxy.repoId, star.file))
-}
-
-function isCurrent(state: UniverseRenderState, galaxy: GalaxyLayout, star: StarPosition): boolean {
-  const key = starKey(galaxy.repoId, star.file)
-  return state.frame.currentFiles.includes(key)
-}
-
-function drawGalaxyStars(
+function drawStars(
   ctx: CanvasRenderingContext2D,
   metrics: UniverseMetrics,
   state: UniverseRenderState,
   theme: UniverseTheme,
   px: number
 ): void {
-  for (const galaxy of state.layout.galaxies) {
-    const cx = galaxy.x * metrics.width
-    const cy = galaxy.y * metrics.height
-    const radiusPx = galaxy.radius * Math.min(metrics.width, metrics.height)
-
-    // Halo behind the galaxy.
-    ctx.fillStyle = theme.galaxyHalo
-    ctx.beginPath()
-    ctx.arc(cx, cy, radiusPx, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Core so even a one-star repo reads as a galaxy.
-    ctx.fillStyle = theme.galaxyCore
-    ctx.beginPath()
-    ctx.arc(cx, cy, Math.max(2, px * 1.8), 0, Math.PI * 2)
-    ctx.fill()
-
-    // Batch every non-current star in one path per galaxy.
-    ctx.fillStyle = theme.star
-    ctx.beginPath()
-    for (const star of galaxy.stars) {
-      if (isCurrent(state, galaxy, star)) continue
-      const point = starPixel(metrics, galaxy, star)
-      const live = isLive(state, galaxy, star)
-      ctx.moveTo(point.x + px, point.y)
-      ctx.arc(point.x, point.y, live ? px * 1.6 : px * 1.2, 0, Math.PI * 2)
-    }
-    ctx.fill()
+  // Batch every non-current star into one path for the whole disc.
+  ctx.fillStyle = theme.star
+  ctx.beginPath()
+  for (const star of state.layout.stars) {
+    if (isCurrent(state, star)) continue
+    const point = starPixel(metrics, star)
+    const radius = isLive(state, star) ? px * 1.6 : px * 1.2
+    ctx.moveTo(point.x + radius, point.y)
+    ctx.arc(point.x, point.y, radius, 0, Math.PI * 2)
   }
+  ctx.fill()
 }
 
 function drawCurrentStars(
@@ -200,14 +156,12 @@ function drawCurrentStars(
   px: number
 ): void {
   ctx.fillStyle = theme.currentStar
-  for (const galaxy of state.layout.galaxies) {
-    for (const star of galaxy.stars) {
-      if (!isCurrent(state, galaxy, star)) continue
-      const point = starPixel(metrics, galaxy, star)
-      ctx.beginPath()
-      ctx.arc(point.x, point.y, px * 2.2, 0, Math.PI * 2)
-      ctx.fill()
-    }
+  for (const star of state.layout.stars) {
+    if (!isCurrent(state, star)) continue
+    const point = starPixel(metrics, star)
+    ctx.beginPath()
+    ctx.arc(point.x, point.y, px * 2.2, 0, Math.PI * 2)
+    ctx.fill()
   }
 }
 
@@ -219,10 +173,11 @@ function drawRepoLabels(
 ): void {
   ctx.font = '600 11px monospace'
   ctx.textAlign = 'center'
-  for (const galaxy of state.layout.galaxies) {
-    const radiusPx = galaxy.radius * Math.min(metrics.width, metrics.height)
-    ctx.fillStyle = theme.repoLabel
-    ctx.fillText(shortName(galaxy.name), galaxy.x * metrics.width, galaxy.y * metrics.height - radiusPx - 8)
+  ctx.fillStyle = theme.repoLabel
+  for (const repo of state.layout.repos) {
+    const x = repo.x * metrics.width
+    const y = repo.y * metrics.height - LABEL_OFFSET_PX
+    ctx.fillText(shortName(repo.name), x, y)
   }
 }
 
@@ -268,14 +223,9 @@ function starPositionFor(
   repoId: number,
   file: string
 ): { x: number; y: number } | null {
-  for (const galaxy of layout.galaxies) {
-    if (galaxy.repoId !== repoId) continue
-    for (const star of galaxy.stars) {
-      if (star.file !== file) continue
-      return starPixel(metrics, galaxy, star)
-    }
-  }
-  return null
+  const index = layout.starIndex.get(starKey(repoId, file))
+  const star = index === undefined ? undefined : layout.stars[index]
+  return star ? starPixel(metrics, star) : null
 }
 
 function drawContributors(
@@ -349,22 +299,16 @@ function hoverHit(
 ): StarHit | null {
   const pointer = state.pointer
   if (!pointer) return null
-  const hitRadiusPx = 8
-  for (const galaxy of state.layout.galaxies) {
-    const cx = galaxy.x * metrics.width
-    const cy = galaxy.y * metrics.height
-    const radiusPx = galaxy.radius * Math.min(metrics.width, metrics.height)
-    const gdx = pointer.x - cx
-    const gdy = pointer.y - cy
-    if (gdx * gdx + gdy * gdy > (radiusPx + hitRadiusPx) * (radiusPx + hitRadiusPx)) continue
-    for (const star of galaxy.stars) {
-      const point = starPixel(metrics, galaxy, star)
-      const dx = pointer.x - point.x
-      const dy = pointer.y - point.y
-      if (dx * dx + dy * dy < hitRadiusPx * hitRadiusPx) {
-        return { repo: galaxy.name, file: star.file, x: point.x, y: point.y }
-      }
-    }
+  for (const star of state.layout.stars) {
+    const point = starPixel(metrics, star)
+    const dx = pointer.x - point.x
+    const dy = pointer.y - point.y
+    if (dx * dx + dy * dy >= HIT_RADIUS_PX * HIT_RADIUS_PX) continue
+    return { repo: repoName(state.layout, star.repoId), file: star.file, x: point.x, y: point.y }
   }
   return null
+}
+
+function repoName(layout: UniverseLayout, repoId: number): string {
+  return layout.repos.find((repo) => repo.repoId === repoId)?.name ?? String(repoId)
 }

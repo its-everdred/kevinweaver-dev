@@ -1,0 +1,35 @@
+.stage {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+.zoomGroup {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* 28px square with a 24px floor: WCAG 2.2 SC 2.5.8 is the axe `target-size`
+   rule the accessibility suite runs under `wcag22aa`. */
+.zoom {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+  width: 28px;
+  height: 28px;
+  min-width: 24px;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--aqua);
+  color: var(--bg-h);
+  border: none;
+  border-radius: var(--r-chip);
+  cursor: pointer;
+}

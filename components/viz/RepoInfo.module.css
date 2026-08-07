@@ -1,0 +1,45 @@
+.info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--fs-micro);
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+/* 24px floor: WCAG 2.2 SC 2.5.8 is the axe `target-size` rule the
+   accessibility suite runs under `wcag22aa`. */
+.name {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  color: var(--aqua);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.rows {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 1ch;
+  margin: 0;
+  min-width: 0;
+}
+
+.rows dt {
+  color: var(--text-faint);
+}
+
+.rows dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hint {
+  color: var(--text-faint);
+}

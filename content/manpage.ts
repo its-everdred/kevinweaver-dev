@@ -62,13 +62,6 @@ export const MAN_PAGE = [
         'typescript, solidity, hono, vite, react, express, next, ruby, rails,',
         'php, javascript, postgresql, redis, mongodb, graphql, kubernetes.',
       ]),
-      term('--companies=LIST', [
-        'Comma-separated employer names to match. Recognized values: optimism,',
-        'metropolis, consensys, stitch-fix, ems-heroes, omni-developers.',
-      ]),
-      term('--seed=SEED', [
-        'Deterministic animation seed. Same seed renders the same frame.',
-      ]),
     ],
   },
   {

@@ -8,8 +8,9 @@ import { getGalaxyTimeline, subscribeGalaxyTimeline } from './galaxyTimeline'
 const EVENTS_CSS = `
 .kw-events{display:flex;flex-direction:column;gap:2px;font-size:var(--fs-micro);line-height:1.5;overflow:hidden;}
 .kw-events .day{color:var(--text-strong);font-weight:700;margin-bottom:2px;}
-.kw-events .e{white-space:nowrap;color:var(--text-muted);display:flex;gap:1ch;min-width:0;align-items:baseline;}
+.kw-events .e{white-space:nowrap;color:var(--text-muted);display:flex;gap:1ch;min-width:0;align-items:center;min-height:24px;}
 .kw-events .e .repo{color:var(--aqua);flex:0 0 auto;}
+.kw-events .e a.file{display:flex;align-items:center;min-height:24px;}
 .kw-events .e .file{color:var(--text-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .kw-events .e .actor{flex:0 0 auto;color:var(--purple);}
 .kw-events .tail{color:var(--text-faint);}

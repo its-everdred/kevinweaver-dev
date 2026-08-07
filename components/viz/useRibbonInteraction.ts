@@ -1,179 +1,113 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
-import type {
-  Dispatch,
-  KeyboardEvent as ReactKeyboardEvent,
-  PointerEvent as ReactPointerEvent,
-  RefObject,
-  SetStateAction,
-} from 'react'
-import { formatDayISO } from '@/lib/viz/driver'
-import type { InstrumentViz } from './instrumentRuntime'
-import type { CanvasSurfaceHandle, SurfaceGeometry } from './useCanvasSurface'
+import { useRef } from 'react'
+import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
+import { getGalaxyTimeline, seekGalaxyTimeline } from './galaxyTimeline'
+import { ribbonDayAt, ribbonLayout, ribbonWindow } from './ribbonWindow'
 
 interface InteractionOptions {
-  readonly viz: InstrumentViz | null
-  readonly geometry: RefObject<SurfaceGeometry | null>
-  readonly toLocal: CanvasSurfaceHandle['toLocal']
+  /** Total days in the payload. */
+  readonly dayCount: number
+  /** Weekday of payload day 0, as `weekdayOfISO` reports it. */
+  readonly startWeekday: number
 }
-interface InteractionContext extends InteractionOptions {
-  readonly container: RefObject<HTMLDivElement | null>
-  readonly tooltip: RefObject<HTMLDivElement | null>
-  readonly displayedDay: RefObject<number | null>
-  readonly fineQuery: RefObject<MediaQueryList | null>
+/** The day and backing-store point a drag was grabbed at. */
+interface Grab {
+  readonly day: number
+  readonly xPx: number
+  readonly yPx: number
+  readonly stepPx: number
 }
 interface RibbonInteraction {
-  readonly container: RefObject<HTMLDivElement | null>
-  readonly tooltip: RefObject<HTMLDivElement | null>
-  readonly onKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void
   readonly onPointerCancel: (
     event: ReactPointerEvent<HTMLCanvasElement>
   ) => void
   readonly onPointerDown: (event: ReactPointerEvent<HTMLCanvasElement>) => void
-  readonly onPointerLeave: () => void
   readonly onPointerMove: (event: ReactPointerEvent<HTMLCanvasElement>) => void
   readonly onPointerUp: (event: ReactPointerEvent<HTMLCanvasElement>) => void
 }
-type SetPinned = Dispatch<SetStateAction<number | null>>
+type GrabRef = RefObject<Grab | null>
 
 /**
- * @description Provides pointer, pin, tooltip, capture, and Escape ribbon behavior.
- * @param options Current driver and canvas coordinate bindings.
- * @returns Stable-shape event handlers and the tooltip reference.
+ * @description Provides the contribution grid's scrub gesture: press seeks the
+ * shared galaxy timeline to the square under the pointer, drag walks history
+ * from where it was grabbed.
+ * @param options Payload dimensions the lattice is measured against.
+ * @returns Stable-shape pointer handlers for the ribbon canvas.
+ *
+ * Two mappings, on purpose. A press is absolute — the day under the cursor is
+ * the day you get, so clicking a square seeks to exactly that day. A drag is
+ * relative to the grab point — a week per column of travel, a day per row —
+ * which is what lets the gesture keep walking once it leaves the one-year
+ * window. An absolute drag could not: the window shifts under the pointer as
+ * the clock passes its oldest day, and the cursor would jump a whole window
+ * with it. Anchored to the grab, the shift is invisible to the gesture.
  */
 export function useRibbonInteraction(
   options: InteractionOptions
 ): RibbonInteraction {
-  const container = useRef<HTMLDivElement>(null)
-  const tooltip = useRef<HTMLDivElement>(null)
-  const displayedDay = useRef<number | null>(null)
-  const fineQuery = useRef<MediaQueryList | null>(null)
-  const [pinned, setPinned] = useState<number | null>(null)
-  const context = { ...options, container, tooltip, displayedDay, fineQuery }
-  useOutsideDismiss(context, pinned, setPinned)
+  const grab = useRef<Grab | null>(null)
   return {
-    container,
-    tooltip,
-    onKeyDown: (event) => onKeyDown(context, setPinned, event),
-    onPointerCancel: (event) => onPointerCancel(context, setPinned, event),
-    onPointerDown: (event) =>
-      event.currentTarget.setPointerCapture(event.pointerId),
-    onPointerLeave: () => onPointerLeave(context, pinned),
-    onPointerMove: (event) => onPointerMove(context, pinned, event),
-    onPointerUp: (event) => onPointerUp(context, pinned, setPinned, event),
+    onPointerCancel: () => release(grab),
+    onPointerDown: (event) => onPointerDown(options, grab, event),
+    onPointerMove: (event) => onPointerMove(options, grab, event),
+    onPointerUp: () => release(grab),
   }
 }
 
-function dayAtPointer(
-  context: InteractionContext,
+/** Device pixel cap shared with every other instrument canvas. */
+function ribbonDpr(): number {
+  return Math.min(2, window.devicePixelRatio || 1)
+}
+
+/**
+ * Client coordinates in backing-store space. The lattice is measured in
+ * backing-store pixels, so the pointer has to be read there too.
+ */
+function backingPoint(
+  canvas: HTMLCanvasElement,
   event: ReactPointerEvent<HTMLCanvasElement>
-): number {
-  const point = context.toLocal(event)
-  if (!point || !context.viz) return -1
-  context.viz.driver.setPointer('ribbon', point)
-  const state = context.viz.driver.inspect()
-  const cell = state.highlightCell
-  return cell ? state.winStart + cell.week * 7 + cell.weekday : -1
-}
-
-function showTooltip(
-  context: InteractionContext,
-  event: ReactPointerEvent<HTMLCanvasElement>,
-  day: number
-): void {
-  const element = context.tooltip.current
-  const measured = context.geometry.current
-  const point = context.toLocal(event)
-  if (!element || !measured || !point || !context.viz || day < 0) return
-  if (context.displayedDay.current !== day || element.hidden) {
-    const total = context.viz.render.grid.total[day] ?? 0
-    const agent = context.viz.render.grid.agent[day] ?? 0
-    element.textContent = `${formatDayISO(context.viz.head.grid.start, day)} · ${total} contributions · ${agent} agent`
-    element.hidden = false
-    context.displayedDay.current = day
+): { xPx: number; yPx: number } | null {
+  const rect = canvas.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return null
+  return {
+    xPx: (event.clientX - rect.left) * (canvas.width / rect.width),
+    yPx: (event.clientY - rect.top) * (canvas.height / rect.height),
   }
-  element.style.left = `${Math.min(measured.cssWidth - 200, Math.max(0, point.x + 14))}px`
-  element.style.top = `${Math.max(0, point.y - 66)}px`
 }
 
-function hideTooltip(context: InteractionContext): void {
-  if (context.tooltip.current) context.tooltip.current.hidden = true
-  context.displayedDay.current = null
+function onPointerDown(
+  options: InteractionOptions,
+  grab: GrabRef,
+  event: ReactPointerEvent<HTMLCanvasElement>
+): void {
+  const canvas = event.currentTarget
+  const point = backingPoint(canvas, event)
+  if (!point || options.dayCount <= 0) return
+  const layout = ribbonLayout(canvas.width, canvas.height, ribbonDpr())
+  const visible = ribbonWindow(
+    getGalaxyTimeline().step,
+    options.dayCount,
+    options.startWeekday
+  )
+  const day = ribbonDayAt(visible, layout, point.xPx, point.yPx)
+  grab.current = { day, xPx: point.xPx, yPx: point.yPx, stepPx: layout.stepPx }
+  seekGalaxyTimeline(day, options.dayCount)
 }
-function finePointer(context: InteractionContext): boolean {
-  if (typeof window.matchMedia !== 'function') return false
-  context.fineQuery.current ??= window.matchMedia('(pointer: fine)')
-  return context.fineQuery.current.matches
-}
+
 function onPointerMove(
-  context: InteractionContext,
-  pinned: number | null,
+  options: InteractionOptions,
+  grab: GrabRef,
   event: ReactPointerEvent<HTMLCanvasElement>
 ): void {
-  if (!finePointer(context) || pinned !== null) return
-  const day = dayAtPointer(context, event)
-  if (day < 0) hideTooltip(context)
-  else showTooltip(context, event, day)
+  const anchor = grab.current
+  if (!anchor || !event.buttons) return
+  const point = backingPoint(event.currentTarget, event)
+  if (!point) return
+  const columns = Math.round((point.xPx - anchor.xPx) / anchor.stepPx)
+  const rows = Math.round((point.yPx - anchor.yPx) / anchor.stepPx)
+  seekGalaxyTimeline(anchor.day + columns * 7 + rows, options.dayCount)
 }
-function onPointerLeave(
-  context: InteractionContext,
-  pinned: number | null
-): void {
-  if (!finePointer(context) || pinned !== null || !context.viz) return
-  context.viz.driver.setPointer('ribbon', null)
-  hideTooltip(context)
-}
-function onPointerUp(
-  context: InteractionContext,
-  pinned: number | null,
-  setPinned: SetPinned,
-  event: ReactPointerEvent<HTMLCanvasElement>
-): void {
-  releaseCapture(event)
-  if (finePointer(context)) return
-  const day = dayAtPointer(context, event)
-  if (day < 0 || day === pinned) return clear(context, setPinned)
-  setPinned(day)
-  showTooltip(context, event, day)
-}
-function onPointerCancel(
-  context: InteractionContext,
-  setPinned: SetPinned,
-  event: ReactPointerEvent<HTMLCanvasElement>
-): void {
-  releaseCapture(event)
-  clear(context, setPinned)
-}
-function onKeyDown(
-  context: InteractionContext,
-  setPinned: SetPinned,
-  event: ReactKeyboardEvent<HTMLDivElement>
-): void {
-  if (event.key === 'Escape') clear(context, setPinned)
-}
-function releaseCapture(event: ReactPointerEvent<HTMLCanvasElement>): void {
-  if (event.currentTarget.hasPointerCapture(event.pointerId))
-    event.currentTarget.releasePointerCapture(event.pointerId)
-}
-function useOutsideDismiss(
-  context: InteractionContext,
-  pinned: number | null,
-  setPinned: SetPinned
-): void {
-  useEffect(() => {
-    if (pinned === null) return
-    const dismiss = (event: PointerEvent): void => {
-      const target = event.target
-      if (target instanceof Node && context.container.current?.contains(target))
-        return
-      clear(context, setPinned)
-    }
-    document.addEventListener('pointerdown', dismiss)
-    return () => document.removeEventListener('pointerdown', dismiss)
-  }, [context, pinned, setPinned])
-}
-function clear(context: InteractionContext, setPinned: SetPinned): void {
-  setPinned(null)
-  context.viz?.driver.setPointer('ribbon', null)
-  hideTooltip(context)
+
+function release(grab: GrabRef): void {
+  grab.current = null
 }

@@ -6,19 +6,20 @@ import { ContributionTable } from '@/components/viz/ContributionTable'
 import { Overview } from '@/components/viz/Overview'
 import { Ribbon } from '@/components/viz/Ribbon'
 // prettier-ignore
-import { BOOT_PROBE_FILES, createInstrumentViz, useInstrumentRuntime } from '@/components/viz/instrumentRuntime'
+import { BOOT_PROBE_FILES, createInstrumentViz, useInstrumentRuntime, type InstrumentRuntimeState } from '@/components/viz/instrumentRuntime'
 import { useCanvasSurface as useSurface } from '@/components/viz/useCanvasSurface'
 import { encodeBundle } from '@/lib/bundle/codec'
 import type { BundleHead } from '@/lib/bundle/loader'
-import type { RepoRecord } from '@/lib/bundle/schema'
+import type { RepoRecord, SortableEvent } from '@/lib/bundle/schema'
 import { getVizTransport, type VizSurfaceGeometry } from '@/lib/viz/driver'
+// prettier-ignore
 import { getGalaxyTimeline, seekGalaxyTimeline } from '@/components/viz/galaxyTimeline'
 import { AG, LV } from '@/lib/viz/tokens/ramp'
 import { make2d } from '@/test/canvas-fixture'
 import { recordContext } from '@/test/canvas-recorder'
 // prettier-ignore
 const HEAD: BundleHead = {
-  manifest: { v: 1, generatedAt: '2026-02-03T12:00:00Z', commit: 'fixture-commit', days: ['2026-02-03', '2026-02-01'], refs: 'all', windowStart: '2026-02-01', windowEnd: '2026-02-03', dayCount: 3, repoCount: 2, repoCountDefinition: 'ownerPublicNonFork', actors: [{ id: 0, login: 'human-fixture', kind: 'human' }, { id: 1, login: 'agent-fixture', kind: 'agent' }], degraded: [], chunkSize: 10, chunks: 1, events: 2, integrity: {} },
+  manifest: { v: 1, generatedAt: '2026-02-03T12:00:00Z', commit: 'fixture-commit', days: ['2026-02-03', '2026-02-01'], refs: 'all', windowStart: '2026-02-01', windowEnd: '2026-02-03', dayCount: 3, repoCount: 2, repoCountDefinition: 'ownerPublicNonFork', actors: [{ id: 0, login: 'human-fixture', kind: 'human' }, { id: 1, login: 'agent-fixture', kind: 'agent' }], degraded: [], chunkSize: 10, chunks: 1, events: 2 },
   repos: [repo(0, 'alpha', 0, '2026-02-01'), repo(1, 'beta', 1, '2026-02-02')],
   grid: { start: '2026-02-01', dayCount: 3, human: [1, 0, 2], agent: [0, 37, 0], privateMonthly: [], privateStart: '2026-02', bands: [0, 1, 2, 4, 8, 16, 32, 64, 128, 256] },
   events: [{ day: 0, repo: 1, path: 'docs/latest.md', actor: 1 }, { day: 2, repo: 0, path: 'src/needle.ts', actor: 0 }],
@@ -226,3 +227,162 @@ function setDpr(value: number): void {
   // prettier-ignore
   Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value })
 }
+/**
+ * KW-U1 chunk pump. The runtime is a module-level singleton, so each scenario
+ * imports its own instance through a cache-busting query rather than sharing
+ * the boot the surface specs above already consumed.
+ */
+type RuntimeModule = typeof import('@/components/viz/instrumentRuntime')
+const PUMP_REPOS = 6
+const PUMP_FILES = 12
+let instances = 0
+async function freshRuntime(): Promise<RuntimeModule> {
+  instances += 1
+  const url = `/components/viz/instrumentRuntime.ts?instance=${instances}`
+  return (await import(/* @vite-ignore */ url)) as RuntimeModule
+}
+test('pumps every event chunk into one enriched ready state', async () => {
+  const held = gate()
+  servePump(pumpBundle(), { name: 'events/ee-01.json', open: held.open })
+  const probe = mountProbe(await freshRuntime())
+  await waitFor(() => expect(probe.state().status).toBe('ready'))
+  // First paint is the boot chunk alone: chunk 0 holds only repo r0's two files
+  // even though repos.json already declares all six repositories.
+  expect(reposWithFiles(probe.state())).toEqual([1, PUMP_REPOS])
+  expect(fileCount(probe.state())).toBe(2)
+  const firstPaint = probe.renders()
+  held.release()
+  // prettier-ignore
+  await waitFor(() => expect(reposWithFiles(probe.state())).toEqual([PUMP_REPOS, PUMP_REPOS]))
+  expect(fileCount(probe.state())).toBe(PUMP_FILES)
+  // One rebuild, not one per chunk: five chunks arrive, one state is published.
+  expect(probe.renders()).toBe(firstPaint + 1)
+  expect(probe.statuses()).toEqual(['loading', 'ready'])
+  probe.view.unmount()
+})
+test('keeps the chunks that loaded when a later chunk fails', async () => {
+  await expectDegradedPump((files) => files.delete('events/ee-02.json'))
+  await expectDegradedPump((files) => files.set('events/ee-02.json', '{"b":'))
+})
+/** AE5: a missing or malformed chunk must never withdraw the ready state. */
+async function expectDegradedPump(
+  damage: (files: Map<string, string>) => void
+): Promise<void> {
+  const files = pumpBundle()
+  damage(files)
+  servePump(files)
+  const errors = vi.spyOn(console, 'error')
+  const probe = mountProbe(await freshRuntime())
+  // Chunks 0 and 1 carry r0, r1, and r2; chunk 2 onwards never arrives.
+  await waitFor(() => expect(reposWithFiles(probe.state())).toEqual([3, 6]))
+  expect(fileCount(probe.state())).toBe(4)
+  expect(probe.statuses()).toEqual(['loading', 'ready'])
+  expect(errors).not.toHaveBeenCalled()
+  probe.view.unmount()
+  errors.mockRestore()
+}
+test('disposes the loader when the last instrument unmounts mid-pump', async () => {
+  const held = gate()
+  // prettier-ignore
+  const signals = servePump(pumpBundle(), { name: 'events/ee-01.json', open: held.open })
+  const probe = mountProbe(await freshRuntime())
+  await waitFor(() => expect(probe.state().status).toBe('ready'))
+  const errors = vi.spyOn(console, 'error')
+  const painted = probe.renders()
+  probe.view.unmount()
+  // prettier-ignore
+  await waitFor(() => expect(signals.some((signal) => signal.aborted)).toBe(true))
+  held.release()
+  await settle()
+  expect(probe.renders()).toBe(painted)
+  expect(errors).not.toHaveBeenCalled()
+  errors.mockRestore()
+})
+test('does not double-count events across concurrent or repeated mounts', async () => {
+  servePump(pumpBundle())
+  const runtime = await freshRuntime()
+  const first = mountProbe(runtime)
+  const second = mountProbe(runtime)
+  // prettier-ignore
+  await waitFor(() => expect(reposWithFiles(first.state())).toEqual([PUMP_REPOS, PUMP_REPOS]))
+  expect(fileCount(second.state())).toBe(PUMP_FILES)
+  first.view.unmount()
+  second.view.unmount()
+  await settle()
+  const third = mountProbe(runtime)
+  await waitFor(() => expect(third.state().status).toBe('ready'))
+  expect(reposWithFiles(third.state())).toEqual([PUMP_REPOS, PUMP_REPOS])
+  expect(fileCount(third.state())).toBe(PUMP_FILES)
+  third.view.unmount()
+})
+interface Probe {
+  readonly view: ReturnType<typeof render>
+  readonly state: () => InstrumentRuntimeState
+  readonly statuses: () => readonly string[]
+  readonly renders: () => number
+}
+function mountProbe(runtime: RuntimeModule): Probe {
+  const seen: string[] = []
+  let latest: InstrumentRuntimeState = { status: 'loading' }
+  let renders = 0
+  function Leaf(): ReactNode {
+    latest = runtime.useInstrumentRuntime()
+    renders += 1
+    if (seen.at(-1) !== latest.status) seen.push(latest.status)
+    return null
+  }
+  const view = render(createElement(Leaf))
+  // prettier-ignore
+  return { view, state: () => latest, statuses: () => seen, renders: () => renders }
+}
+/** Repositories that own at least one file-star, paired with the declared total. */
+function reposWithFiles(state: InstrumentRuntimeState): readonly number[] {
+  if (state.status !== 'ready') return [-1, -1]
+  const { repoCount, repoOf } = state.viz.input
+  return [new Set([...repoOf].filter((id) => id >= 0)).size, repoCount]
+}
+// prettier-ignore
+function fileCount(state: InstrumentRuntimeState): number { return state.status === 'ready' ? state.viz.input.entityCount - state.viz.input.repoCount : -1 }
+/**
+ * Six repositories over six two-event chunks. Chunk 0 holds only `r0`, so the
+ * pump's contribution is exactly the difference between one repo and six.
+ */
+function pumpBundle(): Map<string, string> {
+  // prettier-ignore
+  const repos = Array.from({ length: PUMP_REPOS }, (_, id) => repo(id, `r${id}`, 0, '2026-02-01'))
+  const events: SortableEvent[] = [
+    pumpEvent(repos, 0, 0, 'a.ts', 'a'),
+    pumpEvent(repos, 0, 0, 'b.ts', 'b'),
+  ]
+  for (let id = 1; id < PUMP_REPOS; id += 1) {
+    events.push(pumpEvent(repos, id, 1, 'mid.ts', 'm'))
+    events.push(pumpEvent(repos, id, 2, 'old.ts', 'o'))
+  }
+  // prettier-ignore
+  const input = { meta: { ...HEAD.manifest, repoCount: PUMP_REPOS }, repos, grid: HEAD.grid, events }
+  return new Map(encodeBundle(input, { chunkSize: 2 }).files)
+}
+// prettier-ignore
+function pumpEvent(repos: readonly RepoRecord[], id: number, day: number, file: string, sha: string): SortableEvent {
+  return { day, repo: id, path: `r${id}/${file}`, actor: 0, repoName: repos[id]!.name, sha }
+}
+/** Serves one encoded bundle, optionally holding a chunk open, and records every loader signal. */
+function servePump(
+  files: ReadonlyMap<string, string>,
+  hold?: { name: string; open: Promise<void> }
+): readonly AbortSignal[] {
+  const signals: AbortSignal[] = []
+  // prettier-ignore
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const name = input.toString().split('/data/v1/')[1] ?? ''
+    if (init?.signal) signals.push(init.signal)
+    if (hold && name === hold.name) await hold.open
+    const body = files.get(name)
+    return new Response(body ?? 'missing', { status: body === undefined ? 404 : 200 })
+  })
+  return signals
+}
+// prettier-ignore
+function gate(): { open: Promise<void>; release: () => void } { let release = (): void => undefined; const open = new Promise<void>((resolve) => (release = () => resolve())); return { open, release } }
+// prettier-ignore
+const settle = (): Promise<void> => new Promise((resolve) => window.setTimeout(resolve, 16))
