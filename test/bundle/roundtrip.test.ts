@@ -9,6 +9,7 @@ import {
   dayFromIndex,
   dayIndex,
   decodeBundle,
+  decodeIntegrity,
   decodeManifest,
   encodeBundle,
 } from '../../lib/bundle/codec'
@@ -62,7 +63,11 @@ describe('bundle codec', () => {
     expect(decoded.manifest).toMatchObject(input.meta)
     expect(decoded.manifest.days).toEqual(['2026-07-31', '2026-07-28'])
     expect(decoded.manifest.refs).toBe('all')
-    expect(decoded.manifest.integrity).toEqual({
+    expect(JSON.parse(first.files.get('manifest.json')!)).not.toHaveProperty(
+      'integrity'
+    )
+    expect(decoded.manifest).not.toHaveProperty('integrity')
+    expect(decodeIntegrity(first.files.get('integrity.json')!)).toEqual({
       'repos.json': expect.any(String),
       'grid.json': expect.any(String),
       'events/ee-00.json': expect.any(String),
@@ -70,6 +75,16 @@ describe('bundle codec', () => {
       'events/ee-01.json': expect.any(String),
       'paths/pd-01.json': expect.any(String),
     })
+  })
+
+  it('decodes a manifest that carries no integrity key', () => {
+    const files = encodeBundle(workedFixture(), { chunkSize: 3 }).files
+    const manifest = files.get('manifest.json')!
+
+    expect(manifest).not.toContain('integrity')
+    expect(decodeManifest(manifest)).toMatchObject({ chunks: 2, events: 5 })
+    expect(decodeIntegrity(files.get('integrity.json')!)).toEqual({})
+    expect(() => decodeIntegrity('{"repos.json":1}')).toThrow()
   })
 
   it('round-trips a corpus larger than 5,000 events across 21 repositories', () => {

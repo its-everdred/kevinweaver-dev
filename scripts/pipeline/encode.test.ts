@@ -26,7 +26,10 @@ describe('pipeline encoder', () => {
     expect(text(first, 'events/ee-00.json')).toBe(
       '{"b":0,"d":[0,0,1],"r":[0,0,1],"p":[0,1,2],"a":[0,1,0]}\n'
     )
-    expect(first.manifest.integrity['repos.json']).toMatch(/^sha256-/)
+    expect(text(first, 'manifest.json')).not.toContain('integrity')
+    expect(JSON.parse(text(first, 'integrity.json'))['repos.json']).toMatch(
+      /^sha256-/
+    )
     expect(JSON.parse(text(first, 'repos.json'))).toEqual([
       expect.objectContaining({ a: 0, g: 1, s: 10, x: ['ts'] }),
       expect.objectContaining({ a: 0, g: 2, s: 20, x: ['tsx'] }),

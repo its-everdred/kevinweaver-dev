@@ -48,7 +48,6 @@ export interface Manifest extends BundleMeta {
   chunkSize: number
   chunks: number
   events: number
-  integrity: Readonly<Record<string, string>>
 }
 
 /** Compact representation persisted in repos.json. */

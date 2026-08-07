@@ -20,6 +20,8 @@ vi.mock('./encode-bundle.ts', async (importOriginal) => {
 })
 
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { decodeIntegrity } from '../../lib/bundle/codec.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { encodeBundle, main, writeBundle } from './encode.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { MINI_INPUT, validInput } from './encode-fixture.ts'
@@ -57,6 +59,8 @@ describe('main refusal boundary', () => {
     ],
     ['E_DICT_GUARD', () => changedFile('paths/pd-00.json', hugeJson()), 1],
     ['E_FIRST_BYTE', () => changedFile('repos.json', hugeJson()), 1],
+    ['E_ROUNDTRIP', () => staleHash('repos.json'), 1],
+    ['E_INTEGRITY', () => withoutFile('integrity.json'), 1],
     [
       'E_SAML',
       () => ({
@@ -92,24 +96,48 @@ function changedChunk(text: string): EncodedBundle {
 function changedFile(path: string, text: string): EncodedBundle {
   const bundle = validBundle()
   const bytes = Buffer.from(text)
-  const manifest = {
-    ...bundle.manifest,
-    integrity: {
-      ...bundle.manifest.integrity,
-      [path]: `sha256-${createHash('sha256').update(bytes).digest('hex')}`,
-    },
+  const integrity = {
+    ...decodeIntegrity(fileText(bundle, 'integrity.json')),
+    [path]: `sha256-${createHash('sha256').update(bytes).digest('hex')}`,
   }
+  return replaceFile(
+    replaceFile(bundle, path, bytes),
+    'integrity.json',
+    Buffer.from(`${JSON.stringify(integrity)}\n`)
+  )
+}
+
+/** Rewrites a data file without refreshing the hash recorded for it. */
+function staleHash(path: string): EncodedBundle {
+  const bundle = validBundle()
+  return replaceFile(bundle, path, Buffer.from(`${fileText(bundle, path)}\n`))
+}
+
+function withoutFile(path: string): EncodedBundle {
+  const bundle = validBundle()
   return {
     ...bundle,
-    manifest,
+    files: bundle.files.filter((file) => file.path !== path),
+  }
+}
+
+function replaceFile(
+  bundle: EncodedBundle,
+  path: string,
+  bytes: Buffer
+): EncodedBundle {
+  return {
+    ...bundle,
     files: bundle.files.map((file) =>
-      file.path === 'manifest.json'
-        ? { ...file, bytes: Buffer.from(`${JSON.stringify(manifest)}\n`) }
-        : file.path === path
-          ? { ...file, bytes }
-          : file
+      file.path === path ? { ...file, bytes } : file
     ),
   }
+}
+
+function fileText(bundle: EncodedBundle, path: string): string {
+  const file = bundle.files.find((entry) => entry.path === path)
+  if (!file) throw new Error(`Missing ${path}`)
+  return new TextDecoder().decode(file.bytes)
 }
 
 function hugeJson(): string {

@@ -115,11 +115,14 @@ export function encodeBundle(
     input.meta,
     settings.chunkSize,
     split.ranges.length,
-    sorted.length,
-    integrityFor(dataFiles, settings.sha256)
+    sorted.length
   )
   const files = new Map<string, string>([
     ['manifest.json', JSON.stringify(manifest)],
+    [
+      'integrity.json',
+      JSON.stringify(integrityFor(dataFiles, settings.sha256)),
+    ],
   ])
   for (const [name, text] of dataFiles) files.set(name, text)
   return {
@@ -197,10 +200,21 @@ export function decodeManifest(text: string): Manifest {
     chunkSize: readPositiveInteger(value, 'chunkSize'),
     chunks: readNonNegativeInteger(value, 'chunks'),
     events: readNonNegativeInteger(value, 'events'),
-    integrity: readStringRecord(value, 'integrity'),
   }
   validateMeta(manifest)
   return manifest
+}
+
+/** Decodes the build-time hash map that integrity.json carries. */
+export function decodeIntegrity(
+  text: string
+): Readonly<Record<string, string>> {
+  return Object.fromEntries(
+    Object.entries(recordFromJson(text)).map(([name, value]) => {
+      assert(typeof value === 'string', 'Integrity values must be strings.')
+      return [name, value]
+    })
+  )
 }
 
 /** Decodes repos.json and derives the public renderer representation. */
@@ -561,10 +575,9 @@ function buildManifest(
   meta: BundleMeta,
   chunkSize: number,
   chunks: number,
-  events: number,
-  integrity: Readonly<Record<string, string>>
+  events: number
 ): Manifest {
-  return { ...meta, chunkSize, chunks, events, integrity }
+  return { ...meta, chunkSize, chunks, events }
 }
 
 function integrityFor(
@@ -831,18 +844,6 @@ function readIsoMonth(record: Record<string, unknown>, key: string): string {
   const value = readString(record, key)
   isoMonthMs(value)
   return value
-}
-
-function readStringRecord(
-  record: Record<string, unknown>,
-  key: string
-): Readonly<Record<string, string>> {
-  return Object.fromEntries(
-    Object.entries(recordFromValue(record[key])).map(([name, value]) => {
-      assert(typeof value === 'string', 'Integrity values must be strings.')
-      return [name, value]
-    })
-  )
 }
 
 function repoFromWire(wire: Record<string, unknown>): RepoRecord {

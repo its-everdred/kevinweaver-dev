@@ -18,7 +18,7 @@ import { make2d } from '@/test/canvas-fixture'
 import { recordContext } from '@/test/canvas-recorder'
 // prettier-ignore
 const HEAD: BundleHead = {
-  manifest: { v: 1, generatedAt: '2026-02-03T12:00:00Z', commit: 'fixture-commit', days: ['2026-02-03', '2026-02-01'], refs: 'all', windowStart: '2026-02-01', windowEnd: '2026-02-03', dayCount: 3, repoCount: 2, repoCountDefinition: 'ownerPublicNonFork', actors: [{ id: 0, login: 'human-fixture', kind: 'human' }, { id: 1, login: 'agent-fixture', kind: 'agent' }], degraded: [], chunkSize: 10, chunks: 1, events: 2, integrity: {} },
+  manifest: { v: 1, generatedAt: '2026-02-03T12:00:00Z', commit: 'fixture-commit', days: ['2026-02-03', '2026-02-01'], refs: 'all', windowStart: '2026-02-01', windowEnd: '2026-02-03', dayCount: 3, repoCount: 2, repoCountDefinition: 'ownerPublicNonFork', actors: [{ id: 0, login: 'human-fixture', kind: 'human' }, { id: 1, login: 'agent-fixture', kind: 'agent' }], degraded: [], chunkSize: 10, chunks: 1, events: 2 },
   repos: [repo(0, 'alpha', 0, '2026-02-01'), repo(1, 'beta', 1, '2026-02-02')],
   grid: { start: '2026-02-01', dayCount: 3, human: [1, 0, 2], agent: [0, 37, 0], privateMonthly: [], privateStart: '2026-02', bands: [0, 1, 2, 4, 8, 16, 32, 64, 128, 256] },
   events: [{ day: 0, repo: 1, path: 'docs/latest.md', actor: 1 }, { day: 2, repo: 0, path: 'src/needle.ts', actor: 0 }],
