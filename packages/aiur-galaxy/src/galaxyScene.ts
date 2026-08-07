@@ -529,8 +529,22 @@ export function createBeamField(
   const beamActors: UniverseActor[] = []
   /** Where each drawn beam's star is, so a part-drawn beam can be re-aimed. */
   const targets = new Float32Array(maxBeams * 3)
+  /**
+   * Each drawn beam's star in *field* coordinates. The turn and the reach both
+   * change every frame, but which stars a day names does not, so the field
+   * position is resolved once per step and turned per frame. Without this the
+   * frame path walked every contribution of the day — thousands on a busy one —
+   * through a Map lookup sixty times a second.
+   */
+  const fields = new Float64Array(maxBeams * 3)
   /** How much of each beam is drawn, held so a re-anchor keeps the fraction. */
   let reachDrawn = 1
+  /** The step the beams currently resolve, so a repeat re-aims rather than rebuilds. */
+  let resolvedStep = Number.NaN
+  /** The layout those beams were resolved against; a rebuild invalidates them. */
+  let resolvedLayout: UniverseLayout | null = null
+  let resolvedDrawn = 0
+  let resolvedDropped = 0
 
   const anchor = (origins: readonly BeamOrigin[]): void => {
     for (const origin of origins) anchors[origin.actor]?.set(origin.x, origin.y, origin.z)
@@ -566,31 +580,52 @@ export function createBeamField(
     setFrame(layout, frame, origins, turn = DISC_STILL, reach = 1) {
       anchor(origins)
       reachDrawn = reach
-      beamActors.length = 0
-      let drawn = 0
-      let dropped = 0
-      for (const contribution of frame.currentContributions) {
-        const index = layout.starIndex.get(starKey(contribution.repo, contribution.file))
-        const star = index === undefined ? undefined : layout.stars[index]
-        if (!star || drawn >= maxBeams) {
-          dropped++
-          continue
+      if (frame.step !== resolvedStep || layout !== resolvedLayout) {
+        resolvedStep = frame.step
+        resolvedLayout = layout
+        beamActors.length = 0
+        let drawn = 0
+        let dropped = 0
+        for (const contribution of frame.currentContributions) {
+          const index = layout.starIndex.get(
+            starKey(contribution.repo, contribution.file)
+          )
+          const star = index === undefined ? undefined : layout.stars[index]
+          if (!star || drawn >= maxBeams) {
+            dropped++
+            continue
+          }
+          const field = drawn * 3
+          fields[field] = star.x
+          fields[field + 1] = star.y
+          fields[field + 2] = star.z
+          const beamColor = actorColors[contribution.actor] ?? actorColors[0]
+          writeColor(colors, drawn * 2, beamColor)
+          writeColor(colors, drawn * 2 + 1, beamColor)
+          beamActors.push(contribution.actor)
+          drawn++
         }
-        const target = drawn * 3
-        targets[target] = worldX(turnX(turn, star.x, star.y))
-        targets[target + 1] = worldY(turnY(turn, star.x, star.y))
-        targets[target + 2] = worldZ(star.z)
-        writeBeam(drawn, contribution.actor)
-        const beamColor = actorColors[contribution.actor] ?? actorColors[0]
-        writeColor(colors, drawn * 2, beamColor)
-        writeColor(colors, drawn * 2 + 1, beamColor)
-        beamActors.push(contribution.actor)
-        drawn++
+        resolvedDrawn = drawn
+        resolvedDropped = dropped
+        geometry.setDrawRange(0, drawn * 2)
+        flush(color, drawn)
       }
-      geometry.setDrawRange(0, drawn * 2)
-      flush(position, drawn)
-      flush(color, drawn)
-      return { drawn, dropped }
+      // Turn and re-aim every frame: the disc keeps rotating and the beam keeps
+      // growing or retracting even while the day itself stands still.
+      for (let beam = 0; beam < resolvedDrawn; beam++) {
+        const actor = beamActors[beam]
+        if (actor === undefined) continue
+        const field = beam * 3
+        const x = fields[field] ?? 0
+        const y = fields[field + 1] ?? 0
+        const target = beam * 3
+        targets[target] = worldX(turnX(turn, x, y))
+        targets[target + 1] = worldY(turnY(turn, x, y))
+        targets[target + 2] = worldZ(fields[field + 2] ?? 0)
+        writeBeam(beam, actor)
+      }
+      flush(position, resolvedDrawn)
+      return { drawn: resolvedDrawn, dropped: resolvedDropped }
     },
     setOrigins(origins) {
       anchor(origins)

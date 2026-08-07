@@ -18,7 +18,10 @@ import {
   universeFrame,
 } from '@/packages/aiur-galaxy/src/universePlayback'
 import { resolveContributors } from '@/packages/aiur-galaxy/src/contributors'
-import type { UniverseSnapshot } from '@/packages/aiur-galaxy/src/types'
+import type {
+  PlaybackDirection,
+  UniverseSnapshot,
+} from '@/packages/aiur-galaxy/src/types'
 import { createGalaxyDayClock } from './galaxyDayClock'
 import {
   getGalaxyTimeline,
@@ -110,6 +113,27 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
     /** Wall clock the disc's turn is measured from, never the playback step. */
     const opened = performance.now()
     let overflow = 0
+    /**
+     * The playback frame, held across the frames that share a day. Building one
+     * walks the whole contribution log — 138,634 entries at the full history —
+     * and allocates a key per live file, so doing it per animation frame cost
+     * millions of allocations a second and stalled the page outright. What it
+     * returns depends only on the step and the direction.
+     */
+    let cached: ReturnType<typeof universeFrame> | null = null
+    let cachedStep = Number.NaN
+    let cachedDirection = ''
+    const frameAt = (
+      step: number,
+      direction: PlaybackDirection
+    ): ReturnType<typeof universeFrame> => {
+      if (cached && step === cachedStep && direction === cachedDirection)
+        return cached
+      cached = universeFrame(universe, step, direction)
+      cachedStep = step
+      cachedDirection = direction
+      return cached
+    }
     const frame = (now: number): void => {
       const clock = getGalaxyTimeline()
       if (clock.total === universe.stepCount) {
@@ -129,7 +153,7 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
               ? live.pickRepo(hover.x, hover.y, canvas.clientWidth, canvas.clientHeight)
               : null
           )
-          const playback = universeFrame(universe, clock.step, clock.direction)
+          const playback = frameAt(clock.step, clock.direction)
           const stats = live.setFrame(layout, playback, days.reach(now, animated))
           overflow = surfaceBeamOverflow(canvas, stats.beamOverflow, overflow)
           const targets = resolveContributors(layout, playback)
