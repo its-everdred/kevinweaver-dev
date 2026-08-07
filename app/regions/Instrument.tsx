@@ -5,10 +5,12 @@ import { ContributionTable } from '@/components/viz/ContributionTable'
 import { EventsTail } from '@/components/viz/EventsTail'
 import { GalaxyUniverseIsland } from '@/components/viz/GalaxyUniverseIsland'
 import { Pane } from '@/components/ds/Pane'
+import { RepoInfo } from '@/components/viz/RepoInfo'
 import { Ribbon } from '@/components/viz/Ribbon'
 import { decodeGrid, decodeManifest } from '@/lib/bundle/codec'
 import type { GridSeries, Manifest } from '@/lib/bundle/schema'
 import { REGION_META, type InstrumentProps } from './_contract'
+import styles from './Instrument.module.css'
 
 const META = REGION_META.instrument
 const TABLE_ID = 'kw-contribution-table'
@@ -78,16 +80,21 @@ export function Instrument({ id, className, style }: InstrumentProps) {
           as="section"
           bleed
           focus
-          title="galaxies — repo universe"
+          title="repos — .gitmodules"
           titleAs="h3"
           bodyClassName="kw-graph"
           style={{ flex: 5, minWidth: 0 }}
         >
           <GalaxyUniverseIsland />
         </Pane>
-        <Pane className="kw-tail" title="events — tail -f">
-          <EventsTail />
-        </Pane>
+        <div className={styles.side}>
+          <Pane className={styles.sidePane} title="repo — git remote show">
+            <RepoInfo />
+          </Pane>
+          <Pane className={styles.sidePane} title="events — tail -f">
+            <EventsTail />
+          </Pane>
+        </div>
       </div>
     </section>
   )
