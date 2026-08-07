@@ -306,6 +306,24 @@ describe('the contribution grid as the seek surface', () => {
     expect(captured.has(7)).toBe(false)
   })
 
+  it('still seeks when the browser refuses the pointer capture', () => {
+    // A real browser throws NotFoundError from `setPointerCapture` when the id
+    // names no active pointer. Capture is an enhancement for drags that leave
+    // the strip; letting the refusal escape a React handler would take the
+    // whole gesture — and the only seek surface — down with it.
+    render(<Ribbon />)
+    const target = ribbonCanvas()
+    const refuse = vi.spyOn(target, 'setPointerCapture').mockImplementation(() => {
+      throw new DOMException('No active pointer', 'NotFoundError')
+    })
+    expect(() =>
+      fireEvent.pointerDown(target, { pointerId: 9, ...clientAt(0) })
+    ).not.toThrow()
+    expect(refuse).toHaveBeenCalled()
+    expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START)
+    refuse.mockRestore()
+  })
+
   it('lets the pointer go when the gesture is cancelled', () => {
     render(<Ribbon />)
     fireEvent.pointerDown(ribbonCanvas(), { pointerId: 3, ...clientAt(0) })

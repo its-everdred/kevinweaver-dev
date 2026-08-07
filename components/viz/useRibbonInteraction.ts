@@ -80,6 +80,26 @@ function backingPoint(
   }
 }
 
+/**
+ * @description Claims the pointer for the drag, tolerating a refusal.
+ *
+ * `setPointerCapture` throws `NotFoundError` when the id names no active
+ * pointer — a pointer already released, or a synthetic event. Capture is what
+ * keeps a scrub alive when the drag wanders off the one-row-tall strip, but it
+ * is an enhancement: the move handler also accepts a held button, so a refused
+ * capture costs robustness at the edges, never the gesture. Letting it throw
+ * out of a React event handler would take the whole scrub with it.
+ * @param canvas The ribbon canvas.
+ * @param pointerId The pointer to claim.
+ */
+function capturePointer(canvas: HTMLCanvasElement, pointerId: number): void {
+  try {
+    canvas.setPointerCapture(pointerId)
+  } catch {
+    /* no active pointer with this id; the button-state fallback covers it */
+  }
+}
+
 function onPointerDown(
   options: InteractionOptions,
   grab: GrabRef,
@@ -88,7 +108,7 @@ function onPointerDown(
   const canvas = event.currentTarget
   const point = backingPoint(canvas, event)
   if (!point || options.dayCount <= 0) return
-  canvas.setPointerCapture(event.pointerId)
+  capturePointer(canvas, event.pointerId)
   // Measured here rather than passed in, so the hit test reads the same lattice
   // the canvas was last painted on however the pane has been resized since.
   const layout = ribbonLayout(
