@@ -5,6 +5,7 @@ import {
   createBundleLoader,
   DEFAULT_BASE_URL,
   type BundleHead,
+  type BundleLoader,
 } from '@/lib/bundle/loader'
 import {
   bindVizTransport,
@@ -28,6 +29,12 @@ const UNAVAILABLE: InstrumentRuntimeState = { status: 'unavailable' }
 const MAX_BOOT_ATTEMPTS = 2
 const RETRY_DELAY_MS = 100
 /**
+ * One macrotask, used wherever a decision has to outlive the current commit:
+ * React's StrictMode tears every effect down and sets it up again in the same
+ * task, and a superseded driver may still be detached by a pending cleanup.
+ */
+const AFTER_COMMIT_MS = 0
+/**
  * The first-byte files probed (with bodies consumed) before the loader's full
  * five-file boot is engaged. Mirrors lib/bundle/loader.ts `loadBoot()`'s probe
  * order; KW-023's smoke spec waits for exactly these two requests and routes
@@ -38,13 +45,15 @@ const listeners = new Set<() => void>()
 let state: InstrumentRuntimeState = LOADING
 let loading: Promise<void> | undefined
 let attempts = 0
+let loader: BundleLoader | undefined
+let mounts = 0
 
 /**
  * @description Returns the payload and driver shared by all instrument leaves.
  * @returns Discriminated loading, unavailable, or ready runtime state.
  */
 export function useInstrumentRuntime(): InstrumentRuntimeState {
-  useEffect(ensureRuntime, [])
+  useEffect(holdRuntime, [])
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }
 /**
@@ -73,6 +82,29 @@ function subscribe(listener: () => void): () => void { listeners.add(listener); 
 const getSnapshot = (): InstrumentRuntimeState => state
 const getServerSnapshot = (): InstrumentRuntimeState => LOADING
 const notify = (): void => listeners.forEach((listener) => listener())
+/**
+ * @description Counts one live instrument, booting the shared runtime on the
+ * first mount.
+ * @returns The teardown that releases this instrument's hold on the loader.
+ */
+function holdRuntime(): () => void {
+  mounts += 1
+  ensureRuntime()
+  return releaseRuntime
+}
+// prettier-ignore
+function releaseRuntime(): void { mounts -= 1; window.setTimeout(disposeIdleLoader, AFTER_COMMIT_MS) }
+/**
+ * Aborts any request still in flight once the last instrument is gone. The
+ * check is deferred because a StrictMode remount passes through zero on its
+ * way back to one, and disposing on that transient zero would abandon a pump
+ * the remounted tree is still waiting on.
+ */
+function disposeIdleLoader(): void {
+  if (mounts > 0) return
+  loader?.dispose()
+  loader = undefined
+}
 function ensureRuntime(): void {
   if (loading) return
   if (state.status === 'unavailable') {
@@ -82,8 +114,8 @@ function ensureRuntime(): void {
   attempts += 1
   loading = bootRuntime()
     .then((head) => {
-      state = { status: 'ready', viz: createInstrumentViz(head) }
-      notify()
+      publish(head)
+      void pumpChunks(head)
     })
     .catch(() => {
       loading = undefined
@@ -105,8 +137,54 @@ async function bootRuntime(): Promise<BundleHead> {
     BOOT_PROBE_FILES.map((name) => probeFile(name))
   )
   if (!present.every(Boolean)) throw new Error('payload unavailable')
-  return createBundleLoader().boot()
+  loader?.dispose()
+  loader = createBundleLoader()
+  return loader.boot()
 }
+/**
+ * @description Draws the retained loader through every remaining event chunk so
+ * the scene holds the whole history instead of the boot chunk's slice. Boot
+ * publishes first and this runs after it, so first paint never waits on the
+ * pump; `ensureChunk` fills every intervening chunk itself, so the enriched viz
+ * is built once rather than once per chunk. A missing, malformed, or aborted
+ * chunk only ends the loader's history: whatever arrived is published and the
+ * ready state is never withdrawn.
+ * @param head The booted payload, whose event list the loader keeps extending.
+ */
+async function pumpChunks(head: BundleHead): Promise<void> {
+  const active = loader
+  const last = (active?.status().chunksTotal ?? 0) - 1
+  if (!active || last < 0) return
+  const booted = head.events.length
+  try {
+    await active.ensureChunk(last)
+  } catch {
+    // An aborted or unreachable chunk keeps whatever boot already published.
+  }
+  if (active !== loader || head.events.length === booted) return
+  publish(head)
+}
+/**
+ * @description Publishes a ready state built from the events resident now, and
+ * retires the viz it supersedes.
+ * @param head The loader's live payload.
+ */
+function publish(head: BundleHead): void {
+  const stale = state.status === 'ready' ? state.viz : undefined
+  state = { status: 'ready', viz: createInstrumentViz(residentHead(head)) }
+  notify()
+  // The replaced driver still owns surfaces until React commits and detaches
+  // them, so it is destroyed a macrotask later rather than under the notify.
+  if (stale)
+    window.setTimeout(() => stale.driver.destroy(), AFTER_COMMIT_MS)
+}
+/**
+ * `BundleHead.events` is the loader's own array, which grows as chunks land, so
+ * a published head takes a copy. Without it the boot scene would silently gain
+ * events it never rebuilt its entity indices for.
+ */
+// prettier-ignore
+const residentHead = (head: BundleHead): BundleHead => ({ ...head, events: [...head.events] })
 async function probeFile(name: string): Promise<boolean> {
   try {
     const response = await fetch(`${DEFAULT_BASE_URL}/${name}`, {
