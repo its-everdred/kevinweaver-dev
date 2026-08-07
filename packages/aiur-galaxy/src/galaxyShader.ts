@@ -4,6 +4,7 @@
  * for a glowing star field). Deterministic: no randomness, no clock; all
  * attributes are supplied by the geometry.
  */
+import { AdditiveBlending, ShaderMaterial } from 'three'
 
 /**
  * Vertex shader: scales each point by its per-vertex size, dims it by its
@@ -43,3 +44,22 @@ float alpha=1.0-smoothstep(core,0.5,d);
 gl_FragColor=vec4(vColor,alpha);
 }
 `
+
+/**
+ * @description Builds the material every point field in the disc draws
+ * through. The star field and the haze are the same shader at opposite ends of
+ * its range — a tight bright point and a huge faint smudge are `size`,
+ * `softness`, and `brightness` apart — so they share one material definition
+ * rather than paying for two in a bundle that has none to spare.
+ * @returns A new material; each field owns and disposes its own.
+ */
+export function createPointMaterial(): ShaderMaterial {
+  return new ShaderMaterial({
+    vertexShader: STAR_VERTEX_SHADER,
+    fragmentShader: STAR_FRAGMENT_SHADER,
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending,
+    vertexColors: true,
+  })
+}

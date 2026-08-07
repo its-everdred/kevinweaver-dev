@@ -6,6 +6,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   DynamicDrawUsage,
+  Group,
   LineBasicMaterial,
   LineSegments,
   Material,
@@ -22,16 +23,23 @@ import { starKey } from './galaxy'
 import type { RepoArm, UniverseLayout } from './galaxy'
 import type { UniverseFrame } from './universePlayback'
 import type { UniverseActor } from './types'
+import { createGalaxyHaze } from './galaxyHaze'
 import { createRepoLabels, type RepoLabel } from './galaxyLabels'
 import { createStarField } from './galaxyStars'
 import {
   DEFAULT_THEME,
+  DISC_STILL,
+  discTurn,
   faceCamera,
   toColor,
+  turnMatrix,
+  turnX,
+  turnY,
   worldX,
   worldY,
   worldZ,
   writeColor,
+  type DiscTurn,
   type GalaxySceneTheme,
 } from './galaxyWorld'
 
@@ -92,6 +100,13 @@ export interface GalaxyScene {
   selectAt(x: number, y: number, width: number, height: number): RepoArm | null
   /** Moves contributor nodes to eased positions, dragging their beams along. */
   setContributors(nodes: readonly { actor: UniverseActor; x: number; y: number }[]): void
+  /**
+   * Turns the disc about its own axis, carrying its stars, haze, beams,
+   * labels, and contributor nodes with it and leaving the camera alone: the
+   * viewer's orbit is theirs, and the two compose.
+   * @param spin The angle the disc has turned through, in radians.
+   */
+  setRotation(spin: number): void
   /** Places the camera at a world position, aimed at the disc center. */
   setCamera(x: number, y: number, z: number): void
   /** Resizes the renderer and the camera aspect, never the camera position. */
@@ -128,11 +143,16 @@ export interface BeamStats {
 /** Every zap beam for a step, in one reusable LineSegments object. */
 export interface BeamField {
   readonly lines: LineSegments
-  /** Aims one beam per current contribution; caps and reports the overflow. */
+  /**
+   * Aims one beam per current contribution; caps and reports the overflow.
+   * Beams end where the disc's turn has carried their star, not where the
+   * layout left it at rest.
+   */
   setFrame(
     layout: UniverseLayout,
     frame: UniverseFrame,
-    origins: readonly BeamOrigin[]
+    origins: readonly BeamOrigin[],
+    turn?: DiscTurn
   ): BeamStats
   /** Re-anchors the drawn beams as their contributor nodes ease into place. */
   setOrigins(origins: readonly BeamOrigin[]): void
@@ -199,12 +219,21 @@ export function createGalaxyScene(
   addContributorNode(scene, contributors, 0, theme.contributor)
   addContributorNode(scene, contributors, 1, theme.agent)
 
-  // One star field and one beam field, whatever the star count: the draw call
-  // count tracks the repo count through the labels, not the 16k stars.
+  // One star field, one haze field, and one beam field, whatever the star
+  // count: the draw call count tracks the repo count through the labels, not
+  // the 16k stars.
   const starField = createStarField(options.layout, theme)
+  const haze = createGalaxyHaze(options.layout, theme)
   const beamField = createBeamField(theme)
   const labels = createRepoLabels(options.layout.repos, theme)
-  scene.add(starField.points)
+  // The two point fields turn as one object. Everything else in the disc is
+  // placed a point at a time, because a billboard under a turning parent would
+  // be sheared by the field-to-world scale instead of facing the viewer.
+  const disc = new Group()
+  disc.matrixAutoUpdate = false
+  disc.add(starField.points)
+  disc.add(haze.points)
+  scene.add(disc)
   scene.add(beamField.lines)
   for (const label of labels.meshes) scene.add(label)
 
@@ -225,6 +254,26 @@ export function createGalaxyScene(
       y: contributor.mesh.position.y,
       z: contributor.mesh.position.z,
     }))
+
+  /** How far the disc has turned, as the pair every point is spun by. */
+  let turn: DiscTurn = DISC_STILL
+  // The angle that pair came from. NaN until the first turn, so the disc is
+  // placed once even at zero; after that a repeated angle costs nothing, which
+  // is what leaves a reduced-motion frame with no rotation work in it at all.
+  let spun = Number.NaN
+  /** Carries each label round with the arm it names. */
+  const placeLabels = (): void => {
+    for (let index = 0; index < options.layout.repos.length; index++) {
+      const repo = options.layout.repos[index]
+      const label = labels.meshes[index]
+      if (!repo || !label) continue
+      label.position.set(
+        worldX(turnX(turn, repo.x, repo.y)),
+        worldY(turnY(turn, repo.x, repo.y)),
+        worldZ(repo.z)
+      )
+    }
+  }
 
   // The repo the viewer is highlighting, held here so a pointer move and a
   // step advance reach the labels through the same path.
@@ -247,7 +296,7 @@ export function createGalaxyScene(
     setFrame(layout, frame) {
       frameShown = frame
       const promoted = starField.setFrame(layout, frame)
-      const beams = beamField.setFrame(layout, frame, contributorOrigins())
+      const beams = beamField.setFrame(layout, frame, contributorOrigins(), turn)
       return {
         promoted,
         beams: beams.drawn,
@@ -259,14 +308,15 @@ export function createGalaxyScene(
       highlight = repoId
     },
     pickRepo(x, y, width, height) {
-      return pickRepoArm(options.layout.repos, camera, { x, y }, { width, height })
+      return pickRepoArm(options.layout.repos, camera, { x, y }, { width, height }, turn)
     },
     selectAt(x, y, width, height) {
       const repoId = pickRepoArm(
         options.layout.repos,
         camera,
         { x, y },
-        { width, height }
+        { width, height },
+        turn
       )
       selected =
         repoId === null
@@ -286,7 +336,13 @@ export function createGalaxyScene(
         const existing = contributors.find((c) => c.actor === node.actor)
         if (!existing) continue
         existing.mesh.visible = true
-        existing.mesh.position.set(worldX(node.x), worldY(node.y), CONTRIBUTOR_DEPTH)
+        // The node sits over the day's work, so the disc's turn carries it the
+        // same way it carries the stars that work landed on.
+        existing.mesh.position.set(
+          worldX(turnX(turn, node.x, node.y)),
+          worldY(turnY(turn, node.x, node.y)),
+          CONTRIBUTOR_DEPTH
+        )
         origins.push({
           actor: node.actor,
           x: existing.mesh.position.x,
@@ -295,6 +351,14 @@ export function createGalaxyScene(
         })
       }
       beamField.setOrigins(origins)
+    },
+    setRotation(spin) {
+      if (spin === spun) return
+      spun = spin
+      turn = discTurn(spin)
+      turnMatrix(disc.matrix, turn)
+      disc.matrixWorldNeedsUpdate = true
+      placeLabels()
     },
     setCamera(x, y, z) {
       placeCamera(camera, x, y, z)
@@ -309,6 +373,7 @@ export function createGalaxyScene(
     },
     dispose() {
       starField.dispose()
+      haze.dispose()
       beamField.dispose()
       labels.dispose()
       for (const contributor of contributors) {
@@ -361,17 +426,20 @@ export function resizeCamera(
  * @param repo The arm segment.
  * @param camera The scene camera.
  * @param metrics Surface size, in the units the result is wanted in.
+ * @param turn How far the disc has turned, so hover follows the stars rather
+ * than the resting place the layout gave them.
  * @returns The anchor's surface position, flagged when it is behind the camera.
  */
 export function repoScreenPosition(
   repo: RepoArm,
   camera: PerspectiveCamera,
-  metrics: { readonly width: number; readonly height: number }
+  metrics: { readonly width: number; readonly height: number },
+  turn: DiscTurn = DISC_STILL
 ): ArmScreenPoint {
   camera.updateMatrixWorld()
   const projected = new Vector3(
-    worldX(repo.x),
-    worldY(repo.y),
+    worldX(turnX(turn, repo.x, repo.y)),
+    worldY(turnY(turn, repo.x, repo.y)),
     worldZ(repo.z)
   ).project(camera)
   return {
@@ -389,18 +457,20 @@ export function repoScreenPosition(
  * @param camera The scene camera.
  * @param pointer Pointer position, in the same units as `metrics`.
  * @param metrics Surface size.
+ * @param turn How far the disc has turned.
  * @returns The nearest arm's repo id, or null when none is within reach.
  */
 export function pickRepoArm(
   repos: readonly RepoArm[],
   camera: PerspectiveCamera,
   pointer: { readonly x: number; readonly y: number },
-  metrics: { readonly width: number; readonly height: number }
+  metrics: { readonly width: number; readonly height: number },
+  turn: DiscTurn = DISC_STILL
 ): number | null {
   let picked: number | null = null
   let nearest = PICK_RADIUS * PICK_RADIUS
   for (const repo of repos) {
-    const point = repoScreenPosition(repo, camera, metrics)
+    const point = repoScreenPosition(repo, camera, metrics, turn)
     if (!point.visible) continue
     const distance = (point.x - pointer.x) ** 2 + (point.y - pointer.y) ** 2
     if (distance >= nearest) continue
@@ -470,7 +540,7 @@ export function createBeamField(
 
   return {
     lines,
-    setFrame(layout, frame, origins) {
+    setFrame(layout, frame, origins, turn = DISC_STILL) {
       anchor(origins)
       beamActors.length = 0
       let drawn = 0
@@ -484,8 +554,8 @@ export function createBeamField(
         }
         const offset = drawn * 6
         writeOrigin(drawn, contribution.actor)
-        positions[offset + 3] = worldX(star.x)
-        positions[offset + 4] = worldY(star.y)
+        positions[offset + 3] = worldX(turnX(turn, star.x, star.y))
+        positions[offset + 4] = worldY(turnY(turn, star.x, star.y))
         positions[offset + 5] = worldZ(star.z)
         const beamColor = actorColors[contribution.actor] ?? actorColors[0]
         writeColor(colors, drawn * 2, beamColor)

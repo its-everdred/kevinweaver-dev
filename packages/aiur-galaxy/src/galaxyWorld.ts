@@ -1,5 +1,5 @@
 import { Color } from 'three'
-import type { Mesh, PerspectiveCamera } from 'three'
+import type { Matrix4, Mesh, PerspectiveCamera } from 'three'
 
 /** Host-agnostic theme mapped to three.js colors. */
 export interface GalaxySceneTheme {
@@ -37,6 +37,90 @@ export const DEFAULT_THEME: GalaxySceneTheme = {
 /** Field-to-world scale of the disc, per axis. */
 const WORLD_WIDTH = 6
 const WORLD_HEIGHT = 4
+/**
+ * How much wider than tall the field is drawn. The disc is a circle in field
+ * units and an ellipse in world units, which is what makes it read as a disc
+ * seen at an angle rather than face-on. Its own axis is therefore the field's,
+ * not the world's: turning it in world units would sweep the ellipse round and
+ * the galaxy would appear to breathe instead of to spin.
+ */
+const DISC_ASPECT = WORLD_WIDTH / WORLD_HEIGHT
+
+/**
+ * How long the disc takes to come round once, in milliseconds. Four minutes is
+ * a rim that crosses a couple of pixels a second: fast enough that the galaxy
+ * is alive at a glance, slow enough that nothing about it is in motion while
+ * you are reading a repo name off it. Playback's own pass over the year window
+ * is about six minutes, so the two never beat against each other either.
+ */
+export const DISC_TURN_MS = 240_000
+/**
+ * Which way it turns, as a multiplier on the angle. A spiral's arms trail its
+ * rotation — the tip of an arm lags its root — and `layoutUniverse` winds its
+ * arms anticlockwise, `angle = arm + t * ARM_WINDING` with a positive winding
+ * over a radius that grows outward. Trailing that winding means turning
+ * against it, hence the negative: turning the other way puts the arm tips in
+ * front and the disc reads as unwinding.
+ */
+const TURN_SENSE = -1
+
+/** Cosine and sine of the disc's current turn, resolved once per frame. */
+export interface DiscTurn {
+  readonly cos: number
+  readonly sin: number
+}
+
+/** The disc as the layout left it, for every caller that has not turned it. */
+export const DISC_STILL: DiscTurn = { cos: 1, sin: 0 }
+
+/**
+ * @description The angle the disc has turned through, in radians. A pure
+ * function of elapsed wall time: playback can be paused, scrubbed, or run
+ * backwards without the disc stopping or jumping, because none of that is an
+ * input here.
+ * @param elapsedMs Milliseconds since the scene was built.
+ * @param reducedMotion Whether `prefers-reduced-motion: reduce` is set. Under
+ * it the disc never turns at all, at any elapsed time.
+ * @returns The turn in radians, negative because the arms trail it.
+ */
+export function discSpin(elapsedMs: number, reducedMotion: boolean): number {
+  if (reducedMotion || !Number.isFinite(elapsedMs)) return 0
+  return (TURN_SENSE * 2 * Math.PI * elapsedMs) / DISC_TURN_MS
+}
+
+/** @description Resolves a turn angle into the pair every point is spun by. */
+export function discTurn(spin: number): DiscTurn {
+  return { cos: Math.cos(spin), sin: Math.sin(spin) }
+}
+
+/** @description Turns a field x about the disc's axis, in field units. */
+export function turnX(turn: DiscTurn, x: number, y: number): number {
+  return 0.5 + (x - 0.5) * turn.cos - (y - 0.5) * turn.sin
+}
+
+/** @description Turns a field y about the disc's axis, in field units. */
+export function turnY(turn: DiscTurn, x: number, y: number): number {
+  return 0.5 + (x - 0.5) * turn.sin + (y - 0.5) * turn.cos
+}
+
+/**
+ * @description Writes the world-space form of a field-space turn, so a whole
+ * point field can be turned by one matrix instead of a rewritten buffer. It is
+ * the field turn conjugated by the field-to-world scale, which is what keeps
+ * the disc's outline still while everything inside it moves.
+ * @param matrix The matrix to write, usually an object's own.
+ * @param turn The turn to write into it.
+ * @returns The same matrix, written.
+ */
+export function turnMatrix(matrix: Matrix4, turn: DiscTurn): Matrix4 {
+  // prettier-ignore
+  return matrix.set(
+    turn.cos, -turn.sin * DISC_ASPECT, 0, 0,
+    turn.sin / DISC_ASPECT, turn.cos, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1
+  )
+}
 
 /** @description Maps a field x in [0, 1] onto the disc's world width. */
 export function worldX(field: number): number {

@@ -12,6 +12,7 @@ import {
   type GalaxyScene,
 } from '@/packages/aiur-galaxy/src/galaxyScene'
 import { layoutUniverse } from '@/packages/aiur-galaxy/src/galaxy'
+import { discSpin } from '@/packages/aiur-galaxy/src/galaxyWorld'
 import {
   nextWindowStep,
   playbackWindowEnd,
@@ -112,6 +113,8 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
 
     let raf = 0
     let last = performance.now()
+    /** Wall clock the disc's turn is measured from, never the playback step. */
+    const opened = last
     let overflow = 0
     const eased: Partial<Record<UniverseActor, { x: number; y: number }>> = {}
     const frame = (now: number): void => {
@@ -130,6 +133,7 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
           // snapping back to the build framing.
           const view = orbitPosition(orbitRef.current)
           live.setCamera(view.x, view.y, view.z)
+          live.setRotation(discSpin(now - opened, reducedMotion))
           const hover = pointerRef.current
           live.setHighlight(
             hover
