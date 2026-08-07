@@ -37,10 +37,10 @@ type GrabRef = RefObject<Grab | null>
  * Two mappings, on purpose. A press is absolute — the day under the cursor is
  * the day you get, so clicking a square seeks to exactly that day. A drag is
  * relative to the grab point — a week per column of travel, a day per row —
- * which is what lets the gesture keep walking once it leaves the one-year
- * window. An absolute drag could not: the window shifts under the pointer as
- * the clock passes its oldest day, and the cursor would jump a whole window
- * with it. Anchored to the grab, the shift is invisible to the gesture.
+ * which is what lets the gesture keep walking once it leaves the window the
+ * pane has room for. An absolute drag could not: the window shifts under the
+ * pointer as the clock passes its oldest day, and the cursor would jump a whole
+ * window with it. Anchored to the grab, the shift is invisible to the gesture.
  *
  * The press takes pointer capture, so the whole drag reports back here however
  * far off the strip it wanders. The strip is one pane row tall; an uncaptured
@@ -89,11 +89,19 @@ function onPointerDown(
   const point = backingPoint(canvas, event)
   if (!point || options.dayCount <= 0) return
   canvas.setPointerCapture(event.pointerId)
-  const layout = ribbonLayout(canvas.width, canvas.height, ribbonDpr())
+  // Measured here rather than passed in, so the hit test reads the same lattice
+  // the canvas was last painted on however the pane has been resized since.
+  const layout = ribbonLayout(
+    canvas.width,
+    canvas.height,
+    ribbonDpr(),
+    options.dayCount
+  )
   const visible = ribbonWindow(
     getGalaxyTimeline().step,
     options.dayCount,
-    options.startWeekday
+    options.startWeekday,
+    layout.columns
   )
   const day = ribbonDayAt(visible, layout, point.xPx, point.yPx)
   grab.current = { day, xPx: point.xPx, yPx: point.yPx, stepPx: layout.stepPx }
