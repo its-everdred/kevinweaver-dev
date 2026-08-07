@@ -39,6 +39,15 @@ import type { PointerPosition } from './useGalaxyPointer'
  */
 const DIRECTION = 'backward'
 
+/**
+ * Milliseconds between rendered frames — thirty a second. The disc is a slow
+ * scene by construction: a day lasts a second and the turn covers a degree and
+ * a half in it, so half the frames a display offers carry no visible change.
+ * Skipping them is the difference between a galaxy a weak machine can hold on
+ * screen and one that saturates it.
+ */
+const FRAME_MS = 1000 / 30
+
 /** What the galaxy render loop needs from its host component. */
 export interface GalaxySceneHost {
   readonly canvasRef: RefObject<HTMLCanvasElement | null>
@@ -150,12 +159,26 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
      * motion is asking us to honour, not merely a request to hold the day still.
      */
     let settled = ''
+    /**
+     * Wall-clock time of the last rendered frame, so the loop can draw at
+     * `FRAME_MS` rather than at whatever rate the display offers. Nothing here
+     * moves fast enough to need 60 fps: the day changes once a second and the
+     * disc turns a degree and a half in that time. Drawing this scene twice as
+     * often as it changes costs a phone its battery and a weak machine its
+     * responsiveness, and buys no visible smoothness.
+     */
+    let drawn = Number.NEGATIVE_INFINITY
     const frame = (now: number): void => {
       const clock = getGalaxyTimeline()
       if (clock.total === universe.stepCount) {
         const animated = !reducedMotion && clock.playing
         const day = days.advance(clock.step, clock.direction, now, animated)
         if (day !== clock.step) seekGalaxyTimeline(day, universe.stepCount)
+        if (now - drawn < FRAME_MS) {
+          raf = requestAnimationFrame(frame)
+          return
+        }
+        drawn = now
         if (reducedMotion && live) {
           const hover = pointerRef.current
           const orbit = orbitRef.current
