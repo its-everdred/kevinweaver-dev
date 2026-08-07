@@ -3,9 +3,14 @@ export { buildUniverse, type UniverseEvent, type UniverseRepoInput } from './bui
 export {
   buildGalaxyPoints,
   createGalaxyScene,
+  pickRepoArm,
+  repoScreenPosition,
+  type ArmScreenPoint,
+  type GalaxyFrameStats,
   type GalaxyScene,
   type GalaxySceneOptions,
   type GalaxySceneTheme,
+  type RepoLabels,
   type SceneContributor,
 } from './galaxyScene'
 export { STAR_FRAGMENT_SHADER, STAR_VERTEX_SHADER } from './galaxyShader'
@@ -36,8 +41,13 @@ export {
   type RenderMetrics,
 } from './render'
 export {
+  PLAYBACK_WINDOW_STEPS,
+  RECENT_REPO_STEPS,
   clampStep,
   nextUniverseStep,
+  nextWindowStep,
+  playbackWindowEnd,
+  playbackWindowStart,
   universeFrame,
   universeLiveAt,
   type UniverseFrame,

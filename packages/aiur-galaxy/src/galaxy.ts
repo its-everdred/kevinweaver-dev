@@ -52,16 +52,29 @@ const ARM_COUNT = 2
 /** Radians of arm rotation between the core and the rim. */
 const ARM_WINDING = 2.2 * Math.PI
 /** Width of the per-star position along its repo's arm, centered on zero. */
-const ALONG_SPAN = 1.5
+const ALONG_SPAN = 2.1
 /** Radial smear, wide enough that adjacent repos blend instead of banding. */
-const RADIAL_SMEAR = 0.19
-const ANGULAR_SMEAR = 1.15
-const ANGULAR_JITTER = 0.42
+const RADIAL_SMEAR = 0.16
+/**
+ * Radians the along-arm offset turns per unit. Held at `ARM_WINDING *
+ * RADIAL_SMEAR` so the along-arm smear runs *down* the arm rather than across
+ * it; everything that spreads a star off the arm is a jitter below.
+ */
+const ANGULAR_SMEAR = ARM_WINDING * RADIAL_SMEAR
+/**
+ * Half-width of the cross-arm scatter, in radians. Wide enough that the disc
+ * reads as a star field rather than as two drawn lines: at 1.9 rad the two
+ * arms, half a turn apart, overlap in the space between them, so that space is
+ * populated while the arms stay the densest part of the ring.
+ */
+const ANGULAR_JITTER = 1.9
+/** Cross-arm radial scatter, which decouples a star's radius from its angle. */
+const RADIAL_JITTER = 0.055
 const DISC_THICKNESS = 0.09
 /** How much of the disc's thickness the rim loses relative to the core. */
 const CORE_BULGE = 0.65
 /** Largest radial coordinate a star can reach, used to normalize to the field. */
-const MAX_RADIAL = 1 + (ALONG_SPAN / 2) * RADIAL_SMEAR
+const MAX_RADIAL = 1 + (ALONG_SPAN / 2) * RADIAL_SMEAR + RADIAL_JITTER
 
 /** A repo paired with the step of its most recent contribution. */
 interface RepoRecency {
@@ -164,9 +177,13 @@ function fieldPoint(radial: number, angle: number, depth: number): FieldPoint {
 }
 
 /**
- * @description Appends one star per file, smeared radially and angularly around
- * the repo's arm segment so adjacent repos blend into a continuous arm. Every
- * file becomes a star: there is no cap, and volume buys density, not area.
+ * @description Appends one star per file, positioned along its repo's arm and
+ * then scattered off it, so the disc reads as a star field with spiral
+ * structure rather than as stars glued to two thin curves. The along-arm offset
+ * moves a star down the arm; the two jitters move it off the arm, and being
+ * densest at zero they leave the arm the busiest part of the disc while still
+ * populating the space between arms. Every file becomes a star: there is no
+ * cap, and volume buys density, not area.
  */
 function appendStars(
   stars: StarPosition[],
@@ -178,13 +195,23 @@ function appendStars(
     const key = starKey(repo.id, file)
     if (starIndex.has(key)) continue
     const along = (hash01(`${key}:along`) - 0.5) * ALONG_SPAN
-    const angle =
-      arm.angle + along * ANGULAR_SMEAR + (hash01(`${key}:angle`) - 0.5) * ANGULAR_JITTER
+    const angle = arm.angle + along * ANGULAR_SMEAR + scatter(key, 'angle') * ANGULAR_JITTER
+    const radial = arm.t + along * RADIAL_SMEAR + scatter(key, 'radial') * RADIAL_JITTER
     const depth = (hash01(`${key}:depth`) - 0.5) * DISC_THICKNESS * (1 - arm.t * CORE_BULGE)
     starIndex.set(key, stars.length)
-    const point = fieldPoint(arm.t + along * RADIAL_SMEAR, angle, depth)
-    stars.push({ repoId: repo.id, file, ...point })
+    stars.push({ repoId: repo.id, file, ...fieldPoint(radial, angle, depth) })
   }
+}
+
+/**
+ * @description Deterministic scatter in (-1, 1), densest at zero. Summing two
+ * hashes gives a triangular distribution, which is what keeps the arm the
+ * brightest part of the disc while its tails reach the space between arms; a
+ * single hash would spread every star with equal probability and flatten the
+ * spiral out of the field.
+ */
+function scatter(key: string, axis: string): number {
+  return hash01(`${key}:${axis}`) + hash01(`${key}:${axis}:spread`) - 1
 }
 
 /**

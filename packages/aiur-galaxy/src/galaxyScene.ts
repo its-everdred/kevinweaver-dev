@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { starKey } from './galaxy'
 import type { RepoArm, StarPosition, UniverseLayout } from './galaxy'
+import { RECENT_REPO_STEPS } from './universePlayback'
 import type { UniverseFrame } from './universePlayback'
 import type { UniverseActor } from './types'
 import { STAR_FRAGMENT_SHADER, STAR_VERTEX_SHADER } from './galaxyShader'
@@ -37,6 +38,8 @@ export interface GalaxyFrameStats {
   readonly beams: number
   /** Contributions on this step that produced no beam. Never silent. */
   readonly beamOverflow: number
+  /** Label sprites revealed this frame; each one is a draw call. */
+  readonly labels: number
 }
 
 /** Owns the three.js renderer, scene, camera, star field, beams, and labels. */
@@ -48,11 +51,18 @@ export interface GalaxyScene {
   readonly stars: THREE.Points
   /** Every zap beam for the current step, as one LineSegments object. */
   readonly beams: THREE.LineSegments
-  /** One always-visible label sprite per repo, in layout order. */
+  /** One label sprite per repo, in layout order, hidden until revealed. */
   readonly labels: readonly THREE.Sprite[]
   readonly contributors: SceneContributor[]
-  /** Promotes the stars this frame names and re-aims the beams. */
+  /** Promotes the stars this frame names, re-aims the beams, sets the labels. */
   setFrame(layout: UniverseLayout, frame: UniverseFrame): GalaxyFrameStats
+  /** Marks the repo the viewer is highlighting, whose label stays revealed. */
+  setHighlight(repoId: number | null): void
+  /**
+   * The repo arm nearest a pointer, or null when none is near enough. The
+   * pointer and the surface are in the same units, CSS pixels at the call site.
+   */
+  pickRepo(x: number, y: number, width: number, height: number): number | null
   /** Moves contributor nodes to eased positions, dragging their beams along. */
   setContributors(nodes: readonly { actor: UniverseActor; x: number; y: number }[]): void
   /** Places the camera at a world position, aimed at the disc center. */
@@ -76,10 +86,23 @@ export interface StarField {
   dispose(): void
 }
 
-/** The always-on repo labels, one sprite per arm segment. */
+/** The repo labels, one sprite per arm segment, hidden until revealed. */
 export interface RepoLabels {
   readonly sprites: readonly THREE.Sprite[]
+  /**
+   * Reveals the labels this frame justifies and hides every other one.
+   * @returns How many sprites are visible, which is their draw-call count.
+   */
+  setFrame(frame: UniverseFrame, highlight: number | null): number
   dispose(): void
+}
+
+/** Where a repo's arm anchor lands on the canvas. */
+export interface ArmScreenPoint {
+  readonly x: number
+  readonly y: number
+  /** False when the anchor is behind the camera, where the projection lies. */
+  readonly visible: boolean
 }
 
 /** Where an actor's beams start, in world units. */
@@ -124,6 +147,8 @@ const CAMERA_DISTANCE = 2.6
  */
 export const MAX_BEAMS = 2048
 const BEAM_OPACITY = 0.75
+/** How near a pointer must come to an arm anchor to highlight it, in pixels. */
+const PICK_RADIUS = 56
 
 const DEFAULT_THEME: GalaxySceneTheme = {
   background: 0x1d2021,
@@ -249,6 +274,10 @@ export function createGalaxyScene(
       z: contributor.mesh.position.z,
     }))
 
+  // The repo the viewer is highlighting, held here so a pointer move and a
+  // step advance reach the labels through the same path.
+  let highlight: number | null = null
+
   return {
     renderer,
     scene,
@@ -260,7 +289,18 @@ export function createGalaxyScene(
     setFrame(layout, frame) {
       const promoted = starField.setFrame(layout, frame)
       const beams = beamField.setFrame(layout, frame, contributorOrigins())
-      return { promoted, beams: beams.drawn, beamOverflow: beams.dropped }
+      return {
+        promoted,
+        beams: beams.drawn,
+        beamOverflow: beams.dropped,
+        labels: labels.setFrame(frame, highlight),
+      }
+    },
+    setHighlight(repoId) {
+      highlight = repoId
+    },
+    pickRepo(x, y, width, height) {
+      return pickRepoArm(options.layout.repos, camera, { x, y }, { width, height })
     },
     setContributors(nodes) {
       // Hide every contributor first; only nodes present in the current frame
@@ -413,6 +453,7 @@ export function createStarField(
   const points = buildGalaxyPoints(layout, theme)
   const attribute = points.geometry.getAttribute('color') as THREE.BufferAttribute
   const colors = attribute.array as Float32Array
+  const untouched = toColor(theme.star)
   const live = toColor(theme.liveStar)
   const current = toColor(theme.currentStar)
   // Outside the clamped step range in both directions, so the first frame
@@ -435,21 +476,30 @@ export function createStarField(
     return written
   }
 
+  /** Returns every vertex to untouched, so a seek starts from a dark disc. */
+  const reset = (): void => {
+    for (let index = 0; index < layout.starCount; index++)
+      writeColor(colors, index, untouched)
+  }
+
   return {
     points,
     setFrame(source, frame) {
       if (frame.step === lastStep) return 0
       // A single step, in either direction, only has to demote the step it
-      // leaves. A seek repaints the cumulative live set, which the frame loop
-      // never reaches: the clock advances one step at a time.
-      const written =
-        Math.abs(frame.step - lastStep) === 1
-          ? paint(source, lastCurrent, live)
-          : paint(source, frame.liveFiles, live)
+      // leaves. A seek lands anywhere, including the roll-over from the
+      // window's oldest day back to its newest, so it rebuilds the field from
+      // this step's live set: leaving the previous pass's stars lit would make
+      // every pass after the first replay over an already bright disc.
+      const seeked = Math.abs(frame.step - lastStep) !== 1
+      if (seeked) reset()
+      const written = seeked
+        ? paint(source, frame.liveFiles, live)
+        : paint(source, lastCurrent, live)
       const promoted = written + paint(source, frame.currentFiles, current)
       lastStep = frame.step
       lastCurrent = frame.currentFiles
-      if (promoted > 0) attribute.needsUpdate = true
+      if (seeked || promoted > 0) attribute.needsUpdate = true
       return promoted
     },
     dispose() {
@@ -462,12 +512,14 @@ export function createStarField(
 
 /**
  * @description Creates one label sprite per repo, positioned at that repo's arm
- * segment and visible at all times. Overlap between neighbouring labels is
- * accepted: reading the full repo set outranks a clean frame, so nothing here
- * hides or culls a label.
+ * segment and hidden until something reveals it: the viewer highlighting that
+ * repo, or the repo receiving a contribution, after which the label fades out
+ * over the following few days of playback. Sixty always-on labels were sixty
+ * draw calls and 7.5 MiB of texture for a name nobody was reading; a revealed
+ * label is one the viewer has a reason to read.
  * @param repos The layout's arm segments, in recency order.
  * @param theme Color palette.
- * @returns The sprites plus their texture and material disposal.
+ * @returns The sprites, their per-frame reveal, and their disposal.
  */
 export function createRepoLabels(
   repos: readonly RepoArm[],
@@ -477,10 +529,28 @@ export function createRepoLabels(
   for (const repo of repos) {
     const sprite = createLabelSprite(repo.name, theme.label)
     sprite.position.set(worldX(repo.x), worldY(repo.y), worldZ(repo.z))
+    sprite.visible = false
+    sprite.material.opacity = 0
     sprites.push(sprite)
   }
   return {
     sprites,
+    setFrame(frame, highlight) {
+      let visible = 0
+      for (let index = 0; index < repos.length; index++) {
+        const repo = repos[index]
+        const sprite = sprites[index]
+        if (!repo || !sprite) continue
+        const opacity =
+          repo.repoId === highlight
+            ? 1
+            : contributionOpacity(frame.recentRepos.get(repo.repoId))
+        sprite.visible = opacity > 0
+        sprite.material.opacity = opacity
+        if (sprite.visible) visible++
+      }
+      return visible
+    },
     dispose() {
       for (const sprite of sprites) {
         // The sprite geometry is shared across every three.js sprite; only the
@@ -491,6 +561,73 @@ export function createRepoLabels(
       }
     },
   }
+}
+
+/**
+ * @description Opacity of a label revealed by a contribution. Derived from the
+ * frame's own recency rather than accumulated across frames, so scrubbing to a
+ * day shows exactly what playing to it would, with no animation state to drift.
+ * @param age Steps of playback since the contribution, or undefined when the
+ * repo has aged out of the frame's recent set.
+ * @returns An opacity in [0, 1]; 0 means the label costs no draw call.
+ */
+function contributionOpacity(age: number | undefined): number {
+  if (age === undefined || age >= RECENT_REPO_STEPS) return 0
+  return 1 - age / RECENT_REPO_STEPS
+}
+
+/**
+ * @description Projects a repo's arm anchor onto the canvas.
+ * @param repo The arm segment.
+ * @param camera The scene camera.
+ * @param metrics Surface size, in the units the result is wanted in.
+ * @returns The anchor's surface position, flagged when it is behind the camera.
+ */
+export function repoScreenPosition(
+  repo: RepoArm,
+  camera: THREE.PerspectiveCamera,
+  metrics: { readonly width: number; readonly height: number }
+): ArmScreenPoint {
+  camera.updateMatrixWorld()
+  const projected = new THREE.Vector3(
+    worldX(repo.x),
+    worldY(repo.y),
+    worldZ(repo.z)
+  ).project(camera)
+  return {
+    x: (projected.x * 0.5 + 0.5) * Math.max(1, metrics.width),
+    y: (0.5 - projected.y * 0.5) * Math.max(1, metrics.height),
+    visible: projected.z <= 1,
+  }
+}
+
+/**
+ * @description Finds the repo arm nearest a pointer. The dolly floor puts the
+ * camera inside the disc's own extent, so an arm can sit behind it and project
+ * to a mirrored point; those are skipped rather than picked.
+ * @param repos The layout's arm segments.
+ * @param camera The scene camera.
+ * @param pointer Pointer position, in the same units as `metrics`.
+ * @param metrics Surface size.
+ * @returns The nearest arm's repo id, or null when none is within reach.
+ */
+export function pickRepoArm(
+  repos: readonly RepoArm[],
+  camera: THREE.PerspectiveCamera,
+  pointer: { readonly x: number; readonly y: number },
+  metrics: { readonly width: number; readonly height: number }
+): number | null {
+  let picked: number | null = null
+  let nearest = PICK_RADIUS * PICK_RADIUS
+  for (const repo of repos) {
+    const point = repoScreenPosition(repo, camera, metrics)
+    if (!point.visible) continue
+    const distance = (point.x - pointer.x) ** 2 + (point.y - pointer.y) ** 2
+    if (distance >= nearest) continue
+    nearest = distance
+    picked = repo.repoId
+  }
+  return picked
 }
 
 /**

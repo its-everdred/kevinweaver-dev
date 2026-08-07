@@ -6,14 +6,17 @@ import {
   createBeamField,
   createRepoLabels,
   createStarField,
+  pickRepoArm,
   placeCamera,
+  repoScreenPosition,
   resizeCamera,
 } from '../src/galaxyScene'
+import type { RepoLabels } from '../src/galaxyScene'
 import { layoutUniverse, starKey } from '../src/galaxy'
 import { universeFrame } from '../src/universePlayback'
 import type { UniverseFrame } from '../src/universePlayback'
-import type { UniverseLayout } from '../src/galaxy'
-import type { UniverseSnapshot } from '../src/types'
+import type { RepoArm, UniverseLayout } from '../src/galaxy'
+import type { PlaybackDirection, UniverseSnapshot } from '../src/types'
 
 const SNAPSHOT: UniverseSnapshot = {
   repos: [
@@ -227,6 +230,32 @@ describe('createStarField', () => {
     field.dispose()
   })
 
+  it('rebuilds the field on a seek instead of stranding a star bright', () => {
+    const source = layout()
+    const field = createStarField(source, THEME)
+    field.setFrame(source, frameAt(3))
+    expect(toHex(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBe(THEME.liveStar)
+    // Seeking back past step 2 — which the rolling window does every time it
+    // rolls over — must return b.ts to untouched, or the second pass replays
+    // over an already fully lit disc.
+    field.setFrame(source, frameAt(1))
+    expect(toHex(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBe(THEME.star)
+    expect(toHex(colorOf(field.points, indexOf(source, 0, 'a.ts')))).toBe(THEME.liveStar)
+    field.dispose()
+  })
+
+  it('uploads the rebuilt field even when the step it seeks to names nothing', () => {
+    const source = layout()
+    const field = createStarField(source, THEME)
+    field.setFrame(source, frameAt(2))
+    const attribute = field.points.geometry.getAttribute('color') as THREE.BufferAttribute
+    const version = attribute.version
+    field.setFrame(source, frameAt(5))
+    field.setFrame(source, frameAt(1))
+    expect(attribute.version).toBeGreaterThan(version)
+    field.dispose()
+  })
+
   it('releases its geometry and material on dispose', () => {
     const field = createStarField(layout(), THEME)
     const geometry = vi.spyOn(field.points.geometry, 'dispose')
@@ -238,13 +267,78 @@ describe('createStarField', () => {
 })
 
 describe('createRepoLabels', () => {
-  it('gives every repo exactly one always-visible label sprite', () => {
+  /** One repo with one contribution, and room on both sides to age out. */
+  const TRAIL: UniverseSnapshot = {
+    repos: [{ id: 7, name: 'a/trail', files: ['t.ts'] }],
+    contributions: [{ step: 5, repo: 7, file: 't.ts', actor: 0 }],
+    stepCount: 12,
+  }
+
+  function opacityOf(source: UniverseLayout, labels: RepoLabels, repoId: number): number {
+    const index = source.repos.findIndex((repo) => repo.repoId === repoId)
+    const sprite = labels.sprites[index]
+    if (!sprite) throw new Error(`no label sprite for repo ${repoId}`)
+    return sprite.visible ? sprite.material.opacity : 0
+  }
+
+  function trail(steps: readonly number[], direction: PlaybackDirection): number[] {
+    stubCanvasDocument()
+    const source = layoutUniverse(TRAIL)
+    const labels = createRepoLabels(source.repos, THEME)
+    const opacities = steps.map((step) => {
+      labels.setFrame(universeFrame(TRAIL, step, direction), null)
+      return opacityOf(source, labels, 7)
+    })
+    labels.dispose()
+    return opacities
+  }
+
+  it('gives every repo one label sprite and shows none of them by default', () => {
     stubCanvasDocument()
     const source = layout()
     const labels = createRepoLabels(source.repos, THEME)
     expect(labels.sprites).toHaveLength(source.repos.length)
-    expect(labels.sprites.every((sprite) => sprite.visible)).toBe(true)
+    expect(labels.sprites.some((sprite) => sprite.visible)).toBe(false)
     expect(painted).toEqual(['r1', 'r2', 'quiet'])
+    labels.dispose()
+  })
+
+  it('reveals only the labels a step earns, and reports the draw calls', () => {
+    stubCanvasDocument()
+    const source = layout()
+    const labels = createRepoLabels(source.repos, THEME)
+    // Step 0 touches repo 0 and repo 1; the quiet repo stays unlabelled.
+    expect(labels.setFrame(frameAt(0), null)).toBe(2)
+    expect(opacityOf(source, labels, 0)).toBe(1)
+    expect(opacityOf(source, labels, 1)).toBe(1)
+    expect(opacityOf(source, labels, 2)).toBe(0)
+    labels.dispose()
+  })
+
+  it('fades a contribution-revealed label out over the following days', () => {
+    expect(trail([5, 6, 7, 8, 9], 'forward')).toEqual([1, 0.75, 0.5, 0.25, 0])
+  })
+
+  it('fades in playback order, so a backward pass trails the other way', () => {
+    expect(trail([5, 4, 3, 2, 1], 'backward')).toEqual([1, 0.75, 0.5, 0.25, 0])
+  })
+
+  it('resolves the same opacity from a seek as from a walk', () => {
+    // The fade is derived from the step, never accumulated across frames, so
+    // scrubbing to a day matches having played to it.
+    expect(trail([5, 6, 7], 'forward').at(-1)).toBe(trail([7], 'forward').at(-1))
+    expect(trail([0, 11, 6], 'forward').at(-1)).toBe(0.75)
+  })
+
+  it('reveals a highlighted repo whatever the step, and hides it again', () => {
+    stubCanvasDocument()
+    const source = layout()
+    const labels = createRepoLabels(source.repos, THEME)
+    // The quiet repo has no contribution anywhere in the timeline.
+    expect(labels.setFrame(frameAt(5), 2)).toBeGreaterThan(0)
+    expect(opacityOf(source, labels, 2)).toBe(1)
+    labels.setFrame(frameAt(5), null)
+    expect(opacityOf(source, labels, 2)).toBe(0)
     labels.dispose()
   })
 
@@ -327,6 +421,67 @@ describe('createBeamField', () => {
     beams.dispose()
     expect(geometry).toHaveBeenCalledTimes(1)
     expect(material).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('pickRepoArm', () => {
+  const METRICS = { width: 600, height: 400 }
+
+  function arm(repoId: number, name: string, x: number): RepoArm {
+    return {
+      repoId,
+      name,
+      ordinal: repoId,
+      lastStep: 0,
+      x,
+      y: 0.5,
+      z: 0.5,
+      radius: Math.abs(x - 0.5),
+      starOffset: 0,
+      starCount: 0,
+    }
+  }
+
+  const ARMS: readonly RepoArm[] = [arm(10, 'a/left', 0.35), arm(11, 'a/right', 0.65)]
+
+  function viewFrom(x: number, z: number): THREE.PerspectiveCamera {
+    const camera = new THREE.PerspectiveCamera(60, METRICS.width / METRICS.height, 0.1, 100)
+    placeCamera(camera, x, 0, z)
+    return camera
+  }
+
+  function screenOf(repo: RepoArm, camera: THREE.PerspectiveCamera) {
+    return repoScreenPosition(repo, camera, METRICS)
+  }
+
+  it('picks the arm under the pointer', () => {
+    const camera = viewFrom(0, 2.6)
+    for (const repo of ARMS)
+      expect(pickRepoArm(ARMS, camera, screenOf(repo, camera), METRICS)).toBe(repo.repoId)
+  })
+
+  it('picks the nearer of two arms', () => {
+    const camera = viewFrom(0, 2.6)
+    const left = screenOf(ARMS[0]!, camera)
+    const right = screenOf(ARMS[1]!, camera)
+    const near = { x: left.x + (right.x - left.x) * 0.2, y: left.y }
+    expect(pickRepoArm(ARMS, camera, near, METRICS)).toBe(10)
+  })
+
+  it('picks nothing when the pointer is nowhere near an arm', () => {
+    const camera = viewFrom(0, 2.6)
+    expect(pickRepoArm(ARMS, camera, { x: 0, y: 0 }, METRICS)).toBeNull()
+    expect(pickRepoArm([], camera, { x: 300, y: 200 }, METRICS)).toBeNull()
+  })
+
+  it('never picks an arm the camera has moved past', () => {
+    // The dolly floor puts the camera inside the disc's own extent, where an
+    // arm can sit behind it and project to a mirrored, meaningless point.
+    const rim = arm(12, 'a/rim', 0.92)
+    const camera = viewFrom(1.2, 0)
+    const behind = screenOf(rim, camera)
+    expect(behind.visible).toBe(false)
+    expect(pickRepoArm([rim], camera, behind, METRICS)).toBeNull()
   })
 })
 

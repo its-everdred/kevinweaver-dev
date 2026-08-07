@@ -50,6 +50,67 @@ function radialRange(layout: UniverseLayout, repoId: number): { min: number; max
   return { min: Math.min(...radii), max: Math.max(...radii) }
 }
 
+/** Ten-degree slices of the disc, so an occupied bin is a readable wedge. */
+const ANGLE_BINS = 36
+
+/**
+ * How many of the disc's angular bins hold a star between two radii. Stars
+ * glued to thin arm curves occupy a handful of wedges; a star field that
+ * merely carries spiral structure fills most of the ring.
+ */
+function ringBins(
+  layout: UniverseLayout,
+  inner: number,
+  outer: number
+): number[] {
+  const turn = Math.PI * 2
+  const bins = new Array<number>(ANGLE_BINS).fill(0)
+  for (const star of layout.stars) {
+    const radius = radiusOf(star)
+    if (radius < inner || radius > outer) continue
+    const angle = (Math.atan2(star.y - 0.5, star.x - 0.5) + turn) % turn
+    const bin = Math.min(ANGLE_BINS - 1, Math.floor((angle / turn) * ANGLE_BINS))
+    bins[bin] = (bins[bin] ?? 0) + 1
+  }
+  return bins
+}
+
+/**
+ * Share of a ring's stars that fall in its twelve emptiest wedges — the space
+ * between the arms. Stars glued to the arm curves leave that space bare; a
+ * star field fills it. A featureless field would score 1/3.
+ */
+function sparsestThirdShare(
+  layout: UniverseLayout,
+  inner: number,
+  outer: number
+): number {
+  const bins = [...ringBins(layout, inner, outer)].sort((a, b) => a - b)
+  const total = bins.reduce((sum, count) => sum + count, 0)
+  const sparsest = bins.slice(0, ANGLE_BINS / 3).reduce((sum, count) => sum + count, 0)
+  return total === 0 ? 0 : sparsest / total
+}
+
+/** Busiest wedge of a ring over its average wedge: how far the arms stand out. */
+function peakOverMean(
+  layout: UniverseLayout,
+  inner: number,
+  outer: number
+): number {
+  const bins = ringBins(layout, inner, outer)
+  const total = bins.reduce((sum, count) => sum + count, 0)
+  return total === 0 ? 0 : Math.max(...bins) / (total / ANGLE_BINS)
+}
+
+const DENSE = snapshot(
+  Array.from({ length: 24 }, (_, index) => ({
+    id: index + 1,
+    name: `a/r${index + 1}`,
+    files: paths(200),
+    lastStep: index,
+  }))
+)
+
 const RECENCY = snapshot([
   { id: 1, name: 'a/oldest', files: paths(40), lastStep: 1 },
   { id: 2, name: 'a/middle', files: paths(40), lastStep: 5 },
@@ -128,6 +189,18 @@ describe('layoutUniverse', () => {
       const b = radialRange(layout, outer.repoId)
       expect(Math.max(a.min, b.min)).toBeLessThan(Math.min(a.max, b.max))
     }
+  })
+
+  it('spreads stars across a wide angular band rather than onto thin arm curves', () => {
+    const layout = layoutUniverse(DENSE)
+    // A mid-disc ring, cut into 36 ten-degree wedges. The twelve emptiest
+    // wedges are the space between the arms: at least 15% of the ring's stars
+    // must land there, against the 33% a structureless field would score.
+    expect(sparsestThirdShare(layout, 0.16, 0.24)).toBeGreaterThanOrEqual(0.15)
+    // And the arms must survive the spreading: the busiest wedge still carries
+    // well over its share, so the disc reads as a star field that has spiral
+    // structure rather than as uniform noise.
+    expect(peakOverMean(layout, 0.16, 0.24)).toBeGreaterThanOrEqual(1.3)
   })
 
   it('keeps a one-file repo and a 7449-file repo in range', () => {
