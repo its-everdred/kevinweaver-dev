@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { layoutUniverse, starKey } from '../src/galaxy'
 import type { StarPosition, UniverseLayout } from '../src/galaxy'
+import { PRIVATE_REPO_ID } from '../src/privateRepo'
 import type { UniverseContribution, UniverseSnapshot } from '../src/types'
 
 interface RepoSpec {
@@ -156,18 +157,95 @@ describe('layoutUniverse', () => {
     expect(layout.starCount).toBe(4)
   })
 
-  it('resolves every star key to a distinct in-range vertex index', () => {
+  it('resolves every file to an in-range vertex, folded or not', () => {
     const layout = layoutUniverse(RECENCY)
-    expect(layout.starIndex.size).toBe(layout.starCount)
-    const seen = new Set<number>()
-    for (const star of layout.stars) {
-      const index = layout.starIndex.get(starKey(star.repoId, star.file))
+    // Three repos of forty files each. The map stays total over files, because
+    // a beam that cannot resolve its endpoint is silently dropped, while the
+    // vertices it points into are fewer than the files pointing at them.
+    expect(layout.starIndex.size).toBe(120)
+    expect(layout.starCount).toBeLessThan(120)
+    const reached = new Set<number>()
+    for (const [, index] of layout.starIndex) {
       expect(index).toBeGreaterThanOrEqual(0)
       expect(index).toBeLessThan(layout.starCount)
-      expect(index === undefined ? undefined : layout.stars[index]).toBe(star)
-      seen.add(index ?? -1)
+      reached.add(index)
     }
-    expect(seen.size).toBe(layout.starCount)
+    // No orphan vertices either: every star is some file's endpoint.
+    expect(reached.size).toBe(layout.starCount)
+    // And a star resolves to itself, so the field's reverse lookup lands back
+    // on the vertex it started from.
+    for (const star of layout.stars)
+      expect(layout.stars[layout.starIndex.get(starKey(star.repoId, star.file)) ?? -1]).toBe(star)
+  })
+
+  it('keeps one star per file until folding would buy something', () => {
+    const layout = layoutUniverse(
+      snapshot([{ id: 1, name: 'a/small', files: paths(12), lastStep: 0 }])
+    )
+    expect(layout.starCount).toBe(12)
+  })
+
+  it('buys stars sublinearly, so volume still reads as volume without owning the field', () => {
+    const starsFor = (files: number): number =>
+      layoutUniverse(snapshot([{ id: 1, name: 'a/r', files: paths(files), lastStep: 0 }]))
+        .starCount
+    const small = starsFor(512)
+    const large = starsFor(4096)
+    // Eight times the files buys more stars, but nothing like eight times more.
+    expect(large).toBeGreaterThan(small * 2)
+    expect(large).toBeLessThan(small * 4)
+  })
+
+  it('stops the largest repo from taking most of the disc', () => {
+    const layout = layoutUniverse(
+      snapshot([
+        { id: 1, name: 'a/giant', files: paths(7449), lastStep: 1 },
+        ...Array.from({ length: 5 }, (_, index) => ({
+          id: index + 2,
+          name: `a/r${index + 2}`,
+          files: paths(1000),
+          lastStep: 0,
+        })),
+      ])
+    )
+    const giant = layout.repos.find((repo) => repo.repoId === 1)
+    const rival = layout.repos.find((repo) => repo.repoId === 2)
+    if (!giant || !rival) throw new Error('missing repo arm')
+    // The giant holds 60% of the files. It must hold a far smaller share of the
+    // stars, while still reading as the biggest arm in the disc.
+    expect(giant.starCount / layout.starCount).toBeLessThan(0.45)
+    expect(giant.starCount).toBeGreaterThan(rival.starCount * 2)
+  })
+
+  it('names a shared star after the earliest file it carries', () => {
+    // Steps run opposite to path order, so a star named after the first path in
+    // its group would fail this: the earliest-touched file has to win.
+    const files = paths(64)
+    const contributions: UniverseContribution[] = files.map((file, index) => ({
+      step: files.length - index,
+      repo: 1,
+      file,
+      actor: 0,
+    }))
+    const layout = layoutUniverse({
+      repos: [{ id: 1, name: 'a/folded', files }],
+      contributions: [...contributions].sort((left, right) => left.step - right.step),
+      stepCount: files.length + 1,
+    })
+    expect(layout.starCount).toBeLessThan(files.length)
+    const touched = new Map(
+      contributions.map((entry) => [starKey(entry.repo, entry.file), entry.step])
+    )
+    // The star a file folds onto was touched no later than the file itself, so
+    // the star field's index-to-key lookup calls a star live exactly when one of
+    // the files it carries is live.
+    for (const [key, index] of layout.starIndex) {
+      const star = layout.stars[index]
+      if (!star) throw new Error(`no star at ${index}`)
+      expect(touched.get(starKey(star.repoId, star.file)) ?? -1).toBeLessThanOrEqual(
+        touched.get(key) ?? -1
+      )
+    }
   })
 
   it('overlaps the radial ranges of repos adjacent in recency order', () => {
@@ -211,7 +289,12 @@ describe('layoutUniverse', () => {
         { id: 2, name: 'a/huge', files: paths(7449), lastStep: 0 },
       ])
     )
-    expect(layout.starCount).toBe(7450)
+    // One file is one star; 7449 files fold onto 755. Both ends of that range
+    // still have to land inside the field.
+    expect(starsOf(layout, 1).length).toBe(1)
+    expect(starsOf(layout, 2).length).toBe(755)
+    // Folded or not, every file resolves to a star: nothing is dropped.
+    expect(layout.starIndex.size).toBe(7450)
     for (const star of layout.stars) {
       expect(star.x).toBeGreaterThanOrEqual(0)
       expect(star.x).toBeLessThanOrEqual(1)
@@ -220,7 +303,11 @@ describe('layoutUniverse', () => {
       expect(star.z).toBeGreaterThanOrEqual(0)
       expect(star.z).toBeLessThanOrEqual(1)
     }
-    // Volume must not buy area: the huge repo stays inside its own annulus.
+    // Volume must not buy area: the huge repo stays inside its own annulus,
+    // whose width comes from the smear and jitter constants and never from the
+    // file count. Compression works the other axis, how many stars fill that
+    // annulus, so the two rules meet rather than collide: a big repo is denser
+    // than a small one, but neither wider nor proportionally denser.
     const huge = radialRange(layout, 2)
     expect(huge.max - huge.min).toBeLessThan(0.2)
   })
@@ -252,9 +339,27 @@ describe('layoutUniverse', () => {
     expect(layout.repos.map((repo) => repo.ordinal)).toEqual([0, 1, 2])
     expect(layout.repos.map((repo) => repo.name)).toEqual(['a/newest', 'a/middle', 'a/oldest'])
     for (const repo of layout.repos) {
-      expect(repo.starCount).toBe(40)
+      // Forty files, thirty stars: `starCount` counts vertices, not files.
+      expect(repo.starCount).toBe(30)
       expect(layout.stars[repo.starOffset]?.repoId).toBe(repo.repoId)
     }
+  })
+
+  it('pins the private repo to the core whatever its recency says', () => {
+    // Radius encodes recency everywhere else in the disc. The private repo is
+    // the one deliberate exception: the operator asked for it near the centre,
+    // so it takes ordinal 0 even when its last activity is the oldest here.
+    const layout = layoutUniverse(
+      snapshot([
+        { id: PRIVATE_REPO_ID, name: 'private', files: paths(20), lastStep: 0 },
+        { id: 1, name: 'a/r1', files: paths(20), lastStep: 4 },
+        { id: 2, name: 'a/r2', files: paths(20), lastStep: 8 },
+      ])
+    )
+    expect(layout.repos.map((repo) => repo.repoId)).toEqual([PRIVATE_REPO_ID, 2, 1])
+    expect(layout.repos[0]?.ordinal).toBe(0)
+    for (const repoId of [1, 2])
+      expect(meanRadius(layout, PRIVATE_REPO_ID)).toBeLessThan(meanRadius(layout, repoId))
   })
 
   it('handles an empty universe', () => {

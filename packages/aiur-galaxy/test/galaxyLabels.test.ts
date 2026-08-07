@@ -12,7 +12,15 @@ import {
   universeFrame,
 } from '../src/universePlayback'
 import type { PlaybackDirection, UniverseSnapshot } from '../src/types'
-import { THEME, frameAt, layout, painted, stubCanvasDocument } from './galaxyFixtures'
+import {
+  THEME,
+  frameAt,
+  labelCanvases,
+  layout,
+  painted,
+  stubCanvasDocument,
+  type FakeCanvas,
+} from './galaxyFixtures'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -50,6 +58,83 @@ describe('createRepoLabels', () => {
     return opacities
   }
 
+  /**
+   * A one-glyph name, a name too long for the old fixed 512px texture, and one
+   * long enough to burst any texture a GPU will accept.
+   */
+  const LONG_NAME = 'a-very-long-repository-name-that-used-to-clip'
+  const HUGE_NAME = 'n'.repeat(400)
+  const NAMES: UniverseSnapshot = {
+    repos: [
+      { id: 0, name: 'a/x', files: ['x.ts'] },
+      { id: 1, name: `a/${LONG_NAME}`, files: ['y.ts'] },
+      { id: 2, name: `a/${HUGE_NAME}`, files: ['z.ts'] },
+    ],
+    contributions: [{ step: 0, repo: 0, file: 'x.ts', actor: 0 }],
+    stepCount: 2,
+  }
+
+  /** The canvas a repo painted its label into, found through the layout order. */
+  function canvasFor(source: UniverseLayout, repoId: number): FakeCanvas {
+    const index = source.repos.findIndex((repo) => repo.repoId === repoId)
+    const canvas = labelCanvases[index]
+    if (!canvas) throw new Error(`no label canvas for repo ${repoId}`)
+    return canvas
+  }
+
+  it('sizes every label texture to its own name and paints all of it', () => {
+    stubCanvasDocument()
+    const source = layoutUniverse(NAMES)
+    const labels = createRepoLabels(source.repos, THEME)
+    // A fixed texture width made this impossible: a long name either overran
+    // the canvas and clipped, or had to be shrunk to fit one.
+    expect(canvasFor(source, 1).width).toBeGreaterThan(canvasFor(source, 0).width)
+    expect(painted).toContain('x')
+    expect(painted).toContain(LONG_NAME)
+    labels.dispose()
+  })
+
+  it('gives each billboard its own texture aspect, so no name is squeezed', () => {
+    stubCanvasDocument()
+    const source = layoutUniverse(NAMES)
+    const labels = createRepoLabels(source.repos, THEME)
+    for (let index = 0; index < source.repos.length; index++) {
+      const mesh = labels.meshes[index]
+      const canvas = labelCanvases[index]
+      if (!mesh || !canvas) throw new Error(`no label at ${index}`)
+      expect(mesh.scale.x / mesh.scale.y).toBeCloseTo(canvas.width / canvas.height, 6)
+    }
+    labels.dispose()
+  })
+
+  it('renders every label at one height, so only the width follows the name', () => {
+    stubCanvasDocument()
+    const source = layoutUniverse(NAMES)
+    const labels = createRepoLabels(source.repos, THEME)
+    expect(new Set(labels.meshes.map((mesh) => mesh.scale.y)).size).toBe(1)
+    expect(new Set(labels.meshes.map((mesh) => mesh.scale.x)).size).toBe(
+      source.repos.length
+    )
+    labels.dispose()
+  })
+
+  it('holds a pathological name inside the texture size WebGL guarantees', () => {
+    stubCanvasDocument()
+    const source = layoutUniverse(NAMES)
+    const labels = createRepoLabels(source.repos, THEME)
+    // 2048 is the smallest `MAX_TEXTURE_SIZE` a WebGL 2 context may report. A
+    // 400-glyph name asks for several times that, and a texture the driver
+    // refuses is a label that never renders at all.
+    for (const canvas of labelCanvases) {
+      expect(canvas.width).toBeGreaterThan(0)
+      expect(canvas.width).toBeLessThanOrEqual(2048)
+    }
+    // Condensed to fit rather than cut off: the whole name still reaches the
+    // canvas, which is the difference between illegible and absent.
+    expect(painted).toContain(HUGE_NAME)
+    labels.dispose()
+  })
+
   it('gives every repo one label and shows none of them by default', () => {
     stubCanvasDocument()
     const source = layout()
@@ -57,6 +142,20 @@ describe('createRepoLabels', () => {
     expect(labels.meshes).toHaveLength(source.repos.length)
     expect(labels.meshes.some((mesh) => mesh.visible)).toBe(false)
     expect(painted).toEqual(['r1', 'r2', 'quiet'])
+    labels.dispose()
+  })
+
+  it('draws every label in front of the stars rather than inside them', () => {
+    stubCanvasDocument()
+    const source = layout()
+    const labels = createRepoLabels(source.repos, THEME)
+    // The disc is thousands of stars deep and a label sits among them, so
+    // depth-testing one hides exactly the labels nearest the core — the ones
+    // naming the most recent work. Draw order decides instead of depth.
+    for (const mesh of labels.meshes) {
+      expect(mesh.material.depthTest).toBe(false)
+      expect(mesh.renderOrder).toBeGreaterThan(0)
+    }
     labels.dispose()
   })
 

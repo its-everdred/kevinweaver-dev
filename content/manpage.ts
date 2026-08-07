@@ -77,6 +77,11 @@ export const MAN_HEADER = {
   center: 'General Commands Manual',
   right: 'KEVINWEAVER(1)',
 } as const
+/**
+ * Roff page footer. The rendered pager no longer draws it — the three columns
+ * ran together on screen — but `/kevinweaver.1` still needs it for its `.TH`
+ * line and `/resume.txt` for its closing rule, so it is not a dead export.
+ */
 export const MAN_FOOTER = {
   left: 'KEVINWEAVER(1)',
   center: '{date}',

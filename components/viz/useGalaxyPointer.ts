@@ -2,7 +2,9 @@
 import { useCallback, useRef } from 'react'
 import type { PointerEvent as ReactPointerEvent, RefObject } from 'react'
 import type { GalaxyScene } from '@/packages/aiur-galaxy/src/galaxyScene'
+import { repoFileCount } from './galaxyDay'
 import { clearGalaxySelection, publishGalaxySelection } from './galaxySelection'
+import { useInstrumentRuntime } from './instrumentRuntime'
 import type { GalaxyCamera } from './useGalaxyCamera'
 
 /** Pointer position over the canvas, in CSS pixels. */
@@ -38,6 +40,8 @@ export function useGalaxyPointer(
   camera: GalaxyCamera,
   sceneRef: RefObject<GalaxyScene | null>
 ): GalaxyPointer {
+  const runtime = useInstrumentRuntime()
+  const repoOf = runtime.status === 'ready' ? runtime.viz.input.repoOf : null
   const pointerRef = useRef<PointerPosition | null>(null)
   const cameraMove = camera.onPointerMove
   const cameraLeave = camera.onPointerLeave
@@ -87,11 +91,14 @@ export function useGalaxyPointer(
       publishGalaxySelection({
         repoId: arm.repoId,
         name: arm.name,
-        fileCount: arm.starCount,
+        // Files, not vertices: the layout folds a large repo onto fewer stars,
+        // so `arm.starCount` would report a fraction of the file count the day
+        // list shows for the same repo.
+        fileCount: repoOf ? repoFileCount(repoOf, arm.repoId) : null,
         lastStep: arm.lastStep,
       })
     },
-    [cameraUp, isClick, sceneRef]
+    [cameraUp, isClick, repoOf, sceneRef]
   )
 
   return { pointerRef, onPointerMove, onPointerLeave, onPointerUp }

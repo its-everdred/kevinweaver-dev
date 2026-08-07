@@ -1,31 +1,32 @@
 'use client'
 
 /**
- * Snapshot published by the galaxy selection, the single record of which repo
- * the viewer last clicked. Every field is null when nothing is selected, which
- * is a different state from a repo that simply never contributed: that one has
- * a `repoId` and a `lastStep` of -1.
+ * Snapshot published by the galaxy selection. The repo pane has two modes and
+ * this store is which one it is in: every field null means the pane follows the
+ * day being played, and a `repoId` means it is pinned to that repo. Pinned is
+ * still distinct from a repo that simply never contributed — that one has a
+ * `repoId` and a `lastStep` of -1.
  */
 export interface GalaxySelection {
-  /** Selected repo's id, or null when the viewer has cleared the selection. */
+  /** Pinned repo's id, or null while the pane follows the day being played. */
   readonly repoId: number | null
-  /** Full `"owner/name"` of the selected repo. */
+  /** Full `"owner/name"` of the pinned repo. */
   readonly name: string | null
-  /** Stars the selected repo contributes to the disc. */
+  /** Stars the pinned repo contributes to the disc. */
   readonly fileCount: number | null
   /** Step of the repo's most recent contribution, -1 when it never had one. */
   readonly lastStep: number | null
 }
 
-/** Nothing selected: what the store holds before the first click and after a clear. */
-const EMPTY: GalaxySelection = {
+/** Nothing pinned: the pane follows the day being played. */
+const FOLLOW_DAY: GalaxySelection = {
   repoId: null,
   name: null,
   fileCount: null,
   lastStep: null,
 }
 
-let snapshot: GalaxySelection = EMPTY
+let snapshot: GalaxySelection = FOLLOW_DAY
 const listeners = new Set<() => void>()
 
 /** Subscribes to galaxy selection updates. Returns an unsubscribe function. */
@@ -39,12 +40,22 @@ export function getGalaxySelection(): GalaxySelection {
   return snapshot
 }
 
+/**
+ * @description Reads which of the repo pane's two modes a selection is.
+ * @param selection The published selection.
+ * @returns True when the pane is pinned to a repo, false when it follows the
+ * day being played.
+ */
+export function isRepoPinned(selection: GalaxySelection): boolean {
+  return selection.repoId !== null
+}
+
 function notify(): void {
   listeners.forEach((listener) => listener())
 }
 
 /**
- * @description Publishes the repo the viewer has selected in the galaxy.
+ * @description Pins the galaxy and the repo pane to one repo.
  * @param next The selection to broadcast.
  *
  * This is the single source of truth for the selection: the scene colors that
@@ -59,9 +70,12 @@ export function publishGalaxySelection(next: GalaxySelection): void {
   notify()
 }
 
-/** @description Clears the selection, as clicking empty space does. */
+/**
+ * @description Unpins the pane, returning it to the day being played. Clicking
+ * empty space in the galaxy and the pane's own dismiss control both land here.
+ */
 export function clearGalaxySelection(): void {
   if (snapshot.repoId === null) return
-  snapshot = EMPTY
+  snapshot = FOLLOW_DAY
   notify()
 }

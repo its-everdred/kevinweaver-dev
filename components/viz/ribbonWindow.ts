@@ -1,14 +1,18 @@
 import { RIBBON_WEEKS } from '@/lib/viz/driver'
 
-/** Week columns on screen, mirroring the driver's fixed detail-window shape. */
-export { RIBBON_WEEKS }
+/**
+ * Week columns assumed until the canvas has reported a width: the driver's
+ * one-year lattice, so the first render and its text alternative open on the
+ * familiar GitHub shape and then grow into whatever pane they landed in.
+ */
+export const RIBBON_DEFAULT_COLUMNS = RIBBON_WEEKS
 
 /**
- * Days on screen: 53 week columns of 7 weekday rows. One column wider than the
- * galaxy's `PLAYBACK_WINDOW_STEPS` year, so a full backward pass of the galaxy
- * never pushes the strip off its opening window.
+ * Widest a square gets, in CSS pixels. Height alone would let a roomy pane
+ * paint chunky squares and stop there, leaving the rest of the pane empty;
+ * capping the cell spends that width on more weeks instead.
  */
-export const RIBBON_WINDOW_DAYS = RIBBON_WEEKS * 7
+const MAX_CELL_CSS_PX = 12
 
 /** The stretch of history on screen, as day indices into the payload grid. */
 export interface RibbonWindow {
@@ -17,7 +21,7 @@ export interface RibbonWindow {
    * weekdays; may precede day 0 when the payload does not open on one.
    */
   readonly start: number
-  /** Day index at column 52, row 6. */
+  /** Day index at the last column, row 6. */
   readonly end: number
 }
 
@@ -30,6 +34,8 @@ export interface RibbonCell {
 /** Integer device-pixel lattice for one ribbon canvas. */
 export interface RibbonLayout {
   readonly cellPx: number
+  /** Week columns this canvas has room for. */
+  readonly columns: number
   readonly gapPx: number
   readonly stepPx: number
   /** Height of the year-marker strip above the grid. */
@@ -43,40 +49,42 @@ export interface RibbonLayout {
 const positiveModulo = (value: number, span: number): number =>
   ((value % span) + span) % span
 
-const windowFrom = (start: number): RibbonWindow => ({
+const windowFrom = (start: number, days: number): RibbonWindow => ({
   start,
-  end: start + RIBBON_WINDOW_DAYS - 1,
+  end: start + days - 1,
 })
 
 /**
- * @description Resolves the year of history on screen for a timeline step.
+ * @description Resolves the stretch of history on screen for a timeline step.
  * @param step Current day index from the shared galaxy timeline; negative
  * while the clock is still unseeked.
  * @param dayCount Total days in the payload.
  * @param startWeekday Weekday of day 0, as `weekdayOfISO` reports it.
+ * @param columns Week columns the canvas measured out for itself.
  * @returns The Sunday-aligned window containing `step`.
  *
- * The newest window is the default and the resting place: every step of the
- * galaxy's rolling backward year falls inside it, so the two surfaces never
- * disagree about which year is on screen while playback runs. Only a seek
- * older than the window moves it, and then it moves by a whole window, so the
- * strip pages through history instead of creeping a day at a time.
+ * The newest window is the default and the resting place, and it always holds
+ * the day the shared clock is on: a seek or a playback step older than the
+ * window pages it back by whole windows, so the strip pages through history
+ * instead of creeping a day at a time. How much history that is now follows the
+ * pane's width, so a wide browser holds more than the galaxy's playback year
+ * and a phone holds less — but either way the current day has a seat, which is
+ * what keeps the two surfaces telling the same story.
  */
 export function ribbonWindow(
   step: number,
   dayCount: number,
-  startWeekday: number
+  startWeekday: number,
+  columns: number
 ): RibbonWindow {
+  const days = Math.max(1, Math.floor(columns)) * 7
   const minStart = -positiveModulo(startWeekday, 7)
-  if (dayCount <= 0) return windowFrom(minStart)
+  if (dayCount <= 0) return windowFrom(minStart, days)
   const align = (day: number): number => day - positiveModulo(day - minStart, 7)
-  const maxStart = Math.max(
-    minStart,
-    align(dayCount - 1) - 7 * (RIBBON_WEEKS - 1)
-  )
-  if (!(step >= 0) || step >= maxStart) return windowFrom(maxStart)
-  const pages = Math.ceil((maxStart - step) / RIBBON_WINDOW_DAYS)
-  return windowFrom(Math.max(minStart, maxStart - pages * RIBBON_WINDOW_DAYS))
+  const maxStart = Math.max(minStart, align(dayCount - 1) - (days - 7))
+  if (!(step >= 0) || step >= maxStart) return windowFrom(maxStart, days)
+  const pages = Math.ceil((maxStart - step) / days)
+  return windowFrom(Math.max(minStart, maxStart - pages * days), days)
 }
 
 /**
@@ -90,8 +98,26 @@ export function ribbonCell(
   day: number
 ): RibbonCell | null {
   const offset = day - window.start
-  if (offset < 0 || offset >= RIBBON_WINDOW_DAYS) return null
+  if (offset < 0 || offset > window.end - window.start) return null
   return { column: Math.floor(offset / 7), row: offset % 7 }
+}
+
+/**
+ * Week columns the pane has room for, capped at the payload. The last column
+ * carries no trailing gutter, so one more fits than bare division suggests, and
+ * a browser wider than the history stops at the history rather than padding the
+ * strip with weeks that never happened — one column over the payload's weeks,
+ * which is the most the Sunday alignment can cost.
+ */
+function ribbonColumns(
+  widthPx: number,
+  stepPx: number,
+  gapPx: number,
+  dayCount: number
+): number {
+  const byWidth = Math.floor((widthPx + gapPx) / stepPx)
+  const byPayload = dayCount > 0 ? Math.ceil(dayCount / 7) + 1 : byWidth
+  return Math.max(1, Math.min(byWidth, byPayload))
 }
 
 /**
@@ -99,30 +125,42 @@ export function ribbonCell(
  * @param widthPx Backing-store width.
  * @param heightPx Backing-store height.
  * @param dpr Device pixel ratio the backing store was sized at.
- * @returns Cell, gap, and origin geometry, all whole device pixels so the
- * grid lands on the same lattice on every render.
+ * @param dayCount Total days in the payload.
+ * @returns Cell, column, gap, and origin geometry, all whole device pixels so
+ * the grid lands on the same lattice on every render.
+ *
+ * The square is sized from the height alone, then the width decides how many
+ * of them fit: the grid spans the pane instead of stopping at a fixed year, and
+ * a wider browser buys more weeks rather than a bigger cell. Only once the
+ * payload runs out of weeks to add does the width go back into the squares,
+ * because by then there is nothing else for it to buy.
  */
 export function ribbonLayout(
   widthPx: number,
   heightPx: number,
-  dpr: number
+  dpr: number,
+  dayCount: number
 ): RibbonLayout {
   const scale = Math.max(1, dpr)
-  // A narrow pane spends its width on cells rather than gutter; a roomy one
-  // gets GitHub's two-pixel gap.
-  const dense = widthPx / RIBBON_WEEKS < 12 * scale
-  const gapPx = Math.max(1, Math.round((dense ? 1 : 2) * scale))
   const labelPx = Math.max(8, Math.round(11 * scale))
-  const byWidth = Math.floor(
-    (widthPx - (RIBBON_WEEKS - 1) * gapPx) / RIBBON_WEEKS
-  )
-  const byHeight = Math.floor((heightPx - labelPx - 6 * gapPx) / 7)
-  const cellPx = Math.max(1, Math.min(byWidth, byHeight))
+  const rowsPx = heightPx - labelPx
+  // A short strip spends its height on cells rather than gutter; a roomy one
+  // gets GitHub's two-pixel gap.
+  const dense = rowsPx / 7 < 10 * scale
+  const gapPx = Math.max(1, Math.round((dense ? 1 : 2) * scale))
+  const byHeightPx = Math.max(1, Math.floor((rowsPx - 6 * gapPx) / 7))
+  const cappedPx = Math.min(Math.round(MAX_CELL_CSS_PX * scale), byHeightPx)
+  const columns = ribbonColumns(widthPx, cappedPx + gapPx, gapPx, dayCount)
+  // Height keeps the last word, so seven rows always fit; width only ever
+  // widens the square past its cap when the columns stopped short of the pane.
+  const byWidthPx = Math.floor((widthPx - (columns - 1) * gapPx) / columns)
+  const cellPx = Math.max(1, Math.min(byHeightPx, byWidthPx))
   const stepPx = cellPx + gapPx
-  const gridWidthPx = RIBBON_WEEKS * stepPx - gapPx
+  const gridWidthPx = columns * stepPx - gapPx
   const gridHeightPx = 7 * stepPx - gapPx
   return {
     cellPx,
+    columns,
     gapPx,
     stepPx,
     labelPx,

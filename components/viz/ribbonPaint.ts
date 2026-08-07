@@ -1,6 +1,5 @@
 import { formatDayISO } from '@/lib/viz/driver'
 import {
-  RIBBON_WEEKS,
   ribbonCell,
   type RibbonLayout,
   type RibbonWindow,
@@ -56,8 +55,9 @@ const CURRENT_RING = '#fbf1c7'
 const CURRENT_SEPARATOR = '#1d2021'
 
 /**
- * @description Paints one frame of the contribution grid: a year of density
- * squares, the year boundaries along the strip, and a ring on the current day.
+ * @description Paints one frame of the contribution grid: as many weeks of
+ * density squares as the pane is wide, the year boundaries along the strip, and
+ * a ring on the current day when anything landed on it.
  * @param ctx Destination 2D context.
  * @param options The window, lattice, and clock position to paint.
  *
@@ -74,7 +74,7 @@ export function paintRibbon(ctx: RibbonCtx, options: RibbonPaintOptions): void {
 
 function paintCells(ctx: RibbonCtx, options: RibbonPaintOptions): void {
   const { grid, layout } = options
-  for (let column = 0; column < RIBBON_WEEKS; column += 1) {
+  for (let column = 0; column < layout.columns; column += 1) {
     const x = layout.originXPx + column * layout.stepPx
     for (let row = 0; row < 7; row += 1) {
       const day = options.window.start + column * 7 + row
@@ -93,47 +93,73 @@ function paintCells(ctx: RibbonCtx, options: RibbonPaintOptions): void {
   }
 }
 
-function paintYearMarkers(ctx: RibbonCtx, options: RibbonPaintOptions): void {
+/** The first column on screen of each year the window covers. */
+interface YearMark {
+  readonly year: string
+  readonly xPx: number
+}
+
+function yearMarks(options: RibbonPaintOptions): YearMark[] {
   const { layout, window: visible } = options
+  const marks: YearMark[] = []
+  let previousYear = ''
+  for (let column = 0; column < layout.columns; column += 1) {
+    const day = visible.start + column * 7
+    const year = formatDayISO(options.windowStartISO, day).slice(0, 4)
+    if (year === previousYear) continue
+    previousYear = year
+    marks.push({ year, xPx: layout.originXPx + column * layout.stepPx })
+  }
+  return marks
+}
+
+function paintYearMarkers(ctx: RibbonCtx, options: RibbonPaintOptions): void {
+  const { layout } = options
   const scale = Math.max(1, options.dpr)
   const fontPx = Math.max(9, Math.round(10 * scale))
   const ruleWidthPx = Math.max(1, Math.round(scale))
   // Four monospace digits, plus slack, so a label never runs off the canvas or
   // collides with the one before it.
   const labelWidthPx = Math.round(fontPx * 2.6)
-  const maxXPx = options.widthPx - labelWidthPx
-  const baselineYPx = Math.max(fontPx, layout.originYPx - ruleWidthPx * 3)
+  const spacingPx = labelWidthPx + fontPx
+  const marks = yearMarks(options)
+  ctx.fillStyle = MARKER_COLOR
+  for (const mark of marks.slice(1))
+    // The rule sits in the gutter between two weeks, never over a cell.
+    ctx.fillRect(
+      mark.xPx - layout.gapPx,
+      layout.originYPx,
+      ruleWidthPx,
+      layout.gridHeightPx
+    )
   ctx.font = `${fontPx}px monospace`
   ctx.textAlign = 'left'
   ctx.textBaseline = 'alphabetic'
-  let previousYear = ''
+  const maxXPx = options.widthPx - labelWidthPx
+  const baselineYPx = Math.max(fontPx, layout.originYPx - ruleWidthPx * 3)
+  // The opening column's year is a label of convenience — it names whatever
+  // partial year the window happens to start in, and a window sized to the pane
+  // opens wherever the arithmetic lands. When the first real boundary follows
+  // too closely for both, the boundary wins: a two-column sliver of December is
+  // not worth burying the year that owns the rest of the strip.
+  const [opening, next] = marks
+  const crowded = opening && next && next.xPx - opening.xPx < spacingPx
   let lastLabelXPx = Number.NEGATIVE_INFINITY
-  for (let column = 0; column < RIBBON_WEEKS; column += 1) {
-    const day = visible.start + column * 7
-    const year = formatDayISO(options.windowStartISO, day).slice(0, 4)
-    if (year === previousYear) continue
-    const x = layout.originXPx + column * layout.stepPx
-    if (previousYear !== '') {
-      // The rule sits in the gutter between two weeks, never over a cell.
-      ctx.fillStyle = MARKER_COLOR
-      ctx.fillRect(
-        x - layout.gapPx,
-        layout.originYPx,
-        ruleWidthPx,
-        layout.gridHeightPx
-      )
-    }
-    previousYear = year
-    if (x - lastLabelXPx < labelWidthPx + fontPx) continue
-    ctx.fillStyle = MARKER_COLOR
-    ctx.fillText(year, Math.min(x, maxXPx), baselineYPx)
-    lastLabelXPx = x
+  for (const mark of marks.slice(crowded ? 1 : 0)) {
+    if (mark.xPx - lastLabelXPx < spacingPx) continue
+    ctx.fillText(mark.year, Math.min(mark.xPx, maxXPx), baselineYPx)
+    lastLabelXPx = mark.xPx
   }
 }
 
 function paintCurrentDay(ctx: RibbonCtx, options: RibbonPaintOptions): void {
   const { layout, step } = options
   if (step < 0 || step >= options.grid.dayCount) return
+  // A day nothing landed on carries no highlight: the ring says "this is the
+  // day being played", and ringing an empty square reads as a false positive.
+  // Level 0 is exactly zero contributions — band 1's lower bound is 1 — so the
+  // level already on hand answers the question without a second series.
+  if ((options.grid.level[step] ?? 0) <= 0) return
   const cell = ribbonCell(options.window, step)
   if (!cell) return
   const x = layout.originXPx + cell.column * layout.stepPx

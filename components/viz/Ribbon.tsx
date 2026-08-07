@@ -9,16 +9,24 @@ import {
 } from './instrumentRuntime'
 import { getGalaxyTimeline, subscribeGalaxyTimeline } from './galaxyTimeline'
 import { paintRibbon } from './ribbonPaint'
-import { ribbonLayout, ribbonWindow, type RibbonWindow } from './ribbonWindow'
+import {
+  RIBBON_DEFAULT_COLUMNS,
+  ribbonLayout,
+  ribbonWindow,
+  type RibbonLayout,
+  type RibbonWindow,
+} from './ribbonWindow'
 import { useRibbonInteraction } from './useRibbonInteraction'
 
 /**
- * @description Renders the full-width GitHub-style contribution graph. One
- * year of history is on screen at a time — 7 weekday rows by 53 week columns,
- * year boundaries marked along the strip, the shared galaxy timeline's current
- * day ringed. The window follows that timeline: seeking or playing to a day
- * older than the window pages it back. Clicking or dragging scrubs the clock,
- * which is the only way to seek now that the galaxy canvas rotates instead.
+ * @description Renders the full-width GitHub-style contribution graph. The
+ * squares fill the pane: 7 weekday rows, and as many week columns as the pane
+ * is wide, so a wide browser holds more than a year of history and a phone
+ * holds less. Year boundaries are marked along the strip and the shared galaxy
+ * timeline's current day is ringed. The window follows that timeline: seeking
+ * or playing to a day older than the window pages it back. Clicking or dragging
+ * scrubs the clock, which is the only way to seek now that the galaxy canvas
+ * rotates instead.
  * @returns The contribution graph canvas.
  */
 export const Ribbon = memo(function Ribbon(): ReactNode {
@@ -26,11 +34,12 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
   const viz = runtime.status === 'ready' ? runtime.viz : null
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [snapshot, setSnapshot] = useState(() => getGalaxyTimeline())
+  const [columns, setColumns] = useState(RIBBON_DEFAULT_COLUMNS)
   const grid = viz?.render.grid
   const windowStartISO = viz?.head.manifest.windowStart ?? ''
   const dayCount = grid?.dayCount ?? 0
   const startWeekday = windowStartISO ? weekdayOfISO(windowStartISO) : 0
-  const visible = ribbonWindow(snapshot.step, dayCount, startWeekday)
+  const visible = ribbonWindow(snapshot.step, dayCount, startWeekday, columns)
   const label = ribbonLabel(runtime, {
     dayCount,
     step: snapshot.step,
@@ -49,23 +58,29 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     const dpr = Math.min(2, window.devicePixelRatio || 1)
+    const measure = (): RibbonLayout =>
+      ribbonLayout(canvas.width, canvas.height, dpr, grid.dayCount)
     const resize = (): void => {
       const rect = canvas.getBoundingClientRect()
       canvas.width = Math.round(rect.width * dpr)
       canvas.height = Math.round(rect.height * dpr)
+      // The text alternative names the stretch on screen, so it has to follow
+      // the lattice the pane's width just measured out.
+      setColumns(measure().columns)
     }
     const draw = (): void => {
       // The clock is read here, not closed over: the draw is a pure function
       // of (payload, step, geometry), which is what makes it screenshotable.
       const step = getGalaxyTimeline().step
+      const layout = measure()
       paintRibbon(ctx, {
         dpr,
         grid,
         heightPx: canvas.height,
-        layout: ribbonLayout(canvas.width, canvas.height, dpr),
+        layout,
         step,
         widthPx: canvas.width,
-        window: ribbonWindow(step, grid.dayCount, startWeekday),
+        window: ribbonWindow(step, grid.dayCount, startWeekday, layout.columns),
         windowStartISO,
       })
     }
@@ -105,6 +120,10 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
           height: '100%',
           width: '100%',
           cursor: 'pointer',
+          // The strip owns the whole gesture, as the galaxy canvas does. Left
+          // to the browser, a finger drag across the squares is a page scroll
+          // and the scrub is cancelled before its first move.
+          touchAction: 'none',
         }}
         tabIndex={0}
       >
@@ -134,9 +153,9 @@ interface LabelInput {
 }
 
 /**
- * The canvas text alternative. It names the year on screen and the day the
+ * The canvas text alternative. It names the stretch on screen and the day the
  * clock is on, because neither is recoverable from the adjacent table — the
- * table lists every day, the strip shows one year of them.
+ * table lists every day, the strip shows the weeks the pane has room for.
  */
 function ribbonLabel(
   runtime: InstrumentRuntimeState,
@@ -152,5 +171,5 @@ function ribbonLabel(
     step >= 0 && step < dayCount
       ? ` Current day ${formatDayISO(windowStartISO, step)}.`
       : ''
-  return `Contribution grid, one year of daily contributions from ${first} to ${last}.${current} Full daily figures follow in the adjacent table.`
+  return `Contribution grid, daily contributions from ${first} to ${last}.${current} Full daily figures follow in the adjacent table.`
 }

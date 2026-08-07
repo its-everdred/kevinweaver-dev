@@ -80,7 +80,7 @@ export function changedVertices(before: Float32Array, after: Float32Array): numb
   return changed
 }
 
-interface FakeCanvas {
+export interface FakeCanvas {
   width: number
   height: number
   getContext(kind: string): Record<string, unknown> | null
@@ -88,19 +88,45 @@ interface FakeCanvas {
 
 /** Records the text a label paints, without a DOM. */
 export const painted: string[] = []
+/** Every canvas a label was painted into, in creation order. */
+export const labelCanvases: FakeCanvas[] = []
+/**
+ * Width the stub reports per character. jsdom's canvas measures nothing, so a
+ * monospace-shaped measurement stands in: the label code only needs the width
+ * to grow with the name, which is the property under test.
+ */
+export const STUB_GLYPH_WIDTH = 24
 
 export function stubCanvasDocument(): void {
   painted.length = 0
-  const create = (): FakeCanvas => ({
-    width: 0,
-    height: 0,
-    getContext: () => ({
-      font: '',
-      textAlign: '',
-      textBaseline: '',
-      fillStyle: '',
-      fillText: (text: string) => painted.push(text),
-    }),
-  })
+  labelCanvases.length = 0
+  const create = (): FakeCanvas => {
+    // The browser's own defaults, so any code that measures before sizing sees
+    // what it would see in a real document.
+    const canvas: FakeCanvas = {
+      width: 300,
+      height: 150,
+      getContext: () => ({
+        font: '',
+        textAlign: '',
+        textBaseline: '',
+        fillStyle: '',
+        filter: 'none',
+        measureText: (text: string) => ({
+          width: text.length * STUB_GLYPH_WIDTH,
+        }),
+        fillText: (text: string) => painted.push(text),
+        // The label's backdrop plate paints through these. They record nothing:
+        // what these tests assert about a label is its text and its dimensions,
+        // and a plate that fails to paint is a visual regression the screenshot
+        // baselines catch rather than something a stubbed context can prove.
+        save: () => undefined,
+        restore: () => undefined,
+        fillRect: () => undefined,
+      }),
+    }
+    labelCanvases.push(canvas)
+    return canvas
+  }
   vi.stubGlobal('document', { createElement: create })
 }

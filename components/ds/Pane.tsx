@@ -15,6 +15,8 @@ export interface PaneProps {
   labelledBy?: string
   bodyRef?: Ref<HTMLDivElement>
   id?: string
+  /** `-1` when the pane is a fragment target and must take focus on arrival. */
+  tabIndex?: number
   className?: string
   style?: CSSProperties
   bodyStyle?: CSSProperties
@@ -42,6 +44,7 @@ export function Pane({
   labelledBy,
   bodyRef,
   id,
+  tabIndex,
   className,
   style,
   bodyStyle,
@@ -63,6 +66,7 @@ export function Pane({
       className={paneClassName}
       id={id}
       style={style}
+      tabIndex={tabIndex}
     >
       {hasBar ? (
         <PaneBar
