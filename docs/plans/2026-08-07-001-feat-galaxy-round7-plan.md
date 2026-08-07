@@ -43,6 +43,8 @@ Private contributions are 40% of the operator's activity on some months and curr
 **Labels**
 
 - R3. A repo label renders its full name legibly at any name length, without clipping or being constrained by a fixed texture width.
+- R3a. A repo label draws in front of every star, never occluded by the disc it sits in.
+- R3b. A repo label sits on a dark translucent, soft-edged backdrop so its text stays readable over a dense star field.
 
 **Events log**
 
