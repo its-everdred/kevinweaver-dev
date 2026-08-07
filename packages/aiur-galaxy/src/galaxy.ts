@@ -6,11 +6,10 @@ export interface StarPosition {
   readonly repoId: number
   /** Repo-relative file path this star represents. */
   readonly file: string
-  /** Field x, 0.5 at the galactic center. */
+  /** Field x and y; 0.5 on both is the galactic center. */
   readonly x: number
-  /** Field y, 0.5 at the galactic center. */
   readonly y: number
-  /** Field z, 0.5 in the disc plane; the disc's thickness lives on this axis. */
+  /** Field z: 0.5 is the disc plane, and the disc's thickness lives here. */
   readonly z: number
 }
 
@@ -28,9 +27,8 @@ export interface RepoArm {
   readonly z: number
   /** Distance of the anchor from the disc center, in field units. */
   readonly radius: number
-  /** Index of this repo's first star in `stars`. */
+  /** Index of this repo's first star in `stars`, and how many follow it. */
   readonly starOffset: number
-  /** Number of stars this repo contributes. */
   readonly starCount: number
 }
 
@@ -71,18 +69,17 @@ interface RepoRecency {
   readonly lastStep: number
 }
 
-/** An arm segment before per-star smearing. */
+/** An arm segment before per-star smearing: radius in [0, 1], angle in radians. */
 interface ArmGeometry {
-  /** Radial coordinate of the segment, 0 at the core and 1 at the rim. */
   readonly t: number
-  /** Angle of the arm at that radius, in radians. */
   readonly angle: number
 }
 
+/** A position in normalized field units, every axis in [0, 1]. */
+type FieldPoint = Pick<StarPosition, 'x' | 'y' | 'z'>
+
 /**
  * @description Builds the repo-qualified key that identifies a star.
- * @param repoId Repo id owning the file.
- * @param file Repo-relative file path.
  * @returns The `"repoId:path"` key shared with the playback frame.
  */
 export function starKey(repoId: number, file: string): string {
@@ -93,12 +90,10 @@ export function starKey(repoId: number, file: string): string {
  * @description Lays a universe out as one spiral disc: radius encodes recency,
  * so the most recently active repo sits at the core and the least recently
  * active at the rim, and every file is a star smeared along its repo's arm.
+ * Deterministic: recency comes from the contribution log and positions from a
+ * hash of stable identifiers, never from randomness, input order, or the clock.
  * @param snapshot The universe snapshot to position.
  * @returns The arm segments, every star, and a star key to vertex index map.
- *
- * Deterministic: recency comes from the contribution log and positions derive
- * from a hash of stable identifiers, never from randomness, insertion order, or
- * the clock, so renders are bit-reproducible.
  */
 export function layoutUniverse(snapshot: UniverseSnapshot): UniverseLayout {
   const ordered = orderByRecency(snapshot)
@@ -129,8 +124,8 @@ export function layoutUniverse(snapshot: UniverseSnapshot): UniverseLayout {
 
 /**
  * @description Orders repos by most recent contribution, newest first. Repos
- * that never contributed sort to the rim, and repos sharing a step fall back to
- * ascending id so input order never moves a star.
+ * that never contributed sort to the rim; ties fall back to ascending repo id,
+ * so input order never moves a star.
  */
 function orderByRecency(snapshot: UniverseSnapshot): readonly RepoRecency[] {
   const lastSteps = new Map<number, number>()
@@ -145,8 +140,8 @@ function orderByRecency(snapshot: UniverseSnapshot): readonly RepoRecency[] {
 
 /**
  * @description Maps a recency ordinal onto one of the disc's spiral arms. The
- * square root keeps the core dense: early ordinals are packed, later ones step
- * outward by less and less, which is what makes the arms read as arms.
+ * square root keeps the core dense and shrinks the step between neighbours,
+ * which is what lets the radial smear blend them into an arm.
  */
 function armGeometry(ordinal: number, total: number): ArmGeometry {
   const t = Math.sqrt((ordinal + 0.5) / Math.max(1, total))
@@ -156,14 +151,10 @@ function armGeometry(ordinal: number, total: number): ArmGeometry {
 
 /**
  * @description Projects a radial coordinate, angle, and depth into field units.
- * A negative radius mirrors the star across the center, which fills the core
- * rather than clamping the innermost repos into a hot spot.
+ * A negative radius mirrors the star across the center, filling the core rather
+ * than clamping the innermost repos into a hot spot.
  */
-function fieldPoint(
-  radial: number,
-  angle: number,
-  depth: number
-): { x: number; y: number; z: number } {
+function fieldPoint(radial: number, angle: number, depth: number): FieldPoint {
   const scaled = (radial / MAX_RADIAL) * DISC_FIELD_RADIUS
   return {
     x: 0.5 + Math.cos(angle) * scaled,
@@ -191,11 +182,8 @@ function appendStars(
       arm.angle + along * ANGULAR_SMEAR + (hash01(`${key}:angle`) - 0.5) * ANGULAR_JITTER
     const depth = (hash01(`${key}:depth`) - 0.5) * DISC_THICKNESS * (1 - arm.t * CORE_BULGE)
     starIndex.set(key, stars.length)
-    stars.push({
-      repoId: repo.id,
-      file,
-      ...fieldPoint(arm.t + along * RADIAL_SMEAR, angle, depth),
-    })
+    const point = fieldPoint(arm.t + along * RADIAL_SMEAR, angle, depth)
+    stars.push({ repoId: repo.id, file, ...point })
   }
 }
 
