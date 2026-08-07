@@ -46,7 +46,7 @@ Underneath the symptom is a representational problem the current design cannot s
 
 - **Radius encodes recency, not size.** A repo's distance from the galactic center is set by its most recent activity: the newest work sits in the core, the oldest on the rim. This makes the galaxy readable as a timeline at a glance and defuses the `aiur` dominance problem, because volume no longer buys position. (session-settled: user-directed — chosen over size-ordered or hash-scattered placement: "cluster the most recently active repos near the center... older projects further out on arms".)
 
-- **Every repo is labeled, always; collisions are acceptable.** Legibility of the full repo set outranks a clean frame. Recency ordering spreads labels radially, which limits collisions in practice, but overlap is explicitly tolerated rather than solved by hiding labels. (session-settled: user-directed — chosen over labeling only the largest repos or only the repos active on the current day: "all repos, colliding is okay".)
+- **Labels are revealed, not permanent.** A label appears when its repo is highlighted by the viewer, and when the repo receives a contribution — fading out over the following few days of playback. Seeing 60 names at once was tried and rejected once the disc was full: the frame reads as noise rather than a galaxy. Identity is now on demand and on activity. (session-settled: user-directed — chosen over always-on labels, which the operator initially asked for and then reversed after seeing the built result: "lets hide repo labels unless the user highlights, or when contributions have been made".)
 
 - **Zapped stars stay bright forever.** A star's brightness is cumulative history, not current state. Unzapped stars are dim but visible; a contribution promotes a star permanently. The playback therefore paints a brightening galaxy rather than a blinking one. (session-settled: user-directed — "stars should glow brighter once zapped, lets leave them bright".)
 
@@ -64,9 +64,9 @@ Underneath the symptom is a representational problem the current design cannot s
 
 - R1. The universe renders as a single spiral galaxy with a dense core and sweeping arms, not as multiple discrete galaxies.
 - R2. A repo's radial position is a function of its most recent contribution date: the most recently active repo sits nearest the center and the least recently active sits nearest the rim.
-- R3. Every repo's stars are distributed along the arm at that repo's radius, smeared enough radially and angularly that adjacent repos blend into a continuous arm rather than forming a visible concentric ring.
+- R3. Every repo's stars are distributed along the arm at that repo's radius, spread widely enough that the disc reads as a star field rather than as stars glued to thin arm curves. Adjacent repos blend into a continuous arm rather than forming a visible concentric ring.
 - R4. Every file in every repo is a star in the scene, with no per-repo cap that silently drops files.
-- R5. Every repo carries a text label positioned at its arm segment, rendered at all times regardless of contribution state. Label overlap is acceptable and must not trigger hiding or culling.
+- R5. A repo's label is hidden by default and revealed on two triggers: the viewer highlighting that repo, and the repo receiving a contribution. A contribution-revealed label fades out over the following few days of playback.
 - R6. Star placement is deterministic: the same input data produces byte-identical geometry across renders, with no `Math.random` and no wall-clock input.
 
 **Contribution playback**
@@ -76,6 +76,8 @@ Underneath the symptom is a representational problem the current design cannot s
 - R9. On each step, each actor with contributions that day renders a beam from its node to each file-star it touched, in that actor's color.
 - R10. Every contribution on a step produces a beam. If a beam budget is imposed for performance, exceeding it must surface rather than silently drop beams.
 - R11. Contributor nodes move to reflect where each actor is working on the current step.
+- R11a. Playback covers a rolling one-year window that begins at the most recent day and advances backward through time.
+- R11b. Days outside the visible one-year window remain reachable by seeking; the bound is on the default view, not on the data.
 
 **Camera and interaction**
 
@@ -202,7 +204,7 @@ Deferred to implementation:
 
 - KTD2. **Move the integrity map out of the first-byte payload.** Measured: `manifest.json` is 3,037 bytes brotli, of which `integrity` is 2,808 — 92%. The first-byte set totals 11,809 of 12,288 bytes, leaving 479. Relocating the map to a sibling `integrity.json` outside the `.size-limit.json` first-byte path set drops the payload to roughly 9,001 bytes and raises headroom to about 3,287. It also removes the per-chunk growth term from the budget entirely, since each new chunk's hashes no longer land in a first-byte file. The map has no runtime consumer: `lib/bundle/codec.ts` parses it into the type, but only `scripts/pipeline/validate-format.ts` and `scripts/pipeline/validate.ts` read it, both at build time.
 
-- KTD3. **Derive the step duration from a target pass length.** A fixed 1,000 ms step over a full-history window of roughly 6,000 days is a 100-minute pass. Derive `STEP_MS` from a target total pass duration instead, so window length stops dictating watchability, and keep one day per second reachable as the slowest speed rather than the only speed. Default the target so a full pass runs about three minutes. This is the one decision that adjusts an operator-stated preference, and it does so because the operator also asked for full history; both cannot hold at once.
+- KTD3. **Play a rolling one-year window backward from today.** Playback shows one year at a time and moves from today toward the past, rather than sweeping the entire history forward. This keeps one day per second — the operator's stated cadence — and still produces a watchable six-minute pass, which a full-history forward sweep could not: roughly 6,000 days at one per second is 100 minutes. It also matches how the contribution graph above it reads. Full history stays in the payload and remains reachable by seeking; it is the default *view* that is bounded, not the data. (session-settled: user-directed — "only show 1 year at a time, start from today and move backwards".)
 
 - KTD4. **Store brightness as a per-vertex attribute mutated on step change, not recomputed per frame.** `updateStarColors` currently runs for every star on every animation frame and builds a `` `${repoId}:${file}` `` template-literal key per star per frame. Because brightness is cumulative, a star only ever moves from dim to bright, and only on the step that names it. Update only the vertices that step names, and only when the step actually changes, using a star-index map built once at layout time. Per-frame cost becomes proportional to that day's contribution count rather than the total star count.
 
