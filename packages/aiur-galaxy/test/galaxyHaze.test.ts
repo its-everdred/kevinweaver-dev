@@ -53,7 +53,9 @@ describe('createGalaxyHaze', () => {
       // The haze is drawn from the star distribution itself rather than from a
       // second generator: a cloud sits on the star it was drawn from, close
       // enough to belong to the same arm.
-      const star = source.stars[cloud * 2]
+      // Derived from the ratio rather than a copy of it: the density is a
+      // fill-rate knob, and a hardcoded stride breaks on every retune.
+      const star = source.stars[cloud * Math.round(1 / HAZE_RATIO)]
       if (!star) throw new Error(`cloud ${cloud} has no star`)
       const dx = (positions[cloud * 3] ?? 0) - worldX(star.x)
       const dy = (positions[cloud * 3 + 1] ?? 0) - worldY(star.y)

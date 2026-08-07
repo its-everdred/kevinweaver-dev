@@ -123,6 +123,12 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
     let cached: ReturnType<typeof universeFrame> | null = null
     let cachedStep = Number.NaN
     let cachedDirection = ''
+    /**
+     * The contributor targets for that same day. Resolving them walks the day's
+     * contributions through the star index, so it belongs on the step, not on
+     * the animation frame; the glide between them is what moves per frame.
+     */
+    let cachedTargets: ReturnType<typeof resolveContributors> = []
     const frameAt = (
       step: number,
       direction: PlaybackDirection
@@ -132,14 +138,34 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
       cached = universeFrame(universe, step, direction)
       cachedStep = step
       cachedDirection = direction
+      cachedTargets = resolveContributors(layout, cached)
       return cached
     }
+    /**
+     * What the last rendered frame depended on. Under reduced motion nothing
+     * advances on its own — no turn, no playback, no transition — so once a
+     * frame is on screen it stays correct until the viewer seeks, hovers, or
+     * moves the camera. Re-rendering it sixty times a second is work nobody
+     * asked for, and "every infinite animation stops" is the rule reduced
+     * motion is asking us to honour, not merely a request to hold the day still.
+     */
+    let settled = ''
     const frame = (now: number): void => {
       const clock = getGalaxyTimeline()
       if (clock.total === universe.stepCount) {
         const animated = !reducedMotion && clock.playing
         const day = days.advance(clock.step, clock.direction, now, animated)
         if (day !== clock.step) seekGalaxyTimeline(day, universe.stepCount)
+        if (reducedMotion && live) {
+          const hover = pointerRef.current
+          const orbit = orbitRef.current
+          const state = `${clock.step} ${clock.direction} ${hover?.x ?? ''},${hover?.y ?? ''} ${orbit.azimuth},${orbit.polar},${orbit.distance}`
+          if (state === settled) {
+            raf = requestAnimationFrame(frame)
+            return
+          }
+          settled = state
+        }
         if (live) {
           // The camera is read here rather than pushed on change so a scene
           // rebuilt for newly loaded data adopts the viewer's camera instead of
@@ -156,8 +182,9 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
           const playback = frameAt(clock.step, clock.direction)
           const stats = live.setFrame(layout, playback, days.reach(now, animated))
           overflow = surfaceBeamOverflow(canvas, stats.beamOverflow, overflow)
-          const targets = resolveContributors(layout, playback)
-          live.setContributors(days.glide.at(targets, days.phase(now, animated)))
+          live.setContributors(
+            days.glide.at(cachedTargets, days.phase(now, animated))
+          )
           live.render()
         }
       }

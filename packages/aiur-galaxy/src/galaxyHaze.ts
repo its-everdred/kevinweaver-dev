@@ -23,8 +23,16 @@ export interface GalaxyHaze {
  * which is what makes it hug the arms instead of washing the frame; ours takes
  * the shorter route to the same distribution and hangs a cloud on every second
  * star, so the haze is the star field's own shape by construction.
+ *
+ * One cloud per eight stars, not the reference's one per two. A cloud is drawn
+ * an order of magnitude larger than a star, so the field is fill-rate bound,
+ * not vertex bound: at the reference ratio a software rasterizer spends about a
+ * tenth of a second on a single frame, which stalls the page under a test's
+ * fake clock and would cost a real viewer on weak hardware just as much. The
+ * nebulosity survives the cut because it comes from overlap, and these clouds
+ * are wide enough to still overlap at this density.
  */
-export const HAZE_RATIO = 0.5
+export const HAZE_RATIO = 0.125
 /** Stars between one cloud and the next: the ratio, as a stride. */
 const HAZE_STRIDE = Math.round(1 / HAZE_RATIO)
 /**
