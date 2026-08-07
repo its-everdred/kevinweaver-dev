@@ -1,8 +1,7 @@
 import { DISC_FIELD_RADIUS, starKey } from './galaxy'
-import { resolveContributors, starFor, type ContributorNode } from './contributors'
+import type { ContributorNode } from './contributors'
 import type { StarPosition, UniverseLayout } from './galaxy'
 import type { UniverseFrame } from './universePlayback'
-import type { UniverseActor } from './types'
 
 /** Theme colors injected by the host so the renderer stays host-agnostic. */
 export interface UniverseTheme {
