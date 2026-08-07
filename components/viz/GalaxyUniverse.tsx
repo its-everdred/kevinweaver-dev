@@ -2,12 +2,16 @@
 
 import { memo, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
+import type { BundleHead } from '@/lib/bundle/loader'
 import { type OrbitState } from '@/lib/viz/orbit'
 // Per module, not through the barrel: see the note in useGalaxyScene.ts.
 import { buildUniverse } from '@/packages/aiur-galaxy/src/buildUniverse'
 import type { GalaxyScene } from '@/packages/aiur-galaxy/src/galaxyScene'
 import { privateRepo } from '@/packages/aiur-galaxy/src/privateRepo'
-import type { UniverseActor } from '@/packages/aiur-galaxy/src/types'
+import type {
+  UniverseActor,
+  UniverseSnapshot,
+} from '@/packages/aiur-galaxy/src/types'
 import {
   useInstrumentRuntime,
   type InstrumentRuntimeState,
@@ -19,6 +23,44 @@ import styles from './GalaxyUniverse.module.css'
 
 /** Stable identifier used to locate the separately requested galaxy chunk. */
 export const GALAXY_CHUNK_MARKER = 'kw-galaxy-universe'
+
+/**
+ * @description Builds the universe the galaxy renders: every real file event,
+ * plus the synthesized `private` repo standing in for the green days the file
+ * history cannot place. Extracted from the component so both index conventions
+ * that meet here are directly testable.
+ * @param head The decoded bundle head.
+ * @returns The universe snapshot, with `private` as an ordinary repo in it.
+ */
+export function buildGalaxyUniverse(head: BundleHead): UniverseSnapshot {
+  const { dayCount } = head.manifest
+  const repos = head.repos.map((repo) => ({ id: repo.id, name: repo.name }))
+  // A bundle event counts its day back from the newest, while a timeline step
+  // counts forward from the oldest; `grid.human` is indexed by the latter, so
+  // its index is already a step and needs no conversion of its own.
+  const events = head.events.map((event) => ({
+    repo: event.repo,
+    path: event.path,
+    step: dayCount - 1 - event.day,
+    actor: event.actor as UniverseActor,
+  }))
+  // Most green days name no file the history can place, so they are
+  // synthesized into one more repo here, before the universe is built.
+  // Everything after this point treats `private` as ordinary; see
+  // privateRepo.ts for what those stars do and do not claim to be.
+  const synthetic = privateRepo({
+    human: head.grid.human,
+    agent: head.grid.agent,
+    covered: new Set(events.map((event) => event.step)),
+    stepCount: dayCount,
+  })
+  if (!synthetic) return buildUniverse(repos, events, dayCount)
+  return buildUniverse(
+    [...repos, synthetic.repo],
+    events.concat(synthetic.events),
+    dayCount
+  )
+}
 
 function galaxyLabel(runtime: InstrumentRuntimeState): string {
   if (runtime.status === 'unavailable') return 'Repository map unavailable.'
@@ -47,33 +89,10 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   const camera = useGalaxyCamera()
   const pointer = useGalaxyPointer(camera, sceneRef)
 
-  const universe = useMemo(() => {
-    if (!viz) return null
-    const { dayCount, windowStart } = viz.head.manifest
-    const repos = viz.head.repos.map((repo) => ({ id: repo.id, name: repo.name }))
-    const events = viz.head.events.map((event) => ({
-      repo: event.repo,
-      path: event.path,
-      step: dayCount - 1 - event.day,
-      actor: event.actor as UniverseActor,
-    }))
-    // Private contributions arrive as monthly totals and nothing finer, so
-    // they are synthesized into one more repo here, before the universe is
-    // built. Everything after this point treats `private` as ordinary; see
-    // privateRepo.ts for what those stars do and do not claim to be.
-    const synthetic = privateRepo({
-      monthly: viz.head.grid.privateMonthly,
-      startMonth: viz.head.grid.privateStart,
-      windowStart,
-      stepCount: dayCount,
-    })
-    if (!synthetic) return buildUniverse(repos, events, dayCount)
-    return buildUniverse(
-      [...repos, synthetic.repo],
-      events.concat(synthetic.events),
-      dayCount
-    )
-  }, [viz])
+  const universe = useMemo(
+    () => (viz ? buildGalaxyUniverse(viz.head) : null),
+    [viz]
+  )
 
   useGalaxyScene({
     canvasRef,
@@ -111,8 +130,9 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
         tabIndex={0}
       >
         {label} The most recently active repos sit in the core and the oldest on
-        the rim; contributions light stars permanently over the window. Private
-        work is one repo at the core, sized by monthly totals, not by files.
+        the rim; contributions light stars permanently over the window. Days the
+        contribution graph counts but the file history cannot place are one repo
+        at the core, standing for volume rather than for named files.
       </canvas>
       <div className={styles.zoomGroup}>
         <button

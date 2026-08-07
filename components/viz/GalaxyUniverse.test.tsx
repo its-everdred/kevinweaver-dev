@@ -13,6 +13,7 @@ import {
 import type { BundleHead } from '@/lib/bundle/loader'
 import type { RepoRecord } from '@/lib/bundle/schema'
 import { MAX_ORBIT_DISTANCE, MIN_ORBIT_DISTANCE } from '@/lib/viz/orbit'
+import { PRIVATE_REPO_ID } from '@/packages/aiur-galaxy/src/privateRepo'
 import {
   createInstrumentViz,
   type InstrumentRuntimeState,
@@ -27,7 +28,7 @@ import {
   publishGalaxyTimeline,
   seekGalaxyTimeline,
 } from './galaxyTimeline'
-import { GalaxyUniverse } from './GalaxyUniverse'
+import { buildGalaxyUniverse, GalaxyUniverse } from './GalaxyUniverse'
 import { Ribbon } from './Ribbon'
 
 const runtime = vi.hoisted(() => ({
@@ -353,6 +354,47 @@ describe('clicking the galaxy selects a repo', () => {
     drag(canvas, [100, 100], [260, 180])
     lift(canvas, [260, 180])
     expect(orbitOf(canvas).azimuth).not.toBe(before.azimuth)
+  })
+})
+
+describe('the universe the galaxy renders', () => {
+  /**
+   * Six days, oldest first. The calendar is green on steps 3 and 4; the one
+   * real file event names day 1, which is step 4 (`dayCount - 1 - day`). So
+   * step 3 is the only green the file history cannot place, and the only step
+   * that may carry a synthesized beam.
+   *
+   * The two index conventions run in opposite directions, and this window is
+   * built so that mirroring either one is visible: reading the calendar from
+   * the newest day would synthesize step 1 or 2, and reading an event's day as
+   * a step would leave step 4 uncovered and synthesize that as well.
+   */
+  // prettier-ignore
+  const GAP_HEAD: BundleHead = {
+    manifest: { ...HEAD.manifest, days: ['2026-02-06', '2026-02-01'], windowEnd: '2026-02-06', dayCount: 6, repoCount: 1, events: 1 },
+    repos: [repo(0, 'alpha', 0, '2026-02-01')],
+    grid: { start: '2026-02-01', dayCount: 6, human: [0, 0, 0, 7, 9, 0], agent: [0, 0, 0, 0, 0, 0], privateMonthly: [], privateStart: '2026-02', bands: [0, 1, 2, 4, 8, 16, 32, 64, 128, 256] },
+    events: [{ day: 1, repo: 0, path: 'src/a.ts', actor: 0 }],
+  }
+
+  function stepsFor(repoId: number): number[] {
+    return [
+      ...new Set(
+        buildGalaxyUniverse(GAP_HEAD)
+          .contributions.filter((entry) => entry.repo === repoId)
+          .map((entry) => entry.step)
+      ),
+    ].sort((left, right) => left - right)
+  }
+
+  it('places a real file event on the step its day counts back to', () => {
+    expect(stepsFor(0)).toEqual([4])
+  })
+
+  it('synthesizes the green day the file history cannot place, on that day', () => {
+    // Without this the contribution graph shows green while the galaxy draws
+    // nothing, and `resolveContributors` returns no node to hang beams on.
+    expect(stepsFor(PRIVATE_REPO_ID)).toEqual([3])
   })
 })
 
