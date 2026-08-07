@@ -55,7 +55,9 @@ export interface GalaxyScene {
   setFrame(layout: UniverseLayout, frame: UniverseFrame): GalaxyFrameStats
   /** Moves contributor nodes to eased positions, dragging their beams along. */
   setContributors(nodes: readonly { actor: UniverseActor; x: number; y: number }[]): void
-  /** Resizes the renderer and camera aspect. */
+  /** Places the camera at a world position, aimed at the disc center. */
+  setCamera(x: number, y: number, z: number): void
+  /** Resizes the renderer and the camera aspect, never the camera position. */
   resize(width: number, height: number): void
   /** Renders one frame. */
   render(): void
@@ -114,6 +116,8 @@ const WORLD_WIDTH = 6
 const WORLD_HEIGHT = 4
 /** World depth of the contributor nodes, just in front of the disc plane. */
 const CONTRIBUTOR_DEPTH = 0.5
+/** Distance the camera is built at, face-on to the disc, in world units. */
+const CAMERA_DISTANCE = 2.6
 /**
  * Beams a single step may draw. The buffer is preallocated to this size, so a
  * day busier than the cap surfaces as `beamOverflow` rather than truncating.
@@ -222,7 +226,7 @@ export function createGalaxyScene(
   renderer.setClearColor(theme.background, 1)
   const scene = new THREE.Scene()
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
-  camera.position.z = 2.6
+  placeCamera(camera, 0, 0, CAMERA_DISTANCE)
 
   const contributors: SceneContributor[] = []
   addContributorNode(scene, contributors, 0, theme.contributor)
@@ -278,10 +282,12 @@ export function createGalaxyScene(
       }
       beamField.setOrigins(origins)
     },
+    setCamera(x, y, z) {
+      placeCamera(camera, x, y, z)
+    },
     resize(width, height) {
       renderer.setSize(width, height, false)
-      camera.aspect = width / Math.max(1, height)
-      camera.updateProjectionMatrix()
+      resizeCamera(camera, width, height)
     },
     render() {
       renderer.render(scene, camera)
@@ -298,6 +304,41 @@ export function createGalaxyScene(
       renderer.dispose()
     },
   }
+}
+
+/**
+ * @description Places the camera at a world position and aims it at the disc
+ * center. This is the only writer of the camera's position: resizing must not
+ * refit it, or a user's rotation and zoom would be discarded on every resize.
+ * @param camera The scene camera.
+ * @param x World x.
+ * @param y World y.
+ * @param z World z.
+ */
+export function placeCamera(
+  camera: THREE.PerspectiveCamera,
+  x: number,
+  y: number,
+  z: number
+): void {
+  camera.position.set(x, y, z)
+  camera.lookAt(0, 0, 0)
+}
+
+/**
+ * @description Applies a viewport size to the projection aspect alone, leaving
+ * the camera where the viewer put it.
+ * @param camera The scene camera.
+ * @param width Drawing buffer width in pixels.
+ * @param height Drawing buffer height in pixels; a collapsed pane reads as 1.
+ */
+export function resizeCamera(
+  camera: THREE.PerspectiveCamera,
+  width: number,
+  height: number
+): void {
+  camera.aspect = Math.max(1, width) / Math.max(1, height)
+  camera.updateProjectionMatrix()
 }
 
 /**

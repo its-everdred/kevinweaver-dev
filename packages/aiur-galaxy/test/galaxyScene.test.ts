@@ -6,6 +6,8 @@ import {
   createBeamField,
   createRepoLabels,
   createStarField,
+  placeCamera,
+  resizeCamera,
 } from '../src/galaxyScene'
 import { layoutUniverse, starKey } from '../src/galaxy'
 import { universeFrame } from '../src/universePlayback'
@@ -325,5 +327,40 @@ describe('createBeamField', () => {
     beams.dispose()
     expect(geometry).toHaveBeenCalledTimes(1)
     expect(material).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('camera', () => {
+  it('resizes the projection aspect and nothing else', () => {
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
+    placeCamera(camera, 1.5, -2, 3)
+    const position = camera.position.clone()
+    const quaternion = camera.quaternion.clone()
+    const projection = camera.projectionMatrix.clone()
+
+    resizeCamera(camera, 1200, 400)
+
+    // A user who has zoomed and rotated keeps that camera across a resize; only
+    // the aspect (and therefore the projection matrix) moves.
+    expect(camera.aspect).toBeCloseTo(3, 12)
+    expect(camera.position.equals(position)).toBe(true)
+    expect(camera.quaternion.equals(quaternion)).toBe(true)
+    expect(camera.projectionMatrix.equals(projection)).toBe(false)
+  })
+
+  it('never derives a non-finite aspect from a collapsed viewport', () => {
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
+    resizeCamera(camera, 800, 0)
+    expect(Number.isFinite(camera.aspect)).toBe(true)
+  })
+
+  it('places the camera at a world point and aims it at the disc center', () => {
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
+    placeCamera(camera, 0, 0, 4)
+    expect(camera.position.toArray()).toEqual([0, 0, 4])
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
+    expect(forward.x).toBeCloseTo(0, 12)
+    expect(forward.y).toBeCloseTo(0, 12)
+    expect(forward.z).toBeCloseTo(-1, 12)
   })
 })

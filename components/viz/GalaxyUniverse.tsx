@@ -1,8 +1,9 @@
 'use client'
 
 import { memo, useEffect, useMemo, useRef } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { formatDayISO } from '@/lib/viz/driver'
+import { orbitPosition, type OrbitState } from '@/lib/viz/orbit'
 import {
   buildUniverse,
   createGalaxyScene,
@@ -23,6 +24,8 @@ import {
   seekGalaxyTimeline,
 } from './galaxyTimeline'
 import { installGalaxyTestHarness } from './galaxyTestHarness'
+import { useGalaxyCamera } from './useGalaxyCamera'
+import styles from './GalaxyUniverse.module.css'
 
 /** Stable identifier used to locate the separately requested galaxy chunk. */
 export const GALAXY_CHUNK_MARKER = 'kw-galaxy-universe'
@@ -31,9 +34,12 @@ const STEP_MS = 1000
 const EASE = 0.12
 
 function galaxyLabel(runtime: InstrumentRuntimeState): string {
-  if (runtime.status === 'unavailable') return 'Repository galaxies unavailable'
-  if (runtime.status === 'loading') return 'Repository galaxies loading'
-  return 'Repository galaxies: one spiral disc where every repo is an arm and every file a star, brightening across the contribution window.'
+  if (runtime.status === 'unavailable') return 'Repository galaxies unavailable.'
+  if (runtime.status === 'loading') return 'Repository galaxies loading.'
+  // The camera hint belongs in the name: a canvas with an `aria-label` never
+  // announces its fallback subtree, so this is the only place a keyboard user
+  // is told that the arrow and plus/minus keys drive the view.
+  return 'Repository galaxies: one spiral disc where every repo is an arm and every file a star, brightening across the contribution window. Drag or use the arrow keys to rotate it, and pinch, press plus or minus, or use the zoom buttons to change the distance.'
 }
 
 /**
@@ -48,7 +54,8 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   const runtime = useInstrumentRuntime()
   const viz = runtime.status === 'ready' ? runtime.viz : null
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const pointerRef = useRef<{ x: number; y: number } | null>(null)
+  const camera = useGalaxyCamera()
+  const orbitRef = camera.orbitRef
   const sceneRef = useRef<GalaxyScene | null>(null)
   const contributorRef = useRef<Partial<Record<UniverseActor, { x: number; y: number }>>>({})
 
@@ -120,6 +127,11 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
           seekGalaxyTimeline(next, universe.stepCount)
         }
         if (sceneRef.current) {
+          // The camera is read here rather than pushed on change so a scene
+          // rebuilt for newly loaded data adopts the viewer's camera instead of
+          // snapping back to the build framing.
+          const view = orbitPosition(orbitRef.current)
+          sceneRef.current.setCamera(view.x, view.y, view.z)
           const playback = universeFrame(universe, current.step, current.direction)
           const stats = sceneRef.current.setFrame(layout, playback)
           overflow = surfaceBeamOverflow(canvas, stats.beamOverflow, overflow)
@@ -143,52 +155,71 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
       sceneRef.current = null
       scene?.dispose()
     }
-  }, [universe, windowStart])
-
-  const onPointerLeave = (): void => {
-    pointerRef.current = null
-  }
-
-  const scrubToX = (clientX: number, element: HTMLCanvasElement): void => {
-    if (!universe) return
-    const rect = element.getBoundingClientRect()
-    const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)))
-    const step = Math.max(
-      0,
-      Math.min(
-        universe.stepCount - 1,
-        Math.round(fraction * (universe.stepCount - 1))
-      )
-    )
-    seekGalaxyTimeline(step, universe.stepCount)
-  }
-  const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
-    scrubToX(event.clientX, event.currentTarget)
-  }
-  const onPointerDrag = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
-    if (!event.buttons) return
-    scrubToX(event.clientX, event.currentTarget)
-  }
+  }, [orbitRef, universe, windowStart])
 
   const label = galaxyLabel(runtime)
   return (
-    <canvas
-      aria-label={label}
-      data-chunk={GALAXY_CHUNK_MARKER}
-      onPointerDown={onPointerDown}
-      onPointerLeave={onPointerLeave}
-      onPointerMove={onPointerDrag}
-      onPointerUp={onPointerLeave}
-      ref={canvasRef}
-      role="img"
-      style={{ cursor: 'pointer', display: 'block', height: '100%', width: '100%' }}
-      tabIndex={0}
-    >
-      {label}. The most recently active repos sit in the core and the oldest on
-      the rim; contributions light stars permanently over the window.
-    </canvas>
+    <div className={styles.stage}>
+      <canvas
+        aria-label={label}
+        data-chunk={GALAXY_CHUNK_MARKER}
+        data-orbit={formatOrbit(camera.orbit)}
+        onKeyDown={camera.onKeyDown}
+        onPointerCancel={camera.onPointerCancel}
+        onPointerDown={camera.onPointerDown}
+        onPointerLeave={camera.onPointerLeave}
+        onPointerMove={camera.onPointerMove}
+        onPointerUp={camera.onPointerUp}
+        ref={canvasRef}
+        role="img"
+        style={{
+          cursor: 'grab',
+          display: 'block',
+          height: '100%',
+          // Without this the browser claims the pinch and the drag as a scroll
+          // or a page zoom, and neither gesture ever reaches the camera.
+          touchAction: 'none',
+          width: '100%',
+        }}
+        tabIndex={0}
+      >
+        {label} The most recently active repos sit in the core and the oldest on
+        the rim; contributions light stars permanently over the window.
+      </canvas>
+      <div className={styles.zoomGroup}>
+        <button
+          aria-label="Zoom in"
+          className={styles.zoom}
+          onClick={camera.zoomIn}
+          type="button"
+        >
+          <span aria-hidden="true">+</span>
+        </button>
+        <button
+          aria-label="Zoom out"
+          className={styles.zoom}
+          onClick={camera.zoomOut}
+          type="button"
+        >
+          <span aria-hidden="true">−</span>
+        </button>
+      </div>
+    </div>
   )
 })
+
+/**
+ * @description Surfaces the camera on the canvas, the way `data-beam-overflow`
+ * surfaces the beam budget: the orbit is otherwise invisible to anything
+ * outside the WebGL context.
+ * @param orbit The current camera orbit.
+ * @returns Azimuth, polar angle, and distance, space separated.
+ */
+function formatOrbit(orbit: OrbitState): string {
+  return [orbit.azimuth, orbit.polar, orbit.distance]
+    .map((term) => term.toFixed(3))
+    .join(' ')
+}
 
 /**
  * @description Surfaces a beam-budget overrun on the canvas instead of letting
