@@ -237,6 +237,27 @@ describe('painting the contribution grid', () => {
     expect(named(paint(-1).calls, 'strokeRect')).toHaveLength(0)
   })
 
+  it('leaves a day with no contributions unringed', () => {
+    // Level 0 is exactly zero contributions: band 1's lower bound is 1, so a
+    // day only falls to level 0 when nothing landed on it.
+    const empty = 795
+    const busy = 796
+    expect(LEVELS[empty]).toBe(0)
+    expect(LEVELS[busy]).toBeGreaterThan(0)
+    expect(named(paint(empty).calls, 'strokeRect')).toHaveLength(0)
+    expect(
+      named(paint(busy).calls, 'strokeRect').length
+    ).toBeGreaterThanOrEqual(2)
+  })
+
+  it('still paints the empty day’s square, it just does not ring it', () => {
+    // The day is drawn like any other day on screen; only the highlight goes.
+    const cells = named(paint(795).calls, 'fillRect').filter(
+      (call) => call[3] === LAYOUT.cellPx && call[4] === LAYOUT.cellPx
+    )
+    expect(cells).toHaveLength(NEWEST - NEWEST_WINDOW_START + 1)
+  })
+
   it('never hands the canvas a CSS custom property', () => {
     // A past round shipped fillStyle = 'var(--bg2)', which the 2D API silently
     // painted black. Every style this module writes is a concrete hex.

@@ -86,13 +86,25 @@ const HEAD: BundleHead = {
 
 let viz: ReturnType<typeof createInstrumentViz>
 
+/**
+ * jsdom implements no pointer capture, so the suite models the single property
+ * the scrub depends on: a captured pointer keeps reporting to the element that
+ * captured it, wherever on the page it travels.
+ */
+const captured = new Set<number>()
+
 beforeAll(() => {
   // jsdom ships no pointer capture and no layout; both are browser-side gaps,
   // not component behavior, so they are filled here rather than guarded for in
   // production code.
-  Element.prototype.setPointerCapture = () => undefined
-  Element.prototype.releasePointerCapture = () => undefined
-  Element.prototype.hasPointerCapture = () => false
+  Element.prototype.setPointerCapture = (pointerId: number) => {
+    captured.add(pointerId)
+  }
+  Element.prototype.releasePointerCapture = (pointerId: number) => {
+    captured.delete(pointerId)
+  }
+  Element.prototype.hasPointerCapture = (pointerId: number) =>
+    captured.has(pointerId)
   HTMLCanvasElement.prototype.getBoundingClientRect = () =>
     new DOMRect(0, 0, CSS_W, CSS_H)
   viz = createInstrumentViz(HEAD)
@@ -104,6 +116,7 @@ afterAll(() => {
 })
 
 beforeEach(() => {
+  captured.clear()
   publishGalaxyTimeline({
     step: NEWEST,
     date: WINDOW_END,
@@ -201,5 +214,65 @@ describe('the contribution grid as the seek surface', () => {
     render(<Ribbon />)
     fireEvent.pointerMove(ribbonCanvas(), { pointerId: 1, ...clientAt(0) })
     expect(getGalaxyTimeline().step).toBe(NEWEST)
+  })
+
+  it('captures the pointer so a drag off the strip keeps scrubbing', () => {
+    render(<Ribbon />)
+    const grabbed = clientAt(0)
+    fireEvent.pointerDown(ribbonCanvas(), { pointerId: 7, ...grabbed })
+    // The strip is one pane row tall. Without capture the browser routes the
+    // rest of the gesture to whatever the cursor is over, so a drag strands the
+    // instant it wanders off the squares.
+    expect(captured.has(7)).toBe(true)
+    fireEvent.pointerMove(ribbonCanvas(), {
+      pointerId: 7,
+      buttons: 1,
+      clientX: -200,
+      clientY: grabbed.clientY,
+    })
+    // 200 CSS px left of the canvas is 100 backing px outside it; 119 backing
+    // px from the grab is 24 columns, 168 days.
+    expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START - 168)
+    fireEvent.pointerUp(ribbonCanvas(), { pointerId: 7 })
+    expect(captured.has(7)).toBe(false)
+  })
+
+  it('lets the pointer go when the gesture is cancelled', () => {
+    render(<Ribbon />)
+    fireEvent.pointerDown(ribbonCanvas(), { pointerId: 3, ...clientAt(0) })
+    fireEvent.pointerCancel(ribbonCanvas(), { pointerId: 3 })
+    expect(captured.has(3)).toBe(false)
+    fireEvent.pointerMove(ribbonCanvas(), {
+      pointerId: 3,
+      buttons: 1,
+      ...clientAt(20),
+    })
+    expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START)
+  })
+
+  it('treats a press that never travels as a seek, not a scrub', () => {
+    render(<Ribbon />)
+    const pressed = clientAt(10)
+    fireEvent.pointerDown(ribbonCanvas(), { pointerId: 1, ...pressed })
+    fireEvent.pointerMove(ribbonCanvas(), {
+      pointerId: 1,
+      buttons: 1,
+      ...pressed,
+    })
+    // The tremor a real click carries is well under half a cell, so it walks
+    // nowhere and the click stays a single-day seek.
+    fireEvent.pointerMove(ribbonCanvas(), {
+      pointerId: 1,
+      buttons: 1,
+      clientX: pressed.clientX + 1,
+      clientY: pressed.clientY + 1,
+    })
+    fireEvent.pointerUp(ribbonCanvas(), { pointerId: 1 })
+    expect(getGalaxyTimeline().step).toBe(NEWEST_WINDOW_START + 70)
+  })
+
+  it('claims the touch gesture so a finger scrubs instead of scrolling', () => {
+    render(<Ribbon />)
+    expect(ribbonCanvas().style.touchAction).toBe('none')
   })
 })

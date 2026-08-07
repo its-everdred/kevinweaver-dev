@@ -57,7 +57,8 @@ const CURRENT_SEPARATOR = '#1d2021'
 
 /**
  * @description Paints one frame of the contribution grid: a year of density
- * squares, the year boundaries along the strip, and a ring on the current day.
+ * squares, the year boundaries along the strip, and a ring on the current day
+ * when anything landed on it.
  * @param ctx Destination 2D context.
  * @param options The window, lattice, and clock position to paint.
  *
@@ -134,6 +135,11 @@ function paintYearMarkers(ctx: RibbonCtx, options: RibbonPaintOptions): void {
 function paintCurrentDay(ctx: RibbonCtx, options: RibbonPaintOptions): void {
   const { layout, step } = options
   if (step < 0 || step >= options.grid.dayCount) return
+  // A day nothing landed on carries no highlight: the ring says "this is the
+  // day being played", and ringing an empty square reads as a false positive.
+  // Level 0 is exactly zero contributions — band 1's lower bound is 1 — so the
+  // level already on hand answers the question without a second series.
+  if ((options.grid.level[step] ?? 0) <= 0) return
   const cell = ribbonCell(options.window, step)
   if (!cell) return
   const x = layout.originXPx + cell.column * layout.stepPx

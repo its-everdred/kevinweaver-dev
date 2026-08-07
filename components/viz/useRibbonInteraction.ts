@@ -41,16 +41,21 @@ type GrabRef = RefObject<Grab | null>
  * window. An absolute drag could not: the window shifts under the pointer as
  * the clock passes its oldest day, and the cursor would jump a whole window
  * with it. Anchored to the grab, the shift is invisible to the gesture.
+ *
+ * The press takes pointer capture, so the whole drag reports back here however
+ * far off the strip it wanders. The strip is one pane row tall; an uncaptured
+ * drag hands every move to whatever the cursor happens to be over and dies a
+ * few pixels above the squares.
  */
 export function useRibbonInteraction(
   options: InteractionOptions
 ): RibbonInteraction {
   const grab = useRef<Grab | null>(null)
   return {
-    onPointerCancel: () => release(grab),
+    onPointerCancel: (event) => release(grab, event),
     onPointerDown: (event) => onPointerDown(options, grab, event),
     onPointerMove: (event) => onPointerMove(options, grab, event),
-    onPointerUp: () => release(grab),
+    onPointerUp: (event) => release(grab, event),
   }
 }
 
@@ -83,6 +88,7 @@ function onPointerDown(
   const canvas = event.currentTarget
   const point = backingPoint(canvas, event)
   if (!point || options.dayCount <= 0) return
+  canvas.setPointerCapture(event.pointerId)
   const layout = ribbonLayout(canvas.width, canvas.height, ribbonDpr())
   const visible = ribbonWindow(
     getGalaxyTimeline().step,
@@ -100,14 +106,26 @@ function onPointerMove(
   event: ReactPointerEvent<HTMLCanvasElement>
 ): void {
   const anchor = grab.current
-  if (!anchor || !event.buttons) return
-  const point = backingPoint(event.currentTarget, event)
+  if (!anchor) return
+  // Either signal keeps the gesture live. The capture is the one that matters —
+  // it reports every move here however far off the strip the drag travels — and
+  // the button state covers a pointer the UA refused to hand over. A hover
+  // carries neither.
+  const canvas = event.currentTarget
+  if (!canvas.hasPointerCapture(event.pointerId) && !event.buttons) return
+  const point = backingPoint(canvas, event)
   if (!point) return
   const columns = Math.round((point.xPx - anchor.xPx) / anchor.stepPx)
   const rows = Math.round((point.yPx - anchor.yPx) / anchor.stepPx)
   seekGalaxyTimeline(anchor.day + columns * 7 + rows, options.dayCount)
 }
 
-function release(grab: GrabRef): void {
+function release(
+  grab: GrabRef,
+  event: ReactPointerEvent<HTMLCanvasElement>
+): void {
   grab.current = null
+  const canvas = event.currentTarget
+  if (canvas.hasPointerCapture(event.pointerId))
+    canvas.releasePointerCapture(event.pointerId)
 }

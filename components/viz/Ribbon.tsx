@@ -105,6 +105,10 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
           height: '100%',
           width: '100%',
           cursor: 'pointer',
+          // The strip owns the whole gesture, as the galaxy canvas does. Left
+          // to the browser, a finger drag across the squares is a page scroll
+          // and the scrub is cancelled before its first move.
+          touchAction: 'none',
         }}
         tabIndex={0}
       >
