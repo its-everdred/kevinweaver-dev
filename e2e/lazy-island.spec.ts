@@ -5,7 +5,7 @@ import { test, expect, type Page } from '@playwright/test'
  *
  * The instrument region is the first region on the home page, so its galaxy
  * island is in view at load and the chunk is fetched promptly. On routes that
- * do not mount the instrument (the /dag page), the galaxy chunk must never be
+ * do not mount the instrument, the galaxy chunk must never be
  * fetched. Classification is by role (chunk content markers), never by chunk
  * name, because Turbopack chunk basenames are content hashes.
  *
@@ -105,13 +105,13 @@ test('the galaxy island chunk loads on the home page where the instrument is in 
   ).toBeGreaterThan(0)
 })
 
-test('the galaxy island chunk is never fetched on the /dag page', async ({
+test('the galaxy island chunk is never fetched on a page without the instrument', async ({
   page,
 }) => {
   const declared = await declaredChunks(page)
   const requested = trackChunkRequests(page)
 
-  await page.goto('/dag', { waitUntil: 'networkidle' })
+  await page.goto('/kevinweaver.1', { waitUntil: 'networkidle' })
   await settle(page)
 
   const arrived = [...requested].filter((p) => !declared.has(p))
@@ -121,6 +121,6 @@ test('the galaxy island chunk is never fetched on the /dag page', async ({
   }
   expect(
     islandChunks,
-    'the /dag page must not fetch the galaxy island chunk: it does not mount the instrument'
+    'a page that does not mount the instrument must not fetch the galaxy island chunk'
   ).toEqual([])
 })

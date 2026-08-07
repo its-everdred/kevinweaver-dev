@@ -1,7 +1,6 @@
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { createElement, type ReactNode } from 'react'
 import { afterEach, expect, test, vi } from 'vitest'
-import Gource, { GOURCE_CHUNK_MARKER } from '@/components/viz/Gource'
 import { ContributionTable } from '@/components/viz/ContributionTable'
 import { Overview } from '@/components/viz/Overview'
 import { Ribbon } from '@/components/viz/Ribbon'
@@ -80,7 +79,6 @@ test('mounts DPR-correct, accessible, isolated interactive surfaces', async () =
   await expectDprResize()
   await expectRuntimeFirstPointerInput()
   await expectRibbonAlternativeAndIsolation()
-  await expectIdleGourceAttachment()
 })
 // prettier-ignore
 const FILES = encodeBundle({ meta: HEAD.manifest, repos: HEAD.repos, grid: HEAD.grid, events: HEAD.events.map((event, index) => ({ ...event, repoName: HEAD.repos[event.repo]?.name ?? '', sha: `f-${index}` })) }).files
@@ -189,22 +187,6 @@ async function expectRibbonAlternativeAndIsolation(): Promise<void> {
   const draws = clear.mock.calls.length
   view.rerender(createElement(Ribbon))
   expect(clear).toHaveBeenCalledTimes(draws)
-  view.unmount()
-}
-async function expectIdleGourceAttachment(): Promise<void> {
-  let idle: IdleRequestCallback | undefined
-  vi.stubGlobal('requestIdleCallback', (callback: IdleRequestCallback) => {
-    idle = callback
-    return 1
-  })
-  vi.stubGlobal('cancelIdleCallback', () => undefined)
-  const clear = vi.spyOn(CanvasRenderingContext2D.prototype, 'clearRect')
-  const view = render(createElement(Gource))
-  const canvas = getCanvas(view.getByRole('img'))
-  expect(canvas).toHaveAttribute('data-chunk', GOURCE_CHUNK_MARKER)
-  expect(clear).not.toHaveBeenCalled()
-  idle?.({ didTimeout: false, timeRemaining: () => 10 })
-  await waitFor(() => expect(clear).toHaveBeenCalled())
   view.unmount()
 }
 function Surface({ enabled = true, width = 320, height = 120 }): ReactNode {

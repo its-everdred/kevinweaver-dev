@@ -112,8 +112,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
       >
         {label} The most recently active repos sit in the core and the oldest on
         the rim; contributions light stars permanently over the window. Private
-        contributions are one repo named private, pinned at the core, whose
-        stars stand for monthly totals rather than for files.
+        work is one repo at the core, sized by monthly totals, not by files.
       </canvas>
       <div className={styles.zoomGroup}>
         <button
