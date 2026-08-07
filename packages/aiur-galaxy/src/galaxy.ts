@@ -1,3 +1,4 @@
+import { corePin } from './privateRepo'
 import type { UniverseRepo, UniverseSnapshot } from './types'
 
 /** A star in the disc, in normalized field units (every axis in [0, 1]). */
@@ -148,7 +149,13 @@ function orderByRecency(snapshot: UniverseSnapshot): readonly RepoRecency[] {
   }
   return snapshot.repos
     .map((repo) => ({ repo, lastStep: lastSteps.get(repo.id) ?? NEVER_ACTIVE }))
-    .sort((left, right) => right.lastStep - left.lastStep || left.repo.id - right.repo.id)
+    .sort(
+      // The synthesized private repo is pinned to the core; see `corePin`.
+      (left, right) =>
+        corePin(left.repo.id) - corePin(right.repo.id) ||
+        right.lastStep - left.lastStep ||
+        left.repo.id - right.repo.id
+    )
 }
 
 /**

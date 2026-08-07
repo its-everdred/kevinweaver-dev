@@ -6,6 +6,7 @@ import { type OrbitState } from '@/lib/viz/orbit'
 // Per module, not through the barrel: see the note in useGalaxyScene.ts.
 import { buildUniverse } from '@/packages/aiur-galaxy/src/buildUniverse'
 import type { GalaxyScene } from '@/packages/aiur-galaxy/src/galaxyScene'
+import { privateRepo } from '@/packages/aiur-galaxy/src/privateRepo'
 import type { UniverseActor } from '@/packages/aiur-galaxy/src/types'
 import {
   useInstrumentRuntime,
@@ -48,14 +49,30 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
 
   const universe = useMemo(() => {
     if (!viz) return null
+    const { dayCount, windowStart } = viz.head.manifest
     const repos = viz.head.repos.map((repo) => ({ id: repo.id, name: repo.name }))
     const events = viz.head.events.map((event) => ({
       repo: event.repo,
       path: event.path,
-      step: viz.head.manifest.dayCount - 1 - event.day,
+      step: dayCount - 1 - event.day,
       actor: event.actor as UniverseActor,
     }))
-    return buildUniverse(repos, events, viz.head.manifest.dayCount)
+    // Private contributions arrive as monthly totals and nothing finer, so
+    // they are synthesized into one more repo here, before the universe is
+    // built. Everything after this point treats `private` as ordinary; see
+    // privateRepo.ts for what those stars do and do not claim to be.
+    const synthetic = privateRepo({
+      monthly: viz.head.grid.privateMonthly,
+      startMonth: viz.head.grid.privateStart,
+      windowStart,
+      stepCount: dayCount,
+    })
+    if (!synthetic) return buildUniverse(repos, events, dayCount)
+    return buildUniverse(
+      [...repos, synthetic.repo],
+      events.concat(synthetic.events),
+      dayCount
+    )
   }, [viz])
 
   useGalaxyScene({
@@ -94,7 +111,9 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
         tabIndex={0}
       >
         {label} The most recently active repos sit in the core and the oldest on
-        the rim; contributions light stars permanently over the window.
+        the rim; contributions light stars permanently over the window. Private
+        contributions are one repo named private, pinned at the core, whose
+        stars stand for monthly totals rather than for files.
       </canvas>
       <div className={styles.zoomGroup}>
         <button

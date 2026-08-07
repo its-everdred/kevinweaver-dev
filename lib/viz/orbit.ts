@@ -51,16 +51,31 @@ export type OrbitAction =
     }
 
 /**
- * The opening view: tilted 45 degrees above the disc and pulled back far enough
- * to hold the whole thing in frame, so the galaxy reads as a plate seen from
- * across the table rather than as a flat face-on target. `polar` is measured
- * down from the up axis, so `PI / 4` puts the camera halfway between overhead
- * and edge-on.
+ * The multiplier one zoom press applies to the distance, mirrored from
+ * `useGalaxyCamera`'s `ZOOM_STEP`. The opening distance is stated as one step
+ * in from round 6's framing, so "one closer" stays one press of the zoom-in
+ * button rather than a number that drifts away from the control.
+ */
+const ZOOM_STEP = 1.25
+/** How far round 6 opened, before the operator asked for one step nearer. */
+const ROUND_SIX_DISTANCE = 6
+
+/**
+ * The opening view: tilted 45 degrees off the disc plane and pulled back far
+ * enough to hold the whole thing in frame, so the galaxy reads as a dinner
+ * plate seen from across a table rather than as a flat face-on target.
+ *
+ * `polar` is measured down from the up axis, and the disc lies in the world XY
+ * plane with the renderer's up axis at `+y`. A camera on the `+y` side of that
+ * plane, meaning anything below `PI / 2`, puts the disc's near edge high in
+ * frame and its far edge low, which reads as standing under it looking up.
+ * `3 * PI / 4` crosses to the `-y` side, keeping the same 45 degree tilt and
+ * the same side-on `+z` approach while inverting which edge rises.
  */
 export const DEFAULT_ORBIT: OrbitState = {
   azimuth: 0,
-  polar: Math.PI / 4,
-  distance: 6,
+  polar: (3 * Math.PI) / 4,
+  distance: ROUND_SIX_DISTANCE / ZOOM_STEP,
 }
 
 function clamp(value: number, low: number, high: number): number {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { layoutUniverse, starKey } from '../src/galaxy'
 import type { StarPosition, UniverseLayout } from '../src/galaxy'
+import { PRIVATE_REPO_ID } from '../src/privateRepo'
 import type { UniverseContribution, UniverseSnapshot } from '../src/types'
 
 interface RepoSpec {
@@ -255,6 +256,23 @@ describe('layoutUniverse', () => {
       expect(repo.starCount).toBe(40)
       expect(layout.stars[repo.starOffset]?.repoId).toBe(repo.repoId)
     }
+  })
+
+  it('pins the private repo to the core whatever its recency says', () => {
+    // Radius encodes recency everywhere else in the disc. The private repo is
+    // the one deliberate exception: the operator asked for it near the centre,
+    // so it takes ordinal 0 even when its last activity is the oldest here.
+    const layout = layoutUniverse(
+      snapshot([
+        { id: PRIVATE_REPO_ID, name: 'private', files: paths(20), lastStep: 0 },
+        { id: 1, name: 'a/r1', files: paths(20), lastStep: 4 },
+        { id: 2, name: 'a/r2', files: paths(20), lastStep: 8 },
+      ])
+    )
+    expect(layout.repos.map((repo) => repo.repoId)).toEqual([PRIVATE_REPO_ID, 2, 1])
+    expect(layout.repos[0]?.ordinal).toBe(0)
+    for (const repoId of [1, 2])
+      expect(meanRadius(layout, PRIVATE_REPO_ID)).toBeLessThan(meanRadius(layout, repoId))
   })
 
   it('handles an empty universe', () => {
