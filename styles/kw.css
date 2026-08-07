@@ -1,3 +1,17 @@
+:root {
+  /* Glass panes. `--surface-pane` over the `--bg0` field at 82% composites to
+     #1f2122, which every text token on a pane still clears AA against — the
+     numbers are pinned in test/pane-chrome.test.ts. */
+  --surface-pane-glass: color-mix(
+    in srgb,
+    var(--surface-pane) 82%,
+    transparent
+  );
+  --pane-blur: blur(10px) saturate(115%);
+  --shadow-pane:
+    0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 28px -14px rgba(0, 0, 0, 0.65);
+}
+
 html,
 body {
   margin: 0;
@@ -106,6 +120,37 @@ body {
   min-width: 0;
 }
 
+/* ============ frosted panes ============
+   Panes are glass: a translucent surface with the field blurred behind it and a
+   shadow underneath. One systemic rule — no region overrides its own pane.
+
+   The solid `--surface-pane` is declared unguarded so an engine that ignores
+   `backdrop-filter` (or `color-mix`) still paints the opaque field the text
+   contrast was measured on. A shadow is ink overflow, never scrollable
+   overflow, so it cannot start a horizontal scrollbar at 320px. */
+.pane {
+  background: var(--surface-pane);
+  box-shadow: var(--shadow-pane);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))
+  and (background: color-mix(in srgb, red 50%, transparent)) {
+  .pane {
+    background: var(--surface-pane-glass);
+    -webkit-backdrop-filter: var(--pane-blur);
+    backdrop-filter: var(--pane-blur);
+  }
+
+  /* The galaxy body paints an opaque field across the whole pane, so a backdrop
+     pass there would composite a layer under a live canvas for an effect that
+     nothing can see through. */
+  .pane:has(> .kw-graph) {
+    background: var(--surface-pane);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 .kw-pad {
   padding: var(--pane-gap);
 }
@@ -147,6 +192,14 @@ body {
   min-width: 0;
 }
 
+/* Fragment target for the header nav and the tmux windows. The header is
+   sticky, so without the offset the pane title lands underneath it. Each target
+   also carries `tabindex="-1"` (see ANCHOR_TARGET), so arriving focuses the
+   named landmark rather than only moving the viewport. */
+.kw-anchor {
+  scroll-margin-top: calc(var(--bar-h) + var(--pane-gap));
+}
+
 :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
   outline: 2px solid var(--fg0);
   outline-offset: 2px;
@@ -158,6 +211,13 @@ body {
     outline: 2px solid var(--fg0);
     outline-offset: 2px;
   }
+}
+
+/* A pane that is a fragment target takes the shared focus ring, but keeps its
+   own corner radius: the chip radius above is sized for controls. */
+.pane:focus-visible,
+.pane:focus {
+  border-radius: var(--r-pane);
 }
 
 .sr-only {
@@ -254,6 +314,14 @@ body {
 
   .kw-man-log {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Jumping to a pane eases rather than teleports — but only where motion is
+   welcome. The reduce block below force-restores `auto` regardless. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
   }
 }
 

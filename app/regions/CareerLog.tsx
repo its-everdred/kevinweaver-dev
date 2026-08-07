@@ -5,7 +5,7 @@ import {
   CAREER_LOG_HEAD,
   CAREER_LOG_PANE_TITLE,
 } from '@/content/career-log'
-import { REGION_META, type CareerLogProps } from './_contract'
+import { ANCHOR_TARGET, REGION_META, type CareerLogProps } from './_contract'
 
 const META = REGION_META.careerLog
 
@@ -23,7 +23,7 @@ export function CareerLog({
   return (
     <Pane
       as="section"
-      className={className}
+      className={[ANCHOR_TARGET.className, className].filter(Boolean).join(' ')}
       id={id}
       labelledBy={META.titleId}
       right={
@@ -31,7 +31,8 @@ export function CareerLog({
           {CAREER_LOG_HEAD}
         </span>
       }
-      style={{ scrollMarginTop: '44px', ...style }}
+      style={style}
+      tabIndex={ANCHOR_TARGET.tabIndex}
       title={CAREER_LOG_PANE_TITLE}
       titleAs="h2"
       titleId={META.titleId}

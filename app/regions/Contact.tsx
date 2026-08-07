@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import { CommitIcon } from '@/components/icons'
 import { Pane } from '@/components/ds/Pane'
 import { IDENTITY, type IdentityLink, type LinkId } from '@/content/identity'
-import { REGION_META, type ContactProps } from './_contract'
+import { ANCHOR_TARGET, REGION_META, type ContactProps } from './_contract'
 
 const META = REGION_META.contact
 
@@ -49,8 +49,9 @@ export function Contact({
     <Pane
       as="section"
       id={id}
-      className={className}
+      className={[ANCHOR_TARGET.className, className].filter(Boolean).join(' ')}
       style={style}
+      tabIndex={ANCHOR_TARGET.tabIndex}
       title={META.accessibleName}
       titleId={META.titleId}
       titleAs="h2"
