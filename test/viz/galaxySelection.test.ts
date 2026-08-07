@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   clearGalaxySelection,
   getGalaxySelection,
+  isRepoPinned,
   publishGalaxySelection,
   subscribeGalaxySelection,
 } from '../../components/viz/galaxySelection'
@@ -42,6 +43,23 @@ describe('galaxySelection', () => {
       fileCount: null,
       lastStep: null,
     })
+  })
+
+  it('reads an empty selection as following the day, not as nothing to show', () => {
+    clearGalaxySelection()
+    expect(isRepoPinned(getGalaxySelection())).toBe(false)
+  })
+
+  it('reads a published repo as pinned, including one that never contributed', () => {
+    select(baselineRepo(), 'owner/name')
+    expect(isRepoPinned(getGalaxySelection())).toBe(true)
+    publishGalaxySelection({
+      repoId: baselineRepo(),
+      name: 'owner/quiet',
+      fileCount: 0,
+      lastStep: -1,
+    })
+    expect(isRepoPinned(getGalaxySelection())).toBe(true)
   })
 
   it('does not re-notify when the same repo is published again', () => {
