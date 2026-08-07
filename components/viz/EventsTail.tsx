@@ -1,9 +1,11 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useMemo } from 'react'
 import type { ReactNode } from 'react'
+import type { BundleHead } from '@/lib/bundle/loader'
+import { dayContributions } from './galaxyDay'
 import { useInstrumentRuntime } from './instrumentRuntime'
-import { getGalaxyTimeline, subscribeGalaxyTimeline } from './galaxyTimeline'
+import { useDayClock, useDayReveal } from './useDayReveal'
 
 const EVENTS_CSS = `
 .kw-events{display:flex;flex-direction:column;gap:2px;font-size:var(--fs-micro);line-height:1.5;overflow:hidden;}
@@ -24,60 +26,25 @@ interface Row {
   readonly href: string
 }
 
+/**
+ * Rows the log will build for one day. The pane clips well before this; the cap
+ * is what keeps the busiest day in the payload — over eight thousand
+ * contributions — from building eight thousand nodes nobody can see.
+ */
 const MAX_ROWS = 60
 
-function shortRepo(name: string): string {
-  const slash = name.lastIndexOf('/')
-  return slash < 0 ? name : name.slice(slash + 1)
-}
-
 /**
- * @description Renders every contribution of the currently highlighted day in
- * the galaxy universe, updating as playback crosses days. Each row links to the
- * file on the host.
+ * @description Renders every contribution of the day the shared clock is
+ * playing, most recent first, filling the day in one line at a time across that
+ * day's one-second slot. Each row links to the file on the host.
  * @returns A live, role=log list of the day's per-repo file contributions.
  */
 export function EventsTail(): ReactNode {
   const runtime = useInstrumentRuntime()
-  const viz = runtime.status === 'ready' ? runtime.viz : null
-  const [rows, setRows] = useState<readonly Row[]>([])
-  const [date, setDate] = useState('')
-
-  useEffect(() => {
-    if (!viz) return
-    const head = viz.head
-    const short = (name: string): string =>
-      name.length > 28 ? `${name.slice(0, 25)}\u2026` : name
-
-    const renderDay = (step: number): void => {
-      const dateLabel = getGalaxyTimeline().date
-      setDate(dateLabel)
-      const eventDay = head.manifest.dayCount - 1 - step
-      const out: Row[] = []
-      for (const event of head.events) {
-        if (event.day !== eventDay) continue
-        const repo = head.repos[event.repo]
-        const label = repo?.name ?? `repo-${event.repo}`
-        const repoShort = shortRepo(label)
-        const href = repo ? repoBlobUrl(repo.name, event.path) : ''
-        out.push({
-          key: `${step}\u0000${label}\u0000${event.path}\u0000${event.actor}`,
-          repo: repoShort,
-          file: short(event.path),
-          actor: event.actor === 1 ? 'ak' : 'kw',
-          href,
-        })
-      }
-      setRows(out.slice(0, MAX_ROWS))
-    }
-
-    const firstStep = getGalaxyTimeline().step
-    if (firstStep >= 0) renderDay(firstStep)
-    return subscribeGalaxyTimeline(() => {
-      const step = getGalaxyTimeline().step
-      if (step >= 0) renderDay(step)
-    })
-  }, [viz])
+  const head = runtime.status === 'ready' ? runtime.viz.head : null
+  const clock = useDayClock()
+  const rows = useMemo(() => buildRows(head, clock.step), [head, clock.step])
+  const visible = useDayReveal(clock, rows.length)
 
   return (
     <div className="kw-events" id="kw-event-log" role="log">
@@ -87,8 +54,8 @@ export function EventsTail(): ReactNode {
       <p aria-label="contribution events for the highlighted day" aria-live="polite">
         <span className="sr-only">contribution events for the highlighted day</span>
       </p>
-      {date ? <p className="day">{date}</p> : null}
-      {rows.map((row) => (
+      {clock.date ? <p className="day">{clock.date}</p> : null}
+      {rows.slice(0, visible).map((row) => (
         <p className="e" key={row.key}>
           <span className="actor">{row.actor}</span>
           <span className="repo">{row.repo}</span>
@@ -106,6 +73,39 @@ export function EventsTail(): ReactNode {
       ) : null}
     </div>
   )
+}
+
+/**
+ * @description Builds the day's rows from the payload the runtime already
+ * decoded, most recent first.
+ * @param head The decoded payload, or null while it is still loading.
+ * @param step The step being drawn.
+ * @returns The rows to render, capped at `MAX_ROWS`.
+ */
+function buildRows(head: BundleHead | null, step: number): readonly Row[] {
+  const out: Row[] = []
+  for (const event of dayContributions(head, step)) {
+    if (out.length >= MAX_ROWS) break
+    const repo = head?.repos[event.repo]
+    const label = repo?.name ?? `repo-${event.repo}`
+    out.push({
+      key: `${step} ${label} ${event.path} ${event.actor}`,
+      repo: shortRepo(label),
+      file: shortPath(event.path),
+      actor: event.actor === 1 ? 'ak' : 'kw',
+      href: repo ? repoBlobUrl(repo.name, event.path) : '',
+    })
+  }
+  return out
+}
+
+function shortRepo(name: string): string {
+  const slash = name.lastIndexOf('/')
+  return slash < 0 ? name : name.slice(slash + 1)
+}
+
+function shortPath(path: string): string {
+  return path.length > 28 ? `${path.slice(0, 25)}…` : path
 }
 
 function repoBlobUrl(repoName: string, file: string): string {

@@ -11,6 +11,8 @@ import {
 } from './orbit'
 
 const TWO_PI = Math.PI * 2
+/** The multiplier one zoom press applies, mirrored from `useGalaxyCamera`. */
+const ZOOM_STEP = 1.25
 
 function rotate(state: OrbitState, azimuth: number, polar: number): OrbitState {
   return orbitReducer(state, { type: 'rotate', azimuth, polar })
@@ -31,18 +33,38 @@ describe('orbit state', () => {
     ])
   })
 
-  it('starts tilted above the disc, looking down at it', () => {
-    // The opening view is a plate seen from across the table rather than a flat
-    // face-on target: the camera sits as far above the disc plane as it does in
-    // front of it, which is what a 45 degree polar angle buys.
+  it('opens from the other side of the disc plane than the disc is tilted', () => {
+    // The disc lies in the world XY plane, and the renderer's up axis is +y.
+    // A camera on the +y side puts the disc's near edge high in frame and its
+    // far edge low, which reads as looking up at the disc from underneath.
+    // Crossing to the -y side inverts that: the far edge rises and the near
+    // edge drops, which is a dinner plate seen from across a table.
     expect(DEFAULT_ORBIT.azimuth).toBe(0)
-    expect(DEFAULT_ORBIT.polar).toBeCloseTo(Math.PI / 4, 12)
+    expect(DEFAULT_ORBIT.polar).toBeCloseTo((3 * Math.PI) / 4, 12)
     const view = orbitPosition(DEFAULT_ORBIT)
     expect(view.x).toBeCloseTo(0, 12)
-    expect(view.y).toBeGreaterThan(0)
-    expect(view.y).toBeCloseTo(view.z, 12)
-    // And far enough back to hold the disc, which spans 6 world units.
-    expect(DEFAULT_ORBIT.distance).toBeGreaterThan(5)
+    expect(view.y).toBeLessThan(0)
+    // Still 45 degrees off the plane, and still in front of the disc rather
+    // than behind it: only the side of the plane changed.
+    expect(view.z).toBeGreaterThan(0)
+    expect(view.y).toBeCloseTo(-view.z, 12)
+  })
+
+  it('opens inside the reducer clamps, so the first input moves nothing', () => {
+    expect(DEFAULT_ORBIT.polar).toBeGreaterThan(POLAR_MARGIN)
+    expect(DEFAULT_ORBIT.polar).toBeLessThan(Math.PI - POLAR_MARGIN)
+    expect(DEFAULT_ORBIT.distance).toBeGreaterThan(MIN_ORBIT_DISTANCE)
+    expect(DEFAULT_ORBIT.distance).toBeLessThan(MAX_ORBIT_DISTANCE)
+  })
+
+  it('opens exactly one zoom step nearer than round 6 framed it', () => {
+    // One press of zoom-out from the opening view lands back on round 6's
+    // distance, which is what "zoom in by one" means: one step of the control
+    // the viewer already has, not an unrelated number.
+    const roundSix = dolly(DEFAULT_ORBIT, ZOOM_STEP)
+    expect(roundSix.distance).toBeCloseTo(6, 12)
+    // And still far enough back to hold the disc, which spans 6 world units.
+    expect(DEFAULT_ORBIT.distance).toBeGreaterThan(4)
   })
 })
 

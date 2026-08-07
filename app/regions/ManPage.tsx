@@ -1,23 +1,15 @@
 import { Pane } from '@/components/ds/Pane'
 import {
   MAN_ABRIDGED_HINT,
-  MAN_FOOTER,
   MAN_HEADER,
   MAN_PAGE,
   type ManBlock,
   type ManSection,
 } from '@/content/manpage'
-import { fill } from '@/content/boot'
-import { REGION_META, type ManPageProps } from './_contract'
+import { ANCHOR_TARGET, REGION_META, type ManPageProps } from './_contract'
 
 const META = REGION_META.manPage
 const PAGER_TITLE_ID = 'region-man-page-pager-title'
-
-/**
- * Roff footer revision date, evaluated once when the module loads.
- */
-const REVISION_DATE = new Date().toISOString().slice(0, 10)
-const FOOTER_CENTER = fill(MAN_FOOTER.center, { date: REVISION_DATE })
 
 const KW_MAN_CSS = `
 .kw-man{display:flex;flex-direction:column;gap:var(--pane-gap);min-width:0;}
@@ -45,7 +37,6 @@ const KW_MAN_CSS = `
 .kw-man-chrome>:nth-child(1){flex:0 0 auto;}
 .kw-man-chrome>:nth-child(2){flex:1 1 auto;text-align:center;}
 .kw-man-chrome>:nth-child(3){flex:0 0 auto;}
-.kw-man-doc>.kw-man-chrome:last-of-type{margin:1.6em 0 0;}
 .kw-man-hint{display:none;margin:1.2em 0 0;padding-left:7ch;color:var(--text-faint);}
 @media (max-width:1080px){
   .kw-man-full{display:none;}
@@ -54,13 +45,20 @@ const KW_MAN_CSS = `
 `
 
 /** Renders the manual-page region. */
-export function ManPage({ id, className, style }: ManPageProps) {
+export function ManPage({
+  id = META.anchorId ?? undefined,
+  className,
+  style,
+}: ManPageProps) {
   return (
     <section
       aria-labelledby={META.titleId}
-      className={['kw-man', className].filter(Boolean).join(' ')}
+      className={['kw-man', ANCHOR_TARGET.className, className]
+        .filter(Boolean)
+        .join(' ')}
       id={id}
       style={style}
+      tabIndex={ANCHOR_TARGET.tabIndex}
     >
       <style href="kw-man" precedence="region">
         {KW_MAN_CSS}
@@ -99,11 +97,6 @@ function ManPagerPane() {
         {MAN_PAGE.map((section) => (
           <ManSectionView key={section.id} section={section} />
         ))}
-        <p className="kw-man-chrome">
-          <span>{MAN_FOOTER.left}</span>
-          <span>{FOOTER_CENTER}</span>
-          <span>{MAN_FOOTER.right}</span>
-        </p>
         <p className="kw-man-hint">{MAN_ABRIDGED_HINT}</p>
       </article>
     </Pane>

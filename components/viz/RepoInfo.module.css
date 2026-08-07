@@ -8,15 +8,90 @@
   overflow: hidden;
 }
 
+/* The pinned repo and the control that unpins it, on one line. */
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1ch;
+  margin: 0;
+  min-width: 0;
+}
+
 /* 24px floor: WCAG 2.2 SC 2.5.8 is the axe `target-size` rule the
    accessibility suite runs under `wcag22aa`. */
 .name {
   display: inline-flex;
   align-items: center;
+  min-width: 0;
   min-height: 24px;
   color: var(--aqua);
   font-weight: 700;
   overflow-wrap: anywhere;
+}
+
+/* 28px square with the same 24px floor. Round 6 shipped a 16px control here
+   and axe's `target-size` failed the build on it. */
+.dismiss {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-chip);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.dismiss:hover {
+  color: var(--text-strong);
+}
+
+/* Following the day: one row per repo contributed to on the current step. */
+.day {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  list-style: none;
+}
+
+.dayRepo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1ch;
+  width: 100%;
+  min-height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--aqua);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dayName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dayCount {
+  flex: 0 0 auto;
+  color: var(--text-faint);
 }
 
 .rows {
@@ -38,6 +113,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The extension list runs past one line for most repos, so it wraps instead of
+   being truncated to whatever fits the pane's width. */
+.rows dd.wrap {
+  overflow: visible;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .hint {

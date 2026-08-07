@@ -123,6 +123,19 @@ export const REGION_META = {
   },
 } as const satisfies Record<RegionSlot, RegionMeta>
 
+/**
+ * What a region spreads onto the node carrying its `anchorId`.
+ *
+ * The header is sticky, so a fragment target needs the shared scroll offset or
+ * the heading the nav just jumped to lands underneath it; and it needs to be
+ * programmatically focusable, so following a nav or status-bar link moves focus
+ * into the named landmark instead of only moving the viewport.
+ */
+export const ANCHOR_TARGET = {
+  className: 'kw-anchor',
+  tabIndex: -1,
+} as const
+
 export interface NavSection {
   readonly index: number
   readonly id: string
