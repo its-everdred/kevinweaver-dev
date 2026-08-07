@@ -13,7 +13,14 @@ import type { BootOverlayProps } from './_contract'
 const LINE_MS = 100
 const TAIL_LINES = 2
 const KILL_MS = 2200
-const FACTS_TIMEOUT_MS = 400
+/**
+ * Guards against a hung payload fetch, not merely a slow one. It was 400 ms
+ * when the window was 2,038 days and `grid.json` was 8.8 kB; at the full
+ * 6,056-day history the grid is 25.3 kB and 400 ms loses the race on a cold CI
+ * runner, which silently suppressed the entire overlay. It stays well under
+ * `KILL_MS`, which bounds how long the overlay may hold the page.
+ */
+const FACTS_TIMEOUT_MS = 1500
 
 const SESSION_KEY = 'kw.boot.v1'
 const MANIFEST_URL = '/data/v1/manifest.json'
