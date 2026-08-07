@@ -111,10 +111,18 @@ export function stubCanvasDocument(): void {
         textAlign: '',
         textBaseline: '',
         fillStyle: '',
+        filter: 'none',
         measureText: (text: string) => ({
           width: text.length * STUB_GLYPH_WIDTH,
         }),
         fillText: (text: string) => painted.push(text),
+        // The label's backdrop plate paints through these. They record nothing:
+        // what these tests assert about a label is its text and its dimensions,
+        // and a plate that fails to paint is a visual regression the screenshot
+        // baselines catch rather than something a stubbed context can prove.
+        save: () => undefined,
+        restore: () => undefined,
+        fillRect: () => undefined,
       }),
     }
     labelCanvases.push(canvas)

@@ -54,6 +54,10 @@ const TEXTURE_HEIGHT = 64
 const LABEL_FONT = '600 40px monospace'
 /** Blank pixels kept either side of the text so glyphs never touch the edge. */
 const TEXTURE_PADDING = 16
+/** Blur radius of the label's backdrop plate, in texture pixels. */
+const BACKDROP_BLUR = 10
+/** The plate itself: dark and translucent, so stars read faintly through it. */
+const BACKDROP_FILL = 'rgba(15, 17, 18, 0.72)'
 /**
  * Widest texture a label may ask for. Every WebGL 2 context guarantees at
  * least 2048, and a texture the driver refuses is a label that never renders
@@ -86,6 +90,7 @@ function labelTexture(name: string, color: number): LabelTexture {
   if (ctx) {
     // Resizing a canvas resets every property of its 2D context, so the font is
     // set again here rather than carried over from the measuring pass.
+    paintBackdrop(ctx, width)
     ctx.font = LABEL_FONT
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -98,6 +103,37 @@ function labelTexture(name: string, color: number): LabelTexture {
   const texture = new CanvasTexture(canvas)
   texture.minFilter = LinearFilter
   return { texture, aspect: width / TEXTURE_HEIGHT }
+}
+
+/**
+ * @description Paints the dark, soft-edged plate a label sits on, so its text
+ * reads against a dense star field instead of competing with it.
+ *
+ * The blur is baked into the label's own texture rather than sampling the scene
+ * behind it. A true backdrop blur needs a post-process pass over the rendered
+ * frame, and the galaxy island has almost no bundle budget left; a blurred
+ * plate is visually equivalent here because what sits behind a label is always
+ * the same dark background plus stars.
+ *
+ * `ctx.filter` is unsupported in some engines and silently ignored where it is,
+ * which costs the softness but never the plate.
+ * @param ctx The label canvas context.
+ * @param width Texture width in pixels.
+ */
+function paintBackdrop(ctx: CanvasRenderingContext2D, width: number): void {
+  ctx.save()
+  ctx.filter = `blur(${BACKDROP_BLUR}px)`
+  ctx.fillStyle = BACKDROP_FILL
+  // Inset by the blur radius so the softened edge fades inside the texture
+  // rather than being clipped flat against its bounds.
+  const inset = BACKDROP_BLUR
+  ctx.fillRect(
+    inset,
+    inset,
+    Math.max(0, width - inset * 2),
+    Math.max(0, TEXTURE_HEIGHT - inset * 2)
+  )
+  ctx.restore()
 }
 
 /** Texture width this name needs, measured in the font it will be painted in. */
@@ -136,8 +172,15 @@ export function createRepoLabels(
       map: label.texture,
       transparent: true,
       depthWrite: false,
+      // A label is annotation, not scenery, and it has to stay readable
+      // wherever it lands in a disc 16,000 stars deep. Without this the stars
+      // in front of it occlude it, and the labels nearest the core — the ones
+      // naming the most recent work — are exactly the ones that vanish.
+      depthTest: false,
     })
     const mesh = new Mesh(plane, material)
+    // Drawn after the star and beam fields, which keep the default order of 0.
+    mesh.renderOrder = 1
     mesh.position.set(worldX(repo.x), worldY(repo.y), worldZ(repo.z))
     mesh.scale.set(LABEL_HEIGHT * label.aspect, LABEL_HEIGHT, 1)
     mesh.visible = false

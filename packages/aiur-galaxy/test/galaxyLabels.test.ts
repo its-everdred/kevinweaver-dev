@@ -145,6 +145,20 @@ describe('createRepoLabels', () => {
     labels.dispose()
   })
 
+  it('draws every label in front of the stars rather than inside them', () => {
+    stubCanvasDocument()
+    const source = layout()
+    const labels = createRepoLabels(source.repos, THEME)
+    // The disc is thousands of stars deep and a label sits among them, so
+    // depth-testing one hides exactly the labels nearest the core — the ones
+    // naming the most recent work. Draw order decides instead of depth.
+    for (const mesh of labels.meshes) {
+      expect(mesh.material.depthTest).toBe(false)
+      expect(mesh.renderOrder).toBeGreaterThan(0)
+    }
+    labels.dispose()
+  })
+
   it('shares one plane geometry across every label', () => {
     stubCanvasDocument()
     const source = layout()
