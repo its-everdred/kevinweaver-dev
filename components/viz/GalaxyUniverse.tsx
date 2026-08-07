@@ -33,7 +33,7 @@ const EASE = 0.12
 function galaxyLabel(runtime: InstrumentRuntimeState): string {
   if (runtime.status === 'unavailable') return 'Repository galaxies unavailable'
   if (runtime.status === 'loading') return 'Repository galaxies loading'
-  return 'Repository galaxies: every repo is a galaxy, every file a star, across the contribution window.'
+  return 'Repository galaxies: one spiral disc where every repo is an arm and every file a star, brightening across the contribution window.'
 }
 
 /**
@@ -107,6 +107,7 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
 
     let raf = 0
     let last = performance.now()
+    let overflow = 0
     const frame = (now: number): void => {
       const current = getGalaxyTimeline()
       if (current.total === universe.stepCount) {
@@ -120,7 +121,8 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
         }
         if (sceneRef.current) {
           const playback = universeFrame(universe, current.step, current.direction)
-          sceneRef.current.setFrame(layout, playback)
+          const stats = sceneRef.current.setFrame(layout, playback)
+          overflow = surfaceBeamOverflow(canvas, stats.beamOverflow, overflow)
           const metrics = {
             width: Math.round(canvas.clientWidth * dpr),
             height: Math.round(canvas.clientHeight * dpr),
@@ -182,11 +184,31 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
       style={{ cursor: 'pointer', display: 'block', height: '100%', width: '100%' }}
       tabIndex={0}
     >
-      {label}. Each repo is a galaxy and each file is a star; contributions
-      light stars over the window.
+      {label}. The most recently active repos sit in the core and the oldest on
+      the rim; contributions light stars permanently over the window.
     </canvas>
   )
 })
+
+/**
+ * @description Surfaces a beam-budget overrun on the canvas instead of letting
+ * the scene drop beams silently: `data-beam-overflow` counts the contributions
+ * on the current step that produced no beam.
+ * @param canvas The galaxy canvas.
+ * @param overflow Contributions this step that produced no beam.
+ * @param previous The value already surfaced, so a steady state writes no DOM.
+ * @returns The value now surfaced.
+ */
+function surfaceBeamOverflow(
+  canvas: HTMLCanvasElement,
+  overflow: number,
+  previous: number
+): number {
+  if (overflow === previous) return previous
+  if (overflow > 0) canvas.dataset.beamOverflow = String(overflow)
+  else delete canvas.dataset.beamOverflow
+  return overflow
+}
 
 function easedContributors(
   current: Partial<Record<UniverseActor, { x: number; y: number }>>,

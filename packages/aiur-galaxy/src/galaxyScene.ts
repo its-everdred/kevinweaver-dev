@@ -1,7 +1,8 @@
 import * as THREE from 'three'
 import { starKey } from './galaxy'
-import type { RepoArm, UniverseLayout } from './galaxy'
+import type { RepoArm, StarPosition, UniverseLayout } from './galaxy'
 import type { UniverseFrame } from './universePlayback'
+import type { UniverseActor } from './types'
 import { STAR_FRAGMENT_SHADER, STAR_VERTEX_SHADER } from './galaxyShader'
 
 /** Host-agnostic theme mapped to three.js colors. */
@@ -18,28 +19,42 @@ export interface GalaxySceneTheme {
 /** Options for creating the three.js galaxy scene. */
 export interface GalaxySceneOptions {
   readonly theme?: GalaxySceneTheme
-  /** Universe layout whose repo arm segments become Points objects. */
+  /** Universe layout whose stars become the disc's single star field. */
   readonly layout: UniverseLayout
 }
 
 /** A contributor node (kw or AK) drawn in the scene. */
 export interface SceneContributor {
-  readonly actor: 0 | 1
+  readonly actor: UniverseActor
   readonly mesh: THREE.Mesh
 }
 
-/** Owns the three.js renderer, scene, camera, and per-galaxy points. */
+/** What one frame cost, so the host can surface a beam budget overrun. */
+export interface GalaxyFrameStats {
+  /** Star vertices written this frame; 0 when the step did not change. */
+  readonly promoted: number
+  /** Beams drawn for the current step. */
+  readonly beams: number
+  /** Contributions on this step that produced no beam. Never silent. */
+  readonly beamOverflow: number
+}
+
+/** Owns the three.js renderer, scene, camera, star field, beams, and labels. */
 export interface GalaxyScene {
   readonly renderer: THREE.WebGLRenderer
   readonly scene: THREE.Scene
   readonly camera: THREE.PerspectiveCamera
-  /** Per-repo points objects, indexed by arm-segment position in the layout. */
-  readonly galaxies: THREE.Points[]
+  /** The whole disc, as one Points object. */
+  readonly stars: THREE.Points
+  /** Every zap beam for the current step, as one LineSegments object. */
+  readonly beams: THREE.LineSegments
+  /** One always-visible label sprite per repo, in layout order. */
+  readonly labels: readonly THREE.Sprite[]
   readonly contributors: SceneContributor[]
-  /** Updates the star colors for the current frame. */
-  setFrame(layout: UniverseLayout, frame: UniverseFrame): void
-  /** Moves contributor nodes to eased positions. */
-  setContributors(nodes: readonly { actor: 0 | 1; x: number; y: number }[]): void
+  /** Promotes the stars this frame names and re-aims the beams. */
+  setFrame(layout: UniverseLayout, frame: UniverseFrame): GalaxyFrameStats
+  /** Moves contributor nodes to eased positions, dragging their beams along. */
+  setContributors(nodes: readonly { actor: UniverseActor; x: number; y: number }[]): void
   /** Resizes the renderer and camera aspect. */
   resize(width: number, height: number): void
   /** Renders one frame. */
@@ -48,15 +63,72 @@ export interface GalaxyScene {
   dispose(): void
 }
 
+/** The disc's single star field, with brightness that only ever increases. */
+export interface StarField {
+  readonly points: THREE.Points
+  /**
+   * Promotes the vertices this frame names and demotes the step it leaves.
+   * Returns how many vertices were written, which is 0 for a repeated step.
+   */
+  setFrame(layout: UniverseLayout, frame: UniverseFrame): number
+  dispose(): void
+}
+
+/** The always-on repo labels, one sprite per arm segment. */
+export interface RepoLabels {
+  readonly sprites: readonly THREE.Sprite[]
+  dispose(): void
+}
+
+/** Where an actor's beams start, in world units. */
+export interface BeamOrigin {
+  readonly actor: UniverseActor
+  readonly x: number
+  readonly y: number
+  readonly z: number
+}
+
+/** Result of aiming the beams at a step. */
+export interface BeamStats {
+  readonly drawn: number
+  /** Contributions the cap refused, or whose star is not in the layout. */
+  readonly dropped: number
+}
+
+/** Every zap beam for a step, in one reusable LineSegments object. */
+export interface BeamField {
+  readonly lines: THREE.LineSegments
+  /** Aims one beam per current contribution; caps and reports the overflow. */
+  setFrame(
+    layout: UniverseLayout,
+    frame: UniverseFrame,
+    origins: readonly BeamOrigin[]
+  ): BeamStats
+  /** Re-anchors the drawn beams as their contributor nodes ease into place. */
+  setOrigins(origins: readonly BeamOrigin[]): void
+  dispose(): void
+}
+
 /** Field-to-world scale of the disc, per axis. */
 const WORLD_WIDTH = 6
 const WORLD_HEIGHT = 4
+/** World depth of the contributor nodes, just in front of the disc plane. */
+const CONTRIBUTOR_DEPTH = 0.5
+/**
+ * Beams a single step may draw. The buffer is preallocated to this size, so a
+ * day busier than the cap surfaces as `beamOverflow` rather than truncating.
+ */
+export const MAX_BEAMS = 2048
+const BEAM_OPACITY = 0.75
 
 const DEFAULT_THEME: GalaxySceneTheme = {
   background: 0x1d2021,
-  star: 0x5c6370,
-  liveStar: 0x81a1c1,
-  currentStar: 0x98c379,
+  // Untouched stars clear a 4.5:1 contrast ratio against the background. The
+  // former 0x5c6370 measured 2.7:1 and read as empty space, which is why 58 of
+  // 60 repos looked missing rather than merely quiet.
+  star: 0x8b98ab,
+  liveStar: 0xb7d3ef,
+  currentStar: 0xd8f2b0,
   contributor: 0x61afef,
   agent: 0xc678dd,
   label: 0xd8dee9,
@@ -64,6 +136,30 @@ const DEFAULT_THEME: GalaxySceneTheme = {
 
 function toColor(value: number): THREE.Color {
   return new THREE.Color(value)
+}
+
+function worldX(field: number): number {
+  return (field - 0.5) * WORLD_WIDTH
+}
+
+function worldY(field: number): number {
+  return (field - 0.5) * WORLD_HEIGHT
+}
+
+function worldZ(field: number): number {
+  return (field - 0.5) * WORLD_HEIGHT
+}
+
+function shortName(name: string): string {
+  const slash = name.lastIndexOf('/')
+  return slash < 0 ? name : name.slice(slash + 1)
+}
+
+function writeColor(array: Float32Array, index: number, color: THREE.Color): void {
+  const offset = index * 3
+  array[offset] = color.r
+  array[offset + 1] = color.g
+  array[offset + 2] = color.b
 }
 
 function createLabelSprite(name: string, color: number): THREE.Sprite {
@@ -77,8 +173,7 @@ function createLabelSprite(name: string, color: number): THREE.Sprite {
     ctx.textBaseline = 'middle'
     const rgb = new THREE.Color(color)
     ctx.fillStyle = `rgb(${Math.round(rgb.r * 255)},${Math.round(rgb.g * 255)},${Math.round(rgb.b * 255)})`
-    const short = name.split('/').pop() ?? name
-    ctx.fillText(short, 256, 32)
+    ctx.fillText(shortName(name), 256, 32)
   }
   const texture = new THREE.CanvasTexture(canvas)
   texture.minFilter = THREE.LinearFilter
@@ -95,13 +190,13 @@ function createLabelSprite(name: string, color: number): THREE.Sprite {
 function addContributorNode(
   scene: THREE.Scene,
   contributors: SceneContributor[],
-  actor: 0 | 1,
+  actor: UniverseActor,
   color: number
 ): void {
   const geometry = new THREE.SphereGeometry(0.06, 12, 12)
   const material = new THREE.MeshBasicMaterial({ color })
   const mesh = new THREE.Mesh(geometry, material)
-  mesh.position.set(0, 0, 0.5)
+  mesh.position.set(0, 0, CONTRIBUTOR_DEPTH)
   scene.add(mesh)
   contributors.push({ actor, mesh })
 }
@@ -109,8 +204,9 @@ function addContributorNode(
 /**
  * @description Builds a three.js galaxy scene from a universe layout.
  * @param canvas The canvas the renderer draws into.
- * @param options Theme colors.
- * @returns An owned scene with one Points object per galaxy.
+ * @param options Theme colors and the layout to render.
+ * @returns An owned scene holding one star field, one beam field, and one
+ * label sprite per repo.
  */
 export function createGalaxyScene(
   canvas: HTMLCanvasElement,
@@ -128,57 +224,59 @@ export function createGalaxyScene(
   const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100)
   camera.position.z = 2.6
 
-  const galaxies: THREE.Points[] = []
   const contributors: SceneContributor[] = []
-  const labels: THREE.Sprite[] = []
   addContributorNode(scene, contributors, 0, theme.contributor)
   addContributorNode(scene, contributors, 1, theme.agent)
 
-  for (let index = 0; index < options.layout.repos.length; index++) {
-    const repo = options.layout.repos[index]
-    if (!repo) continue
-    const points = buildGalaxyPoints(options.layout, index, theme)
-    scene.add(points)
-    galaxies.push(points)
-    const label = createLabelSprite(repo.name, theme.label)
-    label.position.set((repo.x - 0.5) * WORLD_WIDTH, (repo.y - 0.5) * WORLD_HEIGHT, 0)
-    scene.add(label)
-    labels.push(label)
-  }
+  // One star field and one beam field, whatever the star count: the draw call
+  // count tracks the repo count through the labels, not the 16k stars.
+  const starField = createStarField(options.layout, theme)
+  const beamField = createBeamField(theme)
+  const labels = createRepoLabels(options.layout.repos, theme)
+  scene.add(starField.points)
+  scene.add(beamField.lines)
+  for (const sprite of labels.sprites) scene.add(sprite)
 
-  const setFrame = (layout: UniverseLayout, frame: UniverseFrame): void => {
-    const current = new Set(frame.currentFiles)
-    for (let index = 0; index < layout.repos.length; index++) {
-      const repo = layout.repos[index]
-      if (!repo) continue
-      const points = galaxies[index]
-      if (!points) continue
-      updateStarColors(points, layout, repo, frame, current, theme)
-    }
-  }
+  const contributorOrigins = (): readonly BeamOrigin[] =>
+    contributors.map((contributor) => ({
+      actor: contributor.actor,
+      x: contributor.mesh.position.x,
+      y: contributor.mesh.position.y,
+      z: contributor.mesh.position.z,
+    }))
 
   return {
     renderer,
     scene,
     camera,
-    galaxies,
+    stars: starField.points,
+    beams: beamField.lines,
+    labels: labels.sprites,
     contributors,
-    setFrame,
+    setFrame(layout, frame) {
+      const promoted = starField.setFrame(layout, frame)
+      const beams = beamField.setFrame(layout, frame, contributorOrigins())
+      return { promoted, beams: beams.drawn, beamOverflow: beams.dropped }
+    },
     setContributors(nodes) {
       // Hide every contributor first; only nodes present in the current frame
       // become visible at their centroid. This prevents a stray node lingering
       // at the field center when an actor has no contribution that day.
       for (const contributor of contributors) contributor.mesh.visible = false
-      for (let index = 0; index < nodes.length; index++) {
-        const node = nodes[index]
-        if (!node) continue
+      const origins: BeamOrigin[] = []
+      for (const node of nodes) {
         const existing = contributors.find((c) => c.actor === node.actor)
         if (!existing) continue
         existing.mesh.visible = true
-        existing.mesh.position.x = (node.x - 0.5) * 6
-        existing.mesh.position.y = (node.y - 0.5) * 4
-        existing.mesh.position.z = 0.5
+        existing.mesh.position.set(worldX(node.x), worldY(node.y), CONTRIBUTOR_DEPTH)
+        origins.push({
+          actor: node.actor,
+          x: existing.mesh.position.x,
+          y: existing.mesh.position.y,
+          z: existing.mesh.position.z,
+        })
       }
+      beamField.setOrigins(origins)
     },
     resize(width, height) {
       renderer.setSize(width, height, false)
@@ -189,16 +287,13 @@ export function createGalaxyScene(
       renderer.render(scene, camera)
     },
     dispose() {
-      for (const points of galaxies) points.geometry.dispose()
+      starField.dispose()
+      beamField.dispose()
+      labels.dispose()
       for (const contributor of contributors) {
         contributor.mesh.geometry.dispose()
         const material = contributor.mesh.material
         if (material instanceof THREE.Material) material.dispose()
-      }
-      for (const label of labels) {
-        const material = label.material
-        if (material.map) material.map.dispose()
-        material.dispose()
       }
       renderer.dispose()
     },
@@ -206,41 +301,43 @@ export function createGalaxyScene(
 }
 
 /**
- * @description Builds a Points object for one repo's arm segment of the disc.
- * @param layout The full layout; star positions are already in field space.
- * @param index Arm-segment index into the layout's repos.
+ * @description Builds the Points object for the whole disc. One geometry holds
+ * every star, in layout order, so a vertex index is a layout index.
+ * @param layout The layout; star positions are already in field space.
  * @param theme Color palette.
- * @returns A three.js Points object.
- * @throws RangeError when the index names no arm segment.
+ * @returns A three.js Points object with every star at its untouched color.
  */
 export function buildGalaxyPoints(
   layout: UniverseLayout,
-  index: number,
   theme: GalaxySceneTheme
 ): THREE.Points {
-  const repo = layout.repos[index]
-  if (!repo) throw new RangeError(`galaxy index ${index} is out of range`)
-
-  const positions: number[] = []
-  const colors: number[] = []
-  const sizes: number[] = []
+  const count = layout.stars.length
+  const positions = new Float32Array(count * 3)
+  const colors = new Float32Array(count * 3)
+  const sizes = new Float32Array(count)
+  const scales = new Float32Array(count).fill(1)
   const starColor = toColor(theme.star)
 
-  for (const star of armStars(layout, repo)) {
-    positions.push(
-      (star.x - 0.5) * WORLD_WIDTH,
-      (star.y - 0.5) * WORLD_HEIGHT,
-      (star.z - 0.5) * WORLD_HEIGHT
-    )
-    colors.push(starColor.r, starColor.g, starColor.b)
-    sizes.push(0.09 + ((index + star.file.length) % 8) * 0.008)
+  for (let index = 0; index < count; index++) {
+    const star = layout.stars[index]
+    if (!star) continue
+    const offset = index * 3
+    positions[offset] = worldX(star.x)
+    positions[offset + 1] = worldY(star.y)
+    positions[offset + 2] = worldZ(star.z)
+    writeColor(colors, index, starColor)
+    sizes[index] = starSize(star)
   }
 
   const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-  geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1))
-  geometry.setAttribute('scale', new THREE.Float32BufferAttribute(Array(repo.starCount).fill(1), 1))
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const color = new THREE.BufferAttribute(colors, 3)
+  // Brightness is the only attribute playback mutates, and it mutates a
+  // handful of vertices per step.
+  color.setUsage(THREE.DynamicDrawUsage)
+  geometry.setAttribute('color', color)
+  geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1))
+  geometry.setAttribute('scale', new THREE.BufferAttribute(scales, 1))
 
   const material = new THREE.ShaderMaterial({
     vertexShader: STAR_VERTEX_SHADER,
@@ -254,34 +351,207 @@ export function buildGalaxyPoints(
   return new THREE.Points(geometry, material)
 }
 
-function armStars(layout: UniverseLayout, repo: RepoArm): UniverseLayout['stars'] {
-  return layout.stars.slice(repo.starOffset, repo.starOffset + repo.starCount)
+/** Deterministic per-star size, from stable identifiers rather than a clock. */
+function starSize(star: StarPosition): number {
+  return 0.09 + ((star.repoId + star.file.length) % 8) * 0.008
 }
 
-function updateStarColors(
-  points: THREE.Points,
+/**
+ * @description Creates the disc's star field, where brightness is cumulative
+ * history rather than current state: a star only ever moves from untouched to
+ * live, and only on the step that names it. Per-step cost is proportional to
+ * that step's contribution count, never to the total star count.
+ * @param layout The layout to build the field from.
+ * @param theme Color palette.
+ * @returns The Points object plus its step-driven color updates.
+ */
+export function createStarField(
   layout: UniverseLayout,
-  repo: RepoArm,
-  frame: UniverseFrame,
-  current: ReadonlySet<string>,
   theme: GalaxySceneTheme
-): void {
-  const colorAttr = points.geometry.getAttribute('color')
-  if (!colorAttr) return
+): StarField {
+  const points = buildGalaxyPoints(layout, theme)
+  const attribute = points.geometry.getAttribute('color') as THREE.BufferAttribute
+  const colors = attribute.array as Float32Array
   const live = toColor(theme.liveStar)
-  const currentColor = toColor(theme.currentStar)
-  const base = toColor(theme.star)
-  const array = colorAttr.array as Float32Array
-  const stars = armStars(layout, repo)
-  for (let index = 0; index < stars.length; index++) {
-    const star = stars[index]
-    if (!star) continue
-    const key = starKey(star.repoId, star.file)
-    const color = current.has(key) ? currentColor : frame.liveFiles.has(key) ? live : base
-    const offset = index * 3
-    array[offset] = color.r
-    array[offset + 1] = color.g
-    array[offset + 2] = color.b
+  const current = toColor(theme.currentStar)
+  // Outside the clamped step range in both directions, so the first frame
+  // resyncs against the frame's live set instead of advancing into it.
+  let lastStep = -2
+  let lastCurrent: readonly string[] = []
+
+  const paint = (
+    source: UniverseLayout,
+    keys: Iterable<string>,
+    color: THREE.Color
+  ): number => {
+    let written = 0
+    for (const key of keys) {
+      const index = source.starIndex.get(key)
+      if (index === undefined) continue
+      writeColor(colors, index, color)
+      written++
+    }
+    return written
   }
-  colorAttr.needsUpdate = true
+
+  return {
+    points,
+    setFrame(source, frame) {
+      if (frame.step === lastStep) return 0
+      // A single step, in either direction, only has to demote the step it
+      // leaves. A seek repaints the cumulative live set, which the frame loop
+      // never reaches: the clock advances one step at a time.
+      const written =
+        Math.abs(frame.step - lastStep) === 1
+          ? paint(source, lastCurrent, live)
+          : paint(source, frame.liveFiles, live)
+      const promoted = written + paint(source, frame.currentFiles, current)
+      lastStep = frame.step
+      lastCurrent = frame.currentFiles
+      if (promoted > 0) attribute.needsUpdate = true
+      return promoted
+    },
+    dispose() {
+      points.geometry.dispose()
+      const material = points.material
+      if (material instanceof THREE.Material) material.dispose()
+    },
+  }
+}
+
+/**
+ * @description Creates one label sprite per repo, positioned at that repo's arm
+ * segment and visible at all times. Overlap between neighbouring labels is
+ * accepted: reading the full repo set outranks a clean frame, so nothing here
+ * hides or culls a label.
+ * @param repos The layout's arm segments, in recency order.
+ * @param theme Color palette.
+ * @returns The sprites plus their texture and material disposal.
+ */
+export function createRepoLabels(
+  repos: readonly RepoArm[],
+  theme: GalaxySceneTheme
+): RepoLabels {
+  const sprites: THREE.Sprite[] = []
+  for (const repo of repos) {
+    const sprite = createLabelSprite(repo.name, theme.label)
+    sprite.position.set(worldX(repo.x), worldY(repo.y), worldZ(repo.z))
+    sprites.push(sprite)
+  }
+  return {
+    sprites,
+    dispose() {
+      for (const sprite of sprites) {
+        // The sprite geometry is shared across every three.js sprite; only the
+        // material and its canvas texture belong to this label.
+        const material = sprite.material
+        if (material.map) material.map.dispose()
+        material.dispose()
+      }
+    },
+  }
+}
+
+/**
+ * @description Creates the beam field: one LineSegments object with a
+ * preallocated buffer and a per-step draw range, so a step change re-aims
+ * beams without allocating geometry.
+ * @param theme Color palette; actor 0 draws in `contributor`, actor 1 in `agent`.
+ * @param maxBeams Beams a single step may draw before the overflow surfaces.
+ * @returns The LineSegments object plus its per-step and per-frame updates.
+ */
+export function createBeamField(
+  theme: GalaxySceneTheme,
+  maxBeams: number = MAX_BEAMS
+): BeamField {
+  const positions = new Float32Array(maxBeams * 6)
+  const colors = new Float32Array(maxBeams * 6)
+  const geometry = new THREE.BufferGeometry()
+  const position = new THREE.BufferAttribute(positions, 3)
+  const color = new THREE.BufferAttribute(colors, 3)
+  position.setUsage(THREE.DynamicDrawUsage)
+  color.setUsage(THREE.DynamicDrawUsage)
+  geometry.setAttribute('position', position)
+  geometry.setAttribute('color', color)
+  geometry.setDrawRange(0, 0)
+  const material = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: BEAM_OPACITY,
+    depthWrite: false,
+  })
+  const lines = new THREE.LineSegments(geometry, material)
+  // The draw range covers a fraction of the preallocated buffer, so the
+  // bounding sphere three.js would compute from it is meaningless.
+  lines.frustumCulled = false
+
+  const actorColors = [toColor(theme.contributor), toColor(theme.agent)] as const
+  const anchors = [new THREE.Vector3(), new THREE.Vector3()] as const
+  /** Actor of each drawn beam, so an eased node re-anchors only its own. */
+  const beamActors: UniverseActor[] = []
+
+  const anchor = (origins: readonly BeamOrigin[]): void => {
+    for (const origin of origins) anchors[origin.actor]?.set(origin.x, origin.y, origin.z)
+  }
+
+  const writeOrigin = (beam: number, actor: UniverseActor): void => {
+    const point = anchors[actor]
+    if (!point) return
+    const offset = beam * 6
+    positions[offset] = point.x
+    positions[offset + 1] = point.y
+    positions[offset + 2] = point.z
+  }
+
+  /** Uploads only the beams in the draw range, not the whole capped buffer. */
+  const flush = (attribute: THREE.BufferAttribute, drawn: number): void => {
+    attribute.clearUpdateRanges()
+    attribute.addUpdateRange(0, drawn * 6)
+    attribute.needsUpdate = true
+  }
+
+  return {
+    lines,
+    setFrame(layout, frame, origins) {
+      anchor(origins)
+      beamActors.length = 0
+      let drawn = 0
+      let dropped = 0
+      for (const contribution of frame.currentContributions) {
+        const index = layout.starIndex.get(starKey(contribution.repo, contribution.file))
+        const star = index === undefined ? undefined : layout.stars[index]
+        if (!star || drawn >= maxBeams) {
+          dropped++
+          continue
+        }
+        const offset = drawn * 6
+        writeOrigin(drawn, contribution.actor)
+        positions[offset + 3] = worldX(star.x)
+        positions[offset + 4] = worldY(star.y)
+        positions[offset + 5] = worldZ(star.z)
+        const beamColor = actorColors[contribution.actor] ?? actorColors[0]
+        writeColor(colors, drawn * 2, beamColor)
+        writeColor(colors, drawn * 2 + 1, beamColor)
+        beamActors.push(contribution.actor)
+        drawn++
+      }
+      geometry.setDrawRange(0, drawn * 2)
+      flush(position, drawn)
+      flush(color, drawn)
+      return { drawn, dropped }
+    },
+    setOrigins(origins) {
+      anchor(origins)
+      for (let beam = 0; beam < beamActors.length; beam++) {
+        const actor = beamActors[beam]
+        if (actor === undefined) continue
+        writeOrigin(beam, actor)
+      }
+      flush(position, beamActors.length)
+    },
+    dispose() {
+      geometry.dispose()
+      material.dispose()
+    },
+  }
 }
