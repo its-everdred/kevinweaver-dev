@@ -1,118 +1,202 @@
 import type { UniverseRepo, UniverseSnapshot } from './types'
 
-/** A star position in normalized galaxy-local units (both axes in [0, 1]). */
+/** A star in the disc, in normalized field units (every axis in [0, 1]). */
 export interface StarPosition {
-  readonly x: number
-  readonly y: number
+  /** Repo this star belongs to. */
+  readonly repoId: number
   /** Repo-relative file path this star represents. */
   readonly file: string
+  /** Field x, 0.5 at the galactic center. */
+  readonly x: number
+  /** Field y, 0.5 at the galactic center. */
+  readonly y: number
+  /** Field z, 0.5 in the disc plane; the disc's thickness lives on this axis. */
+  readonly z: number
 }
 
-/** A galaxy (repo) position in normalized field units plus its star positions. */
-export interface GalaxyLayout {
+/** One repo's segment of the single disc. */
+export interface RepoArm {
   readonly repoId: number
   readonly name: string
-  /** Field center of this galaxy, both axes in [0, 1]. */
+  /** Rank in recency order; 0 is the most recently active repo. */
+  readonly ordinal: number
+  /** Step of this repo's most recent contribution, or -1 when never active. */
+  readonly lastStep: number
+  /** Segment anchor, in the same field units as a star. */
   readonly x: number
   readonly y: number
-  /** Fraction of the field radius this galaxy occupies. */
+  readonly z: number
+  /** Distance of the anchor from the disc center, in field units. */
   readonly radius: number
-  /** Star positions relative to the galaxy center, in [0, 1] galaxy-local. */
-  readonly stars: readonly StarPosition[]
-}
-
-/** Result of laying out a universe as a cluster of galaxies. */
-export interface UniverseLayout {
-  readonly galaxies: readonly GalaxyLayout[]
-  /** Total number of stars across all galaxies. */
+  /** Index of this repo's first star in `stars`. */
+  readonly starOffset: number
+  /** Number of stars this repo contributes. */
   readonly starCount: number
 }
 
-const FIELD_MARGIN = 0.08
+/** Result of laying a universe out as one recency-ordered spiral disc. */
+export interface UniverseLayout {
+  /** Arm segments, most recently active first. */
+  readonly repos: readonly RepoArm[]
+  /** Every star in the disc, grouped by repo in `repos` order. */
+  readonly stars: readonly StarPosition[]
+  /** Vertex index by star key, so the render path never searches for a star. */
+  readonly starIndex: ReadonlyMap<string, number>
+  /** Total number of stars in the disc. */
+  readonly starCount: number
+}
+
+/** Half-extent of the disc in field units, leaving a margin for labels. */
+export const DISC_FIELD_RADIUS = 0.42
+
+const NEVER_ACTIVE = -1
+const ARM_COUNT = 2
+/** Radians of arm rotation between the core and the rim. */
+const ARM_WINDING = 2.2 * Math.PI
+/** Width of the per-star position along its repo's arm, centered on zero. */
+const ALONG_SPAN = 1.5
+/** Radial smear, wide enough that adjacent repos blend instead of banding. */
+const RADIAL_SMEAR = 0.19
+const ANGULAR_SMEAR = 1.15
+const ANGULAR_JITTER = 0.42
+const DISC_THICKNESS = 0.09
+/** How much of the disc's thickness the rim loses relative to the core. */
+const CORE_BULGE = 0.65
+/** Largest radial coordinate a star can reach, used to normalize to the field. */
+const MAX_RADIAL = 1 + (ALONG_SPAN / 2) * RADIAL_SMEAR
+
+/** A repo paired with the step of its most recent contribution. */
+interface RepoRecency {
+  readonly repo: UniverseRepo
+  readonly lastStep: number
+}
+
+/** An arm segment before per-star smearing. */
+interface ArmGeometry {
+  /** Radial coordinate of the segment, 0 at the core and 1 at the rim. */
+  readonly t: number
+  /** Angle of the arm at that radius, in radians. */
+  readonly angle: number
+}
 
 /**
- * @description Lays out a universe as a cluster of galaxies on a spiral of
- * galaxy centers, each with its files distributed as a deterministic spiral.
+ * @description Builds the repo-qualified key that identifies a star.
+ * @param repoId Repo id owning the file.
+ * @param file Repo-relative file path.
+ * @returns The `"repoId:path"` key shared with the playback frame.
+ */
+export function starKey(repoId: number, file: string): string {
+  return `${repoId}:${file}`
+}
+
+/**
+ * @description Lays a universe out as one spiral disc: radius encodes recency,
+ * so the most recently active repo sits at the core and the least recently
+ * active at the rim, and every file is a star smeared along its repo's arm.
  * @param snapshot The universe snapshot to position.
- * @returns Per-galaxy field positions and per-star galaxy-local positions.
+ * @returns The arm segments, every star, and a star key to vertex index map.
  *
- * Deterministic: positions derive from a hash of stable identifiers, never
- * from randomness or insertion order, so renders are bit-reproducible.
+ * Deterministic: recency comes from the contribution log and positions derive
+ * from a hash of stable identifiers, never from randomness, insertion order, or
+ * the clock, so renders are bit-reproducible.
  */
 export function layoutUniverse(snapshot: UniverseSnapshot): UniverseLayout {
-  const galaxies: GalaxyLayout[] = []
-  let starCount = 0
-
-  for (let index = 0; index < snapshot.repos.length; index++) {
-    const repo = snapshot.repos[index]
-    if (!repo) continue
-    const starCountInGalaxy = repo.files.length
-    const angle = spiralAngle(index)
-    const radius = spiralRadius(index, snapshot.repos.length)
-    const fieldRadius = 0.5 - FIELD_MARGIN
-    const galaxyRadius = galaxyScale(starCountInGalaxy)
-    const stars = distributeStars(repo)
-    galaxies.push({
-      repoId: repo.id,
-      name: repo.name,
-      x: 0.5 + Math.cos(angle) * radius * fieldRadius,
-      y: 0.5 + Math.sin(angle) * radius * fieldRadius,
-      radius: galaxyRadius,
-      stars,
-    })
-    starCount += starCountInGalaxy
-  }
-
-  return { galaxies, starCount }
-}
-
-/**
- * @description Places galaxy centers along an Archimedean spiral so the cluster
- * reads as a coherent structure even with many repos.
- */
-/**
- * @description Golden-angle sunflower placement gives even galaxy spacing with
- * no tight winding, unlike an Archimedean spiral that clusters points.
- */
-function spiralAngle(index: number): number {
-  return index * Math.PI * (3 - Math.sqrt(5))
-}
-function spiralRadius(index: number, total: number): number {
-  return Math.min(1, Math.sqrt(index / Math.max(1, total)))
-}
-
-/**
- * @description Scales a galaxy by its star count: more files, a larger galaxy.
- */
-function galaxyScale(starCount: number): number {
-  return Math.max(0.07, Math.min(0.16, 0.055 + Math.sqrt(starCount) * 0.004))
-}
-
-/**
- * @description Distributes a repo's files as a spiral galaxy of stars. The arm
- * and radial offset come from a deterministic hash of the file path so every
- * file is stable across renders.
- */
-function distributeStars(
-  repo: UniverseRepo
-): readonly StarPosition[] {
+  const ordered = orderByRecency(snapshot)
+  const repos: RepoArm[] = []
   const stars: StarPosition[] = []
-  for (let index = 0; index < repo.files.length; index++) {
-    const file = repo.files[index]
-    if (!file) continue
-    const radiusSeed = hash01(`${repo.id}:${file}:radius`)
-    const angleSeed = hash01(`${repo.id}:${file}:angle`)
-    // Two spiral arms; each file rides one arm at a hash-derived radius.
-    const angle =
-      (angleSeed * Math.PI * 2) + (index % 2) * Math.PI + radiusSeed * 4
-    const radius = 0.1 + radiusSeed * 0.9
-    stars.push({
-      x: 0.5 + Math.cos(angle) * radius * 0.5,
-      y: 0.5 + Math.sin(angle) * radius * 0.5,
-      file,
+  const starIndex = new Map<string, number>()
+
+  for (let ordinal = 0; ordinal < ordered.length; ordinal++) {
+    const entry = ordered[ordinal]
+    if (!entry) continue
+    const arm = armGeometry(ordinal, ordered.length)
+    const starOffset = stars.length
+    appendStars(stars, starIndex, entry.repo, arm)
+    repos.push({
+      repoId: entry.repo.id,
+      name: entry.repo.name,
+      ordinal,
+      lastStep: entry.lastStep,
+      ...fieldPoint(arm.t, arm.angle, 0),
+      radius: (arm.t / MAX_RADIAL) * DISC_FIELD_RADIUS,
+      starOffset,
+      starCount: stars.length - starOffset,
     })
   }
-  return stars
+
+  return { repos, stars, starIndex, starCount: stars.length }
+}
+
+/**
+ * @description Orders repos by most recent contribution, newest first. Repos
+ * that never contributed sort to the rim, and repos sharing a step fall back to
+ * ascending id so input order never moves a star.
+ */
+function orderByRecency(snapshot: UniverseSnapshot): readonly RepoRecency[] {
+  const lastSteps = new Map<number, number>()
+  for (const contribution of snapshot.contributions) {
+    const previous = lastSteps.get(contribution.repo) ?? NEVER_ACTIVE
+    if (contribution.step > previous) lastSteps.set(contribution.repo, contribution.step)
+  }
+  return snapshot.repos
+    .map((repo) => ({ repo, lastStep: lastSteps.get(repo.id) ?? NEVER_ACTIVE }))
+    .sort((left, right) => right.lastStep - left.lastStep || left.repo.id - right.repo.id)
+}
+
+/**
+ * @description Maps a recency ordinal onto one of the disc's spiral arms. The
+ * square root keeps the core dense: early ordinals are packed, later ones step
+ * outward by less and less, which is what makes the arms read as arms.
+ */
+function armGeometry(ordinal: number, total: number): ArmGeometry {
+  const t = Math.sqrt((ordinal + 0.5) / Math.max(1, total))
+  const arm = ordinal % ARM_COUNT
+  return { t, angle: (arm * 2 * Math.PI) / ARM_COUNT + t * ARM_WINDING }
+}
+
+/**
+ * @description Projects a radial coordinate, angle, and depth into field units.
+ * A negative radius mirrors the star across the center, which fills the core
+ * rather than clamping the innermost repos into a hot spot.
+ */
+function fieldPoint(
+  radial: number,
+  angle: number,
+  depth: number
+): { x: number; y: number; z: number } {
+  const scaled = (radial / MAX_RADIAL) * DISC_FIELD_RADIUS
+  return {
+    x: 0.5 + Math.cos(angle) * scaled,
+    y: 0.5 + Math.sin(angle) * scaled,
+    z: 0.5 + depth,
+  }
+}
+
+/**
+ * @description Appends one star per file, smeared radially and angularly around
+ * the repo's arm segment so adjacent repos blend into a continuous arm. Every
+ * file becomes a star: there is no cap, and volume buys density, not area.
+ */
+function appendStars(
+  stars: StarPosition[],
+  starIndex: Map<string, number>,
+  repo: UniverseRepo,
+  arm: ArmGeometry
+): void {
+  for (const file of repo.files) {
+    const key = starKey(repo.id, file)
+    if (starIndex.has(key)) continue
+    const along = (hash01(`${key}:along`) - 0.5) * ALONG_SPAN
+    const angle =
+      arm.angle + along * ANGULAR_SMEAR + (hash01(`${key}:angle`) - 0.5) * ANGULAR_JITTER
+    const depth = (hash01(`${key}:depth`) - 0.5) * DISC_THICKNESS * (1 - arm.t * CORE_BULGE)
+    starIndex.set(key, stars.length)
+    stars.push({
+      repoId: repo.id,
+      file,
+      ...fieldPoint(arm.t + along * RADIAL_SMEAR, angle, depth),
+    })
+  }
 }
 
 /**

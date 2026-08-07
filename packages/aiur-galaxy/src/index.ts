@@ -14,7 +14,14 @@ export {
   type DagLayout,
   type DagPosition,
 } from './layout'
-export { layoutUniverse, type GalaxyLayout, type StarPosition, type UniverseLayout } from './galaxy'
+export {
+  DISC_FIELD_RADIUS,
+  layoutUniverse,
+  starKey,
+  type RepoArm,
+  type StarPosition,
+  type UniverseLayout,
+} from './galaxy'
 export {
   clampCommitIndex,
   liveFilesAt,

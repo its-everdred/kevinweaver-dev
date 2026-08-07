@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import type { UniverseLayout } from './galaxy'
+import { starKey } from './galaxy'
+import type { RepoArm, UniverseLayout } from './galaxy'
 import type { UniverseFrame } from './universePlayback'
 import { STAR_FRAGMENT_SHADER, STAR_VERTEX_SHADER } from './galaxyShader'
 
@@ -17,7 +18,7 @@ export interface GalaxySceneTheme {
 /** Options for creating the three.js galaxy scene. */
 export interface GalaxySceneOptions {
   readonly theme?: GalaxySceneTheme
-  /** Universe layout whose galaxies become Points objects. */
+  /** Universe layout whose repo arm segments become Points objects. */
   readonly layout: UniverseLayout
 }
 
@@ -32,7 +33,7 @@ export interface GalaxyScene {
   readonly renderer: THREE.WebGLRenderer
   readonly scene: THREE.Scene
   readonly camera: THREE.PerspectiveCamera
-  /** Per-galaxy points objects, indexed by galaxy position in the layout. */
+  /** Per-repo points objects, indexed by arm-segment position in the layout. */
   readonly galaxies: THREE.Points[]
   readonly contributors: SceneContributor[]
   /** Updates the star colors for the current frame. */
@@ -46,6 +47,10 @@ export interface GalaxyScene {
   /** Releases GPU resources. */
   dispose(): void
 }
+
+/** Field-to-world scale of the disc, per axis. */
+const WORLD_WIDTH = 6
+const WORLD_HEIGHT = 4
 
 const DEFAULT_THEME: GalaxySceneTheme = {
   background: 0x1d2021,
@@ -129,26 +134,26 @@ export function createGalaxyScene(
   addContributorNode(scene, contributors, 0, theme.contributor)
   addContributorNode(scene, contributors, 1, theme.agent)
 
-  for (let index = 0; index < options.layout.galaxies.length; index++) {
-    const galaxy = options.layout.galaxies[index]
-    if (!galaxy) continue
+  for (let index = 0; index < options.layout.repos.length; index++) {
+    const repo = options.layout.repos[index]
+    if (!repo) continue
     const points = buildGalaxyPoints(options.layout, index, theme)
     scene.add(points)
     galaxies.push(points)
-    const label = createLabelSprite(galaxy.name, theme.label)
-    label.position.set((galaxy.x - 0.5) * 6, (galaxy.y - 0.5) * 4, 0)
+    const label = createLabelSprite(repo.name, theme.label)
+    label.position.set((repo.x - 0.5) * WORLD_WIDTH, (repo.y - 0.5) * WORLD_HEIGHT, 0)
     scene.add(label)
     labels.push(label)
   }
 
   const setFrame = (layout: UniverseLayout, frame: UniverseFrame): void => {
     const current = new Set(frame.currentFiles)
-    for (let index = 0; index < layout.galaxies.length; index++) {
-      const galaxy = layout.galaxies[index]
-      if (!galaxy) continue
+    for (let index = 0; index < layout.repos.length; index++) {
+      const repo = layout.repos[index]
+      if (!repo) continue
       const points = galaxies[index]
       if (!points) continue
-      updateStarColors(points, galaxy, frame, current, theme)
+      updateStarColors(points, layout, repo, frame, current, theme)
     }
   }
 
@@ -201,27 +206,32 @@ export function createGalaxyScene(
 }
 
 /**
- * @description Builds a galaxy Points object from a layout galaxy.
- * @param layout The full layout (to position the galaxy in field space).
- * @param index Galaxy index into the layout.
+ * @description Builds a Points object for one repo's arm segment of the disc.
+ * @param layout The full layout; star positions are already in field space.
+ * @param index Arm-segment index into the layout's repos.
  * @param theme Color palette.
  * @returns A three.js Points object.
+ * @throws RangeError when the index names no arm segment.
  */
 export function buildGalaxyPoints(
   layout: UniverseLayout,
   index: number,
   theme: GalaxySceneTheme
 ): THREE.Points {
-  const galaxy = layout.galaxies[index]
-  if (!galaxy) throw new RangeError(`galaxy index ${index} is out of range`)
+  const repo = layout.repos[index]
+  if (!repo) throw new RangeError(`galaxy index ${index} is out of range`)
 
   const positions: number[] = []
   const colors: number[] = []
   const sizes: number[] = []
   const starColor = toColor(theme.star)
 
-  for (const star of galaxy.stars) {
-    positions.push((star.x - 0.5) * 2, (star.y - 0.5) * 2, 0)
+  for (const star of armStars(layout, repo)) {
+    positions.push(
+      (star.x - 0.5) * WORLD_WIDTH,
+      (star.y - 0.5) * WORLD_HEIGHT,
+      (star.z - 0.5) * WORLD_HEIGHT
+    )
     colors.push(starColor.r, starColor.g, starColor.b)
     sizes.push(0.09 + ((index + star.file.length) % 8) * 0.008)
   }
@@ -230,7 +240,7 @@ export function buildGalaxyPoints(
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   geometry.setAttribute('size', new THREE.Float32BufferAttribute(sizes, 1))
-  geometry.setAttribute('scale', new THREE.Float32BufferAttribute(Array(galaxy.stars.length).fill(1), 1))
+  geometry.setAttribute('scale', new THREE.Float32BufferAttribute(Array(repo.starCount).fill(1), 1))
 
   const material = new THREE.ShaderMaterial({
     vertexShader: STAR_VERTEX_SHADER,
@@ -241,33 +251,33 @@ export function buildGalaxyPoints(
     vertexColors: true,
   })
 
-  const points = new THREE.Points(geometry, material)
-  points.position.x = (galaxy.x - 0.5) * 6
-  points.position.y = (galaxy.y - 0.5) * 4
-  return points
+  return new THREE.Points(geometry, material)
+}
+
+function armStars(layout: UniverseLayout, repo: RepoArm): UniverseLayout['stars'] {
+  return layout.stars.slice(repo.starOffset, repo.starOffset + repo.starCount)
 }
 
 function updateStarColors(
   points: THREE.Points,
-  galaxy: UniverseLayout['galaxies'][number],
+  layout: UniverseLayout,
+  repo: RepoArm,
   frame: UniverseFrame,
   current: ReadonlySet<string>,
   theme: GalaxySceneTheme
 ): void {
-  const geometry = points.geometry
-  const colorAttr = geometry.getAttribute('color')
+  const colorAttr = points.geometry.getAttribute('color')
   if (!colorAttr) return
   const live = toColor(theme.liveStar)
   const currentColor = toColor(theme.currentStar)
   const base = toColor(theme.star)
   const array = colorAttr.array as Float32Array
-  for (let index = 0; index < galaxy.stars.length; index++) {
-    const star = galaxy.stars[index]
+  const stars = armStars(layout, repo)
+  for (let index = 0; index < stars.length; index++) {
+    const star = stars[index]
     if (!star) continue
-    const key = `${galaxy.repoId}:${star.file}`
-    const isCurrent = current.has(key)
-    const isLive = frame.liveFiles.has(key)
-    const color = isCurrent ? currentColor : isLive ? live : base
+    const key = starKey(star.repoId, star.file)
+    const color = current.has(key) ? currentColor : frame.liveFiles.has(key) ? live : base
     const offset = index * 3
     array[offset] = color.r
     array[offset + 1] = color.g
