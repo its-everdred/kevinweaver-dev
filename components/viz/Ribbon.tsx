@@ -1,38 +1,24 @@
 'use client'
 
 import { memo, useEffect, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
-import { formatDayISO } from '@/lib/viz/driver'
+import type { ReactNode } from 'react'
+import { formatDayISO, weekdayOfISO } from '@/lib/viz/driver'
 import {
   useInstrumentRuntime,
   type InstrumentRuntimeState,
 } from './instrumentRuntime'
-import {
-  getGalaxyTimeline,
-  seekGalaxyTimeline,
-  subscribeGalaxyTimeline,
-} from './galaxyTimeline'
-
-const MONTH_LABELS = [
-  'jan',
-  'feb',
-  'mar',
-  'apr',
-  'may',
-  'jun',
-  'jul',
-  'aug',
-  'sep',
-  'oct',
-  'nov',
-  'dec',
-] as const
+import { getGalaxyTimeline, subscribeGalaxyTimeline } from './galaxyTimeline'
+import { paintRibbon } from './ribbonPaint'
+import { ribbonLayout, ribbonWindow, type RibbonWindow } from './ribbonWindow'
+import { useRibbonInteraction } from './useRibbonInteraction'
 
 /**
- * @description Renders the full-width GitHub-style contribution graph. Every
- * day is a square in a 7-row weekday grid, one column per week, spanning the
- * pane width; the current day is highlighted from the shared galaxy timeline.
- * Clicking or dragging scrubs the timeline.
+ * @description Renders the full-width GitHub-style contribution graph. One
+ * year of history is on screen at a time — 7 weekday rows by 53 week columns,
+ * year boundaries marked along the strip, the shared galaxy timeline's current
+ * day ringed. The window follows that timeline: seeking or playing to a day
+ * older than the window pages it back. Clicking or dragging scrubs the clock,
+ * which is the only way to seek now that the galaxy canvas rotates instead.
  * @returns The contribution graph canvas.
  */
 export const Ribbon = memo(function Ribbon(): ReactNode {
@@ -40,9 +26,18 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
   const viz = runtime.status === 'ready' ? runtime.viz : null
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [snapshot, setSnapshot] = useState(() => getGalaxyTimeline())
-  const label = ribbonLabel(runtime)
   const grid = viz?.render.grid
-  const windowStart = viz?.head.manifest.windowStart ?? ''
+  const windowStartISO = viz?.head.manifest.windowStart ?? ''
+  const dayCount = grid?.dayCount ?? 0
+  const startWeekday = windowStartISO ? weekdayOfISO(windowStartISO) : 0
+  const visible = ribbonWindow(snapshot.step, dayCount, startWeekday)
+  const label = ribbonLabel(runtime, {
+    dayCount,
+    step: snapshot.step,
+    visible,
+    windowStartISO,
+  })
+  const interaction = useRibbonInteraction({ dayCount, startWeekday })
 
   useEffect(() => {
     return subscribeGalaxyTimeline(() => setSnapshot(getGalaxyTimeline()))
@@ -55,95 +50,39 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
     if (!ctx) return
     const dpr = Math.min(2, window.devicePixelRatio || 1)
     const resize = (): void => {
-      canvas.width = Math.round(canvas.clientWidth * dpr)
-      canvas.height = Math.round(canvas.clientHeight * dpr)
+      const rect = canvas.getBoundingClientRect()
+      canvas.width = Math.round(rect.width * dpr)
+      canvas.height = Math.round(rect.height * dpr)
+    }
+    const draw = (): void => {
+      // The clock is read here, not closed over: the draw is a pure function
+      // of (payload, step, geometry), which is what makes it screenshotable.
+      const step = getGalaxyTimeline().step
+      paintRibbon(ctx, {
+        dpr,
+        grid,
+        heightPx: canvas.height,
+        layout: ribbonLayout(canvas.width, canvas.height, dpr),
+        step,
+        widthPx: canvas.width,
+        window: ribbonWindow(step, grid.dayCount, startWeekday),
+        windowStartISO,
+      })
     }
     resize()
-    const observer = new ResizeObserver(resize)
-    observer.observe(canvas)
-
-    const draw = (): void => {
-      const dayCount = grid.dayCount
-      if (dayCount <= 0) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height)
-        return
-      }
-      const weeks = Math.ceil(dayCount / 7)
-      const widthPx = canvas.width
-      const heightPx = canvas.height
-      // Square cells sized to fill the width, capped so the 7-row grid fits.
-      let cellPx = Math.max(1, Math.floor(widthPx / weeks))
-      const byHeight = Math.max(1, Math.floor(heightPx / 7))
-      if (cellPx > byHeight) cellPx = byHeight
-      const gapPx = cellPx >= 4 ? Math.max(1, Math.round(dpr)) : 0
-      const stepPx = cellPx + gapPx
-      const gridW = weeks * stepPx - (gapPx || 0)
-      const originXPx = Math.max(0, Math.floor((widthPx - gridW) / 2))
-      const originYPx = Math.max(0, Math.floor((heightPx - 7 * stepPx) / 2))
-
-      ctx.clearRect(0, 0, widthPx, heightPx)
-      for (let day = 0; day < dayCount; day++) {
-        const week = Math.floor(day / 7)
-        const weekday = day % 7
-        const level = grid.level[day] ?? 0
-        ctx.fillStyle = levelColor(level)
-        ctx.fillRect(
-          originXPx + week * stepPx,
-          originYPx + weekday * stepPx,
-          cellPx,
-          cellPx
-        )
-      }
-
-      const current = getGalaxyTimeline().step
-      if (current >= 0 && current < dayCount) {
-        const week = Math.floor(current / 7)
-        const weekday = current % 7
-        const x = originXPx + week * stepPx
-        const y = originYPx + weekday * stepPx
-        ctx.strokeStyle = '#fbf1c7'
-        ctx.lineWidth = Math.max(1, dpr)
-        ctx.strokeRect(x - 0.5, y - 0.5, cellPx + 1, cellPx + 1)
-      }
-
-      ctx.font = `${Math.max(9, Math.round(10 * dpr))}px monospace`
-      ctx.fillStyle = '#a89984'
-      ctx.textAlign = 'left'
-      let lastLabelWeek = Number.NEGATIVE_INFINITY
-      let lastMonth = ''
-      for (let week = 0; week < weeks; week++) {
-        const day = week * 7
-        const month = monthLabelForDay(windowStart, day)
-        if (!month || month === lastMonth) continue
-        const x = originXPx + week * stepPx
-        if (x - lastLabelWeek < 26 * dpr) continue
-        ctx.fillText(month, x, Math.max(originYPx - dpr * 3, dpr * 8))
-        lastLabelWeek = x
-        lastMonth = month
-      }
-    }
     draw()
-    const unsubscribe = subscribeGalaxyTimeline(() => draw())
+    // Resizing the backing store blanks it, so every resize repaints.
+    const observer = new ResizeObserver(() => {
+      resize()
+      draw()
+    })
+    observer.observe(canvas)
+    const unsubscribe = subscribeGalaxyTimeline(draw)
     return () => {
       observer.disconnect()
       unsubscribe()
     }
-  }, [grid, windowStart])
-
-  const scrubToX = (clientX: number, element: HTMLCanvasElement): void => {
-    if (!grid) return
-    const rect = element.getBoundingClientRect()
-    const fraction = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)))
-    const step = Math.max(0, Math.min(grid.dayCount - 1, Math.round(fraction * (grid.dayCount - 1))))
-    seekGalaxyTimeline(step, grid.dayCount)
-  }
-  const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
-    scrubToX(event.clientX, event.currentTarget)
-  }
-  const onPointerMove = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
-    if (!event.buttons) return
-    scrubToX(event.clientX, event.currentTarget)
-  }
+  }, [grid, startWeekday, windowStartISO])
 
   return (
     <div
@@ -155,14 +94,21 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
     >
       <canvas
         aria-label={label}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
+        onPointerCancel={interaction.onPointerCancel}
+        onPointerDown={interaction.onPointerDown}
+        onPointerMove={interaction.onPointerMove}
+        onPointerUp={interaction.onPointerUp}
         ref={canvasRef}
         role="img"
-        style={{ display: 'block', height: '100%', width: '100%', cursor: 'pointer' }}
+        style={{
+          display: 'block',
+          height: '100%',
+          width: '100%',
+          cursor: 'pointer',
+        }}
         tabIndex={0}
       >
-        {label}. The outlined square is the current day.
+        {label} The ringed square is the current day.
       </canvas>
       <span
         style={{
@@ -180,28 +126,31 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
   )
 })
 
-function monthLabelForDay(windowStart: string, day: number): string | null {
-  if (!windowStart) return null
-  const iso = formatDayISO(windowStart, day)
-  const month = Number(iso.slice(5, 7))
-  return MONTH_LABELS[month - 1] ?? null
+interface LabelInput {
+  readonly dayCount: number
+  readonly step: number
+  readonly visible: RibbonWindow
+  readonly windowStartISO: string
 }
 
-function levelColor(level: number): string {
-  // Contribution density bands, green like GitHub's contribution graph.
-  // Concrete hex, not CSS tokens: the canvas 2D API does not resolve var().
-  const palette = [
-    '#504945',
-    '#0e4429',
-    '#006d32',
-    '#26a641',
-    '#39d353',
-  ]
-  return palette[Math.min(4, level)] ?? palette[0]!
-}
-
-function ribbonLabel(runtime: InstrumentRuntimeState): string {
+/**
+ * The canvas text alternative. It names the year on screen and the day the
+ * clock is on, because neither is recoverable from the adjacent table — the
+ * table lists every day, the strip shows one year of them.
+ */
+function ribbonLabel(
+  runtime: InstrumentRuntimeState,
+  input: LabelInput
+): string {
   if (runtime.status === 'unavailable') return 'Contribution grid unavailable'
   if (runtime.status === 'loading') return 'Contribution grid loading'
-  return `Contribution graph across the full window. Full daily figures follow in the adjacent table.`
+  const { dayCount, step, visible, windowStartISO } = input
+  if (dayCount <= 0 || !windowStartISO) return 'Contribution grid unavailable'
+  const first = formatDayISO(windowStartISO, Math.max(0, visible.start))
+  const last = formatDayISO(windowStartISO, Math.min(dayCount - 1, visible.end))
+  const current =
+    step >= 0 && step < dayCount
+      ? ` Current day ${formatDayISO(windowStartISO, step)}.`
+      : ''
+  return `Contribution grid, one year of daily contributions from ${first} to ${last}.${current} Full daily figures follow in the adjacent table.`
 }
