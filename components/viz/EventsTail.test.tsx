@@ -121,6 +121,12 @@ function frame(at: number): void {
 const files = (): readonly string[] =>
   screen.getAllByRole('link').map((link) => link.textContent ?? '')
 
+/**
+ * Rows the pane holds while it reports no height. jsdom runs no layout, so the
+ * capacity hook never measures and every case here sees the unmeasured default.
+ */
+const PANE_ROWS = 12
+
 describe('EventsTail', () => {
   it('lists only the contributions of the day being played', () => {
     park(2)
@@ -160,8 +166,49 @@ describe('EventsTail', () => {
     expect(files()).toHaveLength(1)
     frame(250)
     expect(files()).toHaveLength(11)
+    // The slot ends on the day's oldest contribution: the reveal walked all
+    // forty past the pane rather than stopping at the dozen that fit in it.
     frame(999)
-    expect(files()).toHaveLength(40)
+    expect(files().at(-1)).toBe('src/b39.ts')
+  })
+
+  it('slides the window so the rows on screen change as the day plays', () => {
+    park(3, 'forward')
+    play()
+    render(<EventsTail />)
+    advance(4)
+
+    frame(400)
+    const early = files()
+    frame(999)
+    const late = files()
+
+    expect(late[0]).not.toBe(early[0])
+    expect(late).not.toContain(early[0])
+    expect(early).toHaveLength(PANE_ROWS)
+    expect(late).toHaveLength(PANE_ROWS)
+  })
+
+  it('mounts only the rows the pane can hold when the day is at rest', () => {
+    park(4, 'forward')
+    render(<EventsTail />)
+
+    expect(files()).toHaveLength(PANE_ROWS)
+    expect(files()[0]).toBe('src/b00.ts')
+  })
+
+  it('announces one summary per day and keeps the churn out of it', () => {
+    park(3, 'forward')
+    play()
+    const { container } = render(<EventsTail />)
+    advance(4)
+
+    const live = container.querySelector('[aria-live="polite"]')
+    expect(live).toHaveTextContent('2026-02-05: 40 contributions')
+    expect(container.querySelector('.rows')).toHaveAttribute('aria-live', 'off')
+
+    frame(400)
+    expect(live).toHaveTextContent('2026-02-05: 40 contributions')
   })
 
   it('renders the empty state for a day with no contributions', () => {
@@ -229,7 +276,7 @@ describe('EventsTail', () => {
     render(<EventsTail />)
     advance(4)
     frame(999)
-    expect(files()).toHaveLength(40)
+    expect(files()).toHaveLength(PANE_ROWS)
 
     park(2)
     expect(files()).toEqual([
