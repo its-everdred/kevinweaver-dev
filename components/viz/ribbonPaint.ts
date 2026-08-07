@@ -93,22 +93,31 @@ function paintCells(ctx: RibbonCtx, options: RibbonPaintOptions): void {
   }
 }
 
-/** The first column on screen of each year the window covers. */
+/** A column a year begins on, and where on the canvas that column starts. */
 interface YearMark {
+  readonly column: number
   readonly year: string
   readonly xPx: number
 }
 
+/**
+ * The columns where a year begins. A column belongs to the year of its Sunday,
+ * so a year begins on the first column whose Sunday has crossed into it — the
+ * column the boundary rule is drawn against. The opening column is tested the
+ * same way as every other, against the week before it, which usually sits
+ * outside the window: opening part-way into a year is not a boundary, however
+ * much of that year the strip goes on to show.
+ */
 function yearMarks(options: RibbonPaintOptions): YearMark[] {
   const { layout, window: visible } = options
+  const yearAt = (day: number): string =>
+    formatDayISO(options.windowStartISO, day).slice(0, 4)
   const marks: YearMark[] = []
-  let previousYear = ''
   for (let column = 0; column < layout.columns; column += 1) {
     const day = visible.start + column * 7
-    const year = formatDayISO(options.windowStartISO, day).slice(0, 4)
-    if (year === previousYear) continue
-    previousYear = year
-    marks.push({ year, xPx: layout.originXPx + column * layout.stepPx })
+    const year = yearAt(day)
+    if (year === yearAt(day - 7)) continue
+    marks.push({ column, year, xPx: layout.originXPx + column * layout.stepPx })
   }
   return marks
 }
@@ -124,8 +133,10 @@ function paintYearMarkers(ctx: RibbonCtx, options: RibbonPaintOptions): void {
   const spacingPx = labelWidthPx + fontPx
   const marks = yearMarks(options)
   ctx.fillStyle = MARKER_COLOR
-  for (const mark of marks.slice(1))
-    // The rule sits in the gutter between two weeks, never over a cell.
+  // The rule sits in the gutter between two weeks, never over a cell — so a
+  // year that begins on the opening column goes without one. There is no week
+  // to its left to divide it from, only the edge of the grid.
+  for (const mark of marks.filter((mark) => mark.column > 0))
     ctx.fillRect(
       mark.xPx - layout.gapPx,
       layout.originYPx,
@@ -137,15 +148,14 @@ function paintYearMarkers(ctx: RibbonCtx, options: RibbonPaintOptions): void {
   ctx.textBaseline = 'alphabetic'
   const maxXPx = options.widthPx - labelWidthPx
   const baselineYPx = Math.max(fontPx, layout.originYPx - ruleWidthPx * 3)
-  // The opening column's year is a label of convenience — it names whatever
-  // partial year the window happens to start in, and a window sized to the pane
-  // opens wherever the arithmetic lands. When the first real boundary follows
-  // too closely for both, the boundary wins: a two-column sliver of December is
-  // not worth burying the year that owns the rest of the strip.
-  const [opening, next] = marks
-  const crowded = opening && next && next.xPx - opening.xPx < spacingPx
+  // Labels go where the years begin and nowhere else. Labelling the opening
+  // column too would name whatever year the window happened to open in and put
+  // it where no rule is drawn, which reads as a boundary that is not there —
+  // and it is a lie by a wide margin when the real one is a few columns along.
+  // A window that opens part-way into a year runs unlabelled until the first
+  // boundary, and one that spans no boundary at all carries no label.
   let lastLabelXPx = Number.NEGATIVE_INFINITY
-  for (const mark of marks.slice(crowded ? 1 : 0)) {
+  for (const mark of marks) {
     if (mark.xPx - lastLabelXPx < spacingPx) continue
     ctx.fillText(mark.year, Math.min(mark.xPx, maxXPx), baselineYPx)
     lastLabelXPx = mark.xPx

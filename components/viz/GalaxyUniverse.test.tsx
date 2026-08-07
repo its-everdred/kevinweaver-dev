@@ -419,7 +419,13 @@ describe('the timeline is seeked elsewhere', () => {
     const ribbon = screen.getByRole('img', { name: /contribution/i })
     fireEvent.pointerDown(ribbon, { clientX: CANVAS_W, clientY: 1 })
     expect(getGalaxyTimeline().step).toBe(TOTAL - 1)
-    fireEvent.pointerMove(ribbon, { clientX: 0, clientY: 1, buttons: 1 })
+    // The drag pulls the strip along with the pointer, so it is travel to the
+    // right that walks back through the history. See `useRibbonInteraction`.
+    fireEvent.pointerMove(ribbon, {
+      clientX: CANVAS_W + 10_000,
+      clientY: 1,
+      buttons: 1,
+    })
     expect(getGalaxyTimeline().step).toBe(0)
   })
 })

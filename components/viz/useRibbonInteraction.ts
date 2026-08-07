@@ -42,6 +42,12 @@ type GrabRef = RefObject<Grab | null>
  * pointer as the clock passes its oldest day, and the cursor would jump a whole
  * window with it. Anchored to the grab, the shift is invisible to the gesture.
  *
+ * The drag pulls rather than pushes: dragging right slides the strip right
+ * under the hand, which uncovers the weeks that were off its left edge, so time
+ * runs backward. It is a sheet of paper being moved, not a scrollbar being
+ * thrown. The transport's progress bar is the scrollbar and seeks with the
+ * pointer instead; a press here, being absolute, has no direction to invert.
+ *
  * The press takes pointer capture, so the whole drag reports back here however
  * far off the strip it wanders. The strip is one pane row tall; an uncaptured
  * drag hands every move to whatever the cursor happens to be over and dies a
@@ -143,8 +149,12 @@ function onPointerMove(
   if (!canvas.hasPointerCapture(event.pointerId) && !event.buttons) return
   const point = backingPoint(canvas, event)
   if (!point) return
-  const columns = Math.round((point.xPx - anchor.xPx) / anchor.stepPx)
-  const rows = Math.round((point.yPx - anchor.yPx) / anchor.stepPx)
+  // Measured from the pointer back to the grab, not forward from it: the drag
+  // pulls the strip, so the day walks against the hand and the squares appear
+  // to travel with it. Both axes are read the same way round — the vertical one
+  // walks a day at a time — so a diagonal drag agrees with itself.
+  const columns = Math.round((anchor.xPx - point.xPx) / anchor.stepPx)
+  const rows = Math.round((anchor.yPx - point.yPx) / anchor.stepPx)
   seekGalaxyTimeline(anchor.day + columns * 7 + rows, options.dayCount)
 }
 

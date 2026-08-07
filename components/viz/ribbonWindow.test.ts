@@ -10,6 +10,7 @@ import {
   ribbonDayAt,
   ribbonLayout,
   ribbonWindow,
+  type RibbonLayout,
 } from './ribbonWindow'
 import { paintRibbon, type RibbonCtx } from './ribbonPaint'
 
@@ -77,6 +78,62 @@ function paint(step: number): Recording {
 }
 function named(calls: readonly Call[], name: string): Call[] {
   return calls.filter((call) => call[0] === name)
+}
+
+/** A pane and a payload the 1800x256 fixture does not measure out. */
+interface PaintCase {
+  readonly widthPx: number
+  readonly heightPx: number
+  readonly dpr: number
+  readonly dayCount: number
+  readonly windowStartISO: string
+  readonly step: number
+}
+
+/**
+ * Paints one frame for an arbitrary pane. The year markers follow the window
+ * the pane's width lands on, so they have to be checked on more windows than
+ * the default lattice ever opens.
+ */
+function paintCase(input: PaintCase): Recording {
+  const recording = recorder()
+  const layout = ribbonLayout(
+    input.widthPx,
+    input.heightPx,
+    input.dpr,
+    input.dayCount
+  )
+  paintRibbon(recording.ctx, {
+    grid: { level: [], dayCount: input.dayCount },
+    window: ribbonWindow(
+      input.step,
+      input.dayCount,
+      weekdayOfISO(input.windowStartISO),
+      layout.columns
+    ),
+    layout,
+    widthPx: input.widthPx,
+    heightPx: input.heightPx,
+    dpr: input.dpr,
+    step: input.step,
+    windowStartISO: input.windowStartISO,
+  })
+  return recording
+}
+
+/** The year and x of every label a paint drew, in the order it drew them. */
+function labelsAt(calls: readonly Call[]): [string, number][] {
+  return named(calls, 'fillText').map((call) => [
+    call[1] as string,
+    call[2] as number,
+  ])
+}
+
+/** The x of every year rule a paint drew: the full-height, hairline fills. */
+function rulesAt(calls: readonly Call[], layout: RibbonLayout): number[] {
+  return named(calls, 'fillRect')
+    .filter((call) => call[4] === layout.gridHeightPx)
+    .map((call) => call[1] as number)
 }
 
 describe('the pane-width ribbon window', () => {
@@ -299,14 +356,113 @@ describe('painting the contribution grid', () => {
     ])
   })
 
-  it('gives the boundary the label when the strip opens mid-December', () => {
-    // A window sized to the pane opens wherever the arithmetic lands — here on
-    // 2024-12-22, two columns short of the new year. Labelling that sliver
-    // '2024' and then dropping '2025' for crowding would leave the year that
-    // owns the rest of the strip unnamed.
-    const window = ribbonWindow(NEWEST, DAY_COUNT, START_WEEKDAY, COLUMNS)
-    expect(formatDayISO(WINDOW_START, window.start)).toBe('2024-12-22')
-    expect(named(paint(NEWEST).calls, 'fillText')[0]?.[1]).toBe('2025')
+  it('puts a label only where a year begins, never on the opening column', () => {
+    // A 724-pixel pane opens its window on 2025-09-14: mid-year, and sixteen
+    // columns clear of the new year, so nothing here is crowded. The operator's
+    // complaint was exactly this window — the opening column labelled with
+    // whatever year the arithmetic happened to land in, sitting where no
+    // boundary rule is drawn. Those sixteen columns now run unlabelled.
+    const layout = ribbonLayout(724, 256, 2, DAY_COUNT)
+    const window = ribbonWindow(
+      NEWEST,
+      DAY_COUNT,
+      START_WEEKDAY,
+      layout.columns
+    )
+    expect(layout.columns).toBe(26)
+    expect(formatDayISO(WINDOW_START, window.start)).toBe('2025-09-14')
+    const { calls } = paintCase({
+      dayCount: DAY_COUNT,
+      dpr: 2,
+      heightPx: 256,
+      step: NEWEST,
+      widthPx: 724,
+      windowStartISO: WINDOW_START,
+    })
+    const boundaryXPx = layout.originXPx + 16 * layout.stepPx
+    expect(labelsAt(calls)).toEqual([['2026', boundaryXPx]])
+    // Every label sits on a rule, which is what the operator asked for.
+    expect(rulesAt(calls, layout)).toEqual([boundaryXPx - layout.gapPx])
+  })
+
+  it('labels the opening column when the year does begin there', () => {
+    // A 1736-pixel pane opens on 2025-01-05, the first Sunday of that year, so
+    // the leftmost column is a real boundary and keeps its label. It carries no
+    // rule: the rule lives in the gutter between two weeks, and there is no
+    // week to the left of the first one.
+    const layout = ribbonLayout(1736, 256, 2, DAY_COUNT)
+    const window = ribbonWindow(
+      NEWEST,
+      DAY_COUNT,
+      START_WEEKDAY,
+      layout.columns
+    )
+    expect(layout.columns).toBe(62)
+    expect(formatDayISO(WINDOW_START, window.start)).toBe('2025-01-05')
+    const { calls } = paintCase({
+      dayCount: DAY_COUNT,
+      dpr: 2,
+      heightPx: 256,
+      step: NEWEST,
+      widthPx: 1736,
+      windowStartISO: WINDOW_START,
+    })
+    const boundaryXPx = layout.originXPx + 52 * layout.stepPx
+    expect(labelsAt(calls)).toEqual([
+      ['2025', layout.originXPx],
+      ['2026', boundaryXPx],
+    ])
+    expect(rulesAt(calls, layout)).toEqual([boundaryXPx - layout.gapPx])
+  })
+
+  it('names every year the pane spans, at the payload’s real scale', () => {
+    // 6056 days from 2010, which is what the bundle now carries: a desktop pane
+    // spans two boundaries at once and a phone one, so both ends of the
+    // viewport range see windows the 800-day fixture never produces.
+    const payload = { dayCount: 6056, step: 6055, windowStartISO: '2010-01-01' }
+    const wide = ribbonLayout(2400, 256, 2, payload.dayCount)
+    const wideCalls = paintCase({
+      ...payload,
+      dpr: 2,
+      heightPx: 256,
+      widthPx: 2400,
+    }).calls
+    // The window opens on 2024-12-15, three columns of December that name no
+    // boundary; 2025 and 2026 each begin on screen and each get a label.
+    expect(labelsAt(wideCalls)).toEqual([
+      ['2025', wide.originXPx + 3 * wide.stepPx],
+      ['2026', wide.originXPx + 55 * wide.stepPx],
+    ])
+    expect(rulesAt(wideCalls, wide)).toEqual(
+      labelsAt(wideCalls).map(([, xPx]) => xPx - wide.gapPx)
+    )
+    const narrow = ribbonLayout(320, 64, 1, payload.dayCount)
+    const narrowCalls = paintCase({
+      ...payload,
+      dpr: 1,
+      heightPx: 64,
+      widthPx: 320,
+    }).calls
+    expect(labelsAt(narrowCalls)).toEqual([
+      ['2026', narrow.originXPx + 15 * narrow.stepPx],
+    ])
+  })
+
+  it('leaves the strip unlabelled when no year begins on screen', () => {
+    // Eleven chunky columns of 2026 and nothing else. A label here could only
+    // be the opening column's, which is the one the operator asked us to drop;
+    // the text alternative and the date readout still name the stretch.
+    const { calls } = paintCase({
+      dayCount: 6056,
+      dpr: 2,
+      heightPx: 256,
+      step: 6055,
+      widthPx: 320,
+      windowStartISO: '2010-01-01',
+    })
+    expect(ribbonLayout(320, 256, 2, 6056).columns).toBe(11)
+    expect(labelsAt(calls)).toEqual([])
+    expect(rulesAt(calls, ribbonLayout(320, 256, 2, 6056))).toEqual([])
   })
 
   it('rings the current day so it reads against every density color', () => {
