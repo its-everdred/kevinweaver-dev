@@ -52,4 +52,9 @@ export interface EncodedBundle {
   files: readonly EncodedFile[]
   samlCanary: SamlCanary
   combinedTotal: number
+  /**
+   * Fingerprint of the rules that chose which paths became events, carried so
+   * the regression guard can tell a rule change from a broken run.
+   */
+  extractionRules: string
 }

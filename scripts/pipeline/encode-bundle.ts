@@ -12,6 +12,8 @@ import type {
   RawEvent,
   RepoInput,
 } from './encode-types.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { extractionRules } from './extract-log.ts'
 
 export function encodeBundle(input: EncodeInput): EncodedBundle {
   if (input.chunkSize !== 1500)
@@ -62,6 +64,7 @@ export function encodeBundle(input: EncodeInput): EncodedBundle {
     manifest: decodeManifest(requiredFile(encoded.files, 'manifest.json')),
     samlCanary: input.samlCanary,
     combinedTotal: input.combinedTotal,
+    extractionRules: extractionRules(),
     files: [...encoded.files].map(([path, text]) => ({
       path,
       bytes: Buffer.from(`${text}\n`),
