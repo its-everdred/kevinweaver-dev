@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import type { BundleHead } from '@/lib/bundle/loader'
 import type { BundleEvent } from '@/lib/bundle/schema'
 import { dayContributions } from './galaxyDay'
+import { isUnplaced, repoLabel } from './galaxyEventLog'
 import { useInstrumentRuntime } from './instrumentRuntime'
 import { useDayClock, useDayReveal, type DayRange } from './useDayReveal'
 import { useRowCapacity } from './useRowCapacity'
@@ -17,9 +18,20 @@ const EVENTS_CSS = `
 .kw-events .e .repo{color:var(--aqua);flex:0 0 auto;}
 .kw-events .e a.file{display:flex;align-items:center;min-height:24px;}
 .kw-events .e .file{color:var(--text-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* Italic, not dimmer: the stand-in label has to read as something other than a
+   path without dropping below the contrast the rest of the log is checked at. */
+.kw-events .e .unplaced{font-style:italic;}
 .kw-events .e .actor{flex:0 0 auto;color:var(--purple);}
 .kw-events .tail{color:var(--text-faint);}
 `
+
+/**
+ * What a row says in place of a filename for a contribution the file history
+ * cannot place. The galaxy draws these from `unplaced/NNN` slots of a bounded
+ * pool, which are positions in a synthesized repo and not paths; printing one
+ * would claim the payload named a file it never saw.
+ */
+const UNPLACED_LABEL = 'unplaced contribution'
 
 interface Row {
   readonly key: string
@@ -27,6 +39,8 @@ interface Row {
   readonly file: string
   readonly actor: string
   readonly href: string
+  /** True when `file` is the stand-in label rather than a path. */
+  readonly unplaced: boolean
 }
 
 /**
@@ -35,8 +49,9 @@ interface Row {
  * keeps moving, dropping a line off the top for every older line it brings in,
  * until the day's oldest contribution has passed through as the one-second slot
  * ends. Only the rows the pane can show are ever mounted, so a three-line day
- * and the payload's eight-thousand-line day cost the same DOM. Each row links
- * to the file on the host.
+ * and the payload's eight-thousand-line day cost the same DOM. A row that names
+ * a file links to it on the host; a day the contribution graph counts and the
+ * file history cannot place names none, and says so per row.
  * @returns A live, role=log window onto the day's per-repo file contributions.
  */
 export function EventsTail(): ReactNode {
@@ -66,7 +81,7 @@ export function EventsTail(): ReactNode {
           fast to narrate, and the date is already in here, so neither of them
           is left inside a live region to announce itself. */}
       <p aria-live="polite" className="sr-only">
-        {daySummary(clock.date, events.length)}
+        {daySummary(clock.date, events)}
       </p>
       {clock.date ? (
         <p aria-hidden="true" className="day">
@@ -88,7 +103,9 @@ export function EventsTail(): ReactNode {
                 {row.file}
               </a>
             ) : (
-              <span className="file">{row.file}</span>
+              <span className={row.unplaced ? 'file unplaced' : 'file'}>
+                {row.file}
+              </span>
             )}
           </p>
         ))}
@@ -121,14 +138,17 @@ function buildRows(
   for (let index = range.start; index < range.end; index += 1) {
     const event = events[index]
     if (!event) break
+    const unplaced = isUnplaced(event)
     const repo = head?.repos[event.repo]
-    const label = repo?.name ?? `repo-${event.repo}`
     out.push({
       key: String(index),
-      repo: shortRepo(label),
-      file: shortPath(event.path),
+      repo: shortRepo(repoLabel(head, event.repo)),
+      file: unplaced ? UNPLACED_LABEL : shortPath(event.path),
       actor: event.actor === 1 ? 'ak' : 'kw',
-      href: repo ? repoBlobUrl(repo.name, event.path) : '',
+      // Never a link for the synthesized repo: it names no file to link to, and
+      // github.com/private is somebody else's page.
+      href: repo && !unplaced ? repoBlobUrl(repo.name, event.path) : '',
+      unplaced,
     })
   }
   return out
@@ -136,15 +156,22 @@ function buildRows(
 
 /**
  * @description The one line the log announces per day, standing in for a churn
- * no screen reader could follow.
+ * no screen reader could follow. A day the file history cannot place is counted
+ * like any other and then said to name no files, so a listener is never sent
+ * looking through the rows for links that were never there.
  * @param date The day being drawn, empty before the clock has started.
- * @param count Contributions that day carries.
+ * @param events The day's contributions.
  * @returns The announcement, or empty while there is no day to announce.
  */
-function daySummary(date: string, count: number): string {
+function daySummary(date: string, events: readonly BundleEvent[]): string {
   if (!date) return ''
-  if (count === 0) return `${date}: no contributions`
-  return `${date}: ${count} contribution${count === 1 ? '' : 's'}`
+  if (events.length === 0) return `${date}: no contributions`
+  const total = `${events.length} contribution${events.length === 1 ? '' : 's'}`
+  const unplaced = events.filter(isUnplaced).length
+  if (unplaced === 0) return `${date}: ${total}`
+  if (unplaced === events.length)
+    return `${date}: ${total}, none placed to a file`
+  return `${date}: ${total}, ${unplaced} not placed to a file`
 }
 
 function shortRepo(name: string): string {

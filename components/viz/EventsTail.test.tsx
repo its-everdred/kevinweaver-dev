@@ -10,6 +10,8 @@ import {
 } from 'vitest'
 import type { BundleHead } from '@/lib/bundle/loader'
 import type { BundleEvent, RepoRecord } from '@/lib/bundle/schema'
+// Per module, not through the barrel: see the note in useGalaxyScene.ts.
+import { privateRepo } from '@/packages/aiur-galaxy/src/privateRepo'
 import {
   createInstrumentViz,
   type InstrumentRuntimeState,
@@ -42,6 +44,11 @@ function repo(id: number, short: string, actor: 0 | 1): RepoRecord {
 /**
  * Event day 0 is the newest day, so step `n` carries event day `4 - n`: step 4
  * is the forty-contribution day, step 3 is empty, and step 2 carries three.
+ *
+ * The calendar underneath disagrees with the file history on steps 0 and 1, the
+ * way the real payload disagrees on 847 of its 1193 green days: both count
+ * contributions the history cannot place. Step 3 is grey in both, so it is the
+ * only day either surface may call empty.
  */
 const BUSY: readonly BundleEvent[] = Array.from({ length: 40 }, (_, index) => ({
   day: 0,
@@ -59,9 +66,24 @@ const TRIO: readonly BundleEvent[] = [
 const HEAD: BundleHead = {
   manifest: { v: 1, generatedAt: '2026-02-05T12:00:00Z', commit: 'fixture-commit', days: ['2026-02-05', '2026-02-01'], refs: 'all', windowStart: WINDOW_START, windowEnd: '2026-02-05', dayCount: DAY_COUNT, repoCount: 2, repoCountDefinition: 'ownerPublicNonFork', actors: [{ id: 0, login: 'human-fixture', kind: 'human' }, { id: 1, login: 'agent-fixture', kind: 'agent' }], degraded: [], chunkSize: 50, chunks: 1, events: 43 },
   repos: [repo(0, 'alpha', 0), repo(1, 'beta', 1)],
-  grid: { start: WINDOW_START, dayCount: DAY_COUNT, human: [1, 0, 2, 0, 1], agent: [0, 3, 0, 1, 0], privateMonthly: [], privateStart: '2026-02', bands: [0, 1, 2, 4, 8, 16, 32, 64, 128, 256] },
+  grid: { start: WINDOW_START, dayCount: DAY_COUNT, human: [1, 0, 2, 0, 1], agent: [0, 3, 0, 0, 0], privateMonthly: [], privateStart: '2026-02', bands: [0, 1, 2, 4, 8, 16, 32, 64, 128, 256] },
   events: [...BUSY, ...TRIO],
 }
+
+/** A step the calendar counts and the file history cannot place. */
+const UNPLACED_STEP = 0
+/**
+ * Rows that step owes the log, counted from the synthesis the galaxy draws from
+ * rather than written down here, so a change to how those days are sized moves
+ * the beams and this expectation together.
+ */
+const UNPLACED_ROWS =
+  privateRepo({
+    human: HEAD.grid.human,
+    agent: HEAD.grid.agent,
+    covered: new Set(HEAD.events.map((event) => DAY_COUNT - 1 - event.day)),
+    stepCount: DAY_COUNT,
+  })?.events.filter((event) => event.step === UNPLACED_STEP).length ?? 0
 
 let viz: ReturnType<typeof createInstrumentViz>
 let pending: FrameRequestCallback | null = null
@@ -219,6 +241,40 @@ describe('EventsTail', () => {
 
     expect(screen.queryAllByRole('link')).toHaveLength(0)
     expect(screen.getByText(/no contributions this day/i)).toBeInTheDocument()
+  })
+
+  it('logs the day the galaxy draws when no file event places it', () => {
+    expect(UNPLACED_ROWS).toBeGreaterThan(0)
+    park(UNPLACED_STEP)
+    render(<EventsTail />)
+
+    // The galaxy fires a beam per synthesized contribution on this day. A log
+    // reading off `head.events` alone called the same day empty.
+    expect(screen.queryByText(/no contributions this day/i)).toBeNull()
+    expect(screen.getAllByText('unplaced contribution')).toHaveLength(
+      UNPLACED_ROWS
+    )
+    expect(screen.getAllByText('private')).toHaveLength(UNPLACED_ROWS)
+  })
+
+  it('names no file and links to none for a contribution it cannot place', () => {
+    park(UNPLACED_STEP)
+    const { container } = render(<EventsTail />)
+
+    // The synthesized paths are pool slots, not filenames, and `private` is not
+    // a GitHub account: neither may reach the page.
+    expect(container.textContent).not.toContain('unplaced/')
+    expect(screen.queryAllByRole('link')).toHaveLength(0)
+  })
+
+  it('announces an unplaced day as counted rather than as named files', () => {
+    park(UNPLACED_STEP)
+    const { container } = render(<EventsTail />)
+
+    const live = container.querySelector('[aria-live="polite"]')
+    expect(live).toHaveTextContent(
+      `${WINDOW_START}: ${UNPLACED_ROWS} contributions, none placed to a file`
+    )
   })
 
   it('renders the day complete under reduced motion', () => {
