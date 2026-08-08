@@ -13,15 +13,9 @@ import {
 } from '@/packages/aiur-galaxy/src/galaxyScene'
 import { layoutUniverse } from '@/packages/aiur-galaxy/src/galaxy'
 import { discSpin } from '@/packages/aiur-galaxy/src/galaxyWorld'
-import {
-  playbackWindowEnd,
-  universeFrame,
-} from '@/packages/aiur-galaxy/src/universePlayback'
-import { resolveContributors } from '@/packages/aiur-galaxy/src/contributors'
-import type {
-  PlaybackDirection,
-  UniverseSnapshot,
-} from '@/packages/aiur-galaxy/src/types'
+import { playbackWindowEnd } from '@/packages/aiur-galaxy/src/universePlayback'
+import type { UniverseSnapshot } from '@/packages/aiur-galaxy/src/types'
+import { loadContributorAvatars } from './contributorAvatars'
 import { createGalaxyDayClock } from './galaxyDayClock'
 import {
   getGalaxyTimeline,
@@ -89,6 +83,11 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
     }
     let live: GalaxyScene | null = scene
     sceneRef.current = scene
+    // The nodes are already on screen in their actor colours; the avatars land
+    // on them whenever they decode, and never if they cannot.
+    const stopAvatars = loadContributorAvatars((actor, image) =>
+      live?.setContributorImage(actor, image)
+    )
 
     // Initialize the shared clock from this universe's bounds. Reduced-motion
     // users see a static day: playback only advances on an explicit seek.
@@ -117,39 +116,17 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
     const observer = new ResizeObserver(resize)
     observer.observe(canvas)
 
-    const days = createGalaxyDayClock(universe)
+    // The clock resolves a day, and the day after it, once each: building a
+    // playback frame walks the whole contribution log (138,634 entries at the
+    // full history) and allocates a key per live file, so doing it per
+    // animation frame cost millions of allocations a second and stalled the
+    // page outright. The day after is what the contributor nodes are already
+    // travelling toward while the day on screen is still being drawn.
+    const days = createGalaxyDayClock(universe, layout)
     let raf = 0
     /** Wall clock the disc's turn is measured from, never the playback step. */
     const opened = performance.now()
     let overflow = 0
-    /**
-     * The playback frame, held across the frames that share a day. Building one
-     * walks the whole contribution log — 138,634 entries at the full history —
-     * and allocates a key per live file, so doing it per animation frame cost
-     * millions of allocations a second and stalled the page outright. What it
-     * returns depends only on the step and the direction.
-     */
-    let cached: ReturnType<typeof universeFrame> | null = null
-    let cachedStep = Number.NaN
-    let cachedDirection = ''
-    /**
-     * The contributor targets for that same day. Resolving them walks the day's
-     * contributions through the star index, so it belongs on the step, not on
-     * the animation frame; the glide between them is what moves per frame.
-     */
-    let cachedTargets: ReturnType<typeof resolveContributors> = []
-    const frameAt = (
-      step: number,
-      direction: PlaybackDirection
-    ): ReturnType<typeof universeFrame> => {
-      if (cached && step === cachedStep && direction === cachedDirection)
-        return cached
-      cached = universeFrame(universe, step, direction)
-      cachedStep = step
-      cachedDirection = direction
-      cachedTargets = resolveContributors(layout, cached)
-      return cached
-    }
     /**
      * What the last rendered frame depended on. Under reduced motion nothing
      * advances on its own — no turn, no playback, no transition — so once a
@@ -202,11 +179,11 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
               ? live.pickRepo(hover.x, hover.y, canvas.clientWidth, canvas.clientHeight)
               : null
           )
-          const playback = frameAt(clock.step, clock.direction)
-          const stats = live.setFrame(layout, playback, days.reach(now, animated))
+          const playback = days.day(clock.step, clock.direction)
+          const stats = live.setFrame(layout, playback.frame, days.reach(now, animated))
           overflow = surfaceBeamOverflow(canvas, stats.beamOverflow, overflow)
           live.setContributors(
-            days.glide.at(cachedTargets, days.phase(now, animated))
+            days.glide.at(playback.targets, days.onward(), days.phase(now, animated))
           )
           live.render()
         }
@@ -217,6 +194,7 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
     return () => {
       observer.disconnect()
       cancelAnimationFrame(raf)
+      stopAvatars()
       removeHarness()
       live = null
       sceneRef.current = null
