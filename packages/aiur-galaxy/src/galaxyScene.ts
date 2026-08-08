@@ -26,6 +26,7 @@ import type { UniverseFrame } from './universePlayback'
 import type { UniverseActor } from './types'
 import { createGalaxyHaze } from './galaxyHaze'
 import { createRepoLabels, type RepoLabel } from './galaxyLabels'
+import { createGalaxySky } from './galaxySky'
 import { createStarField } from './galaxyStars'
 import {
   DEFAULT_THEME,
@@ -88,6 +89,8 @@ export interface GalaxyScene {
   readonly camera: PerspectiveCamera
   /** The whole disc, as one Points object. */
   readonly stars: Points
+  /** The surround, as one Points object; never a child of the disc. */
+  readonly sky: Points
   /** Every zap beam for the current step, as one LineSegments object. */
   readonly beams: LineSegments
   /** One label per repo, in layout order, hidden until revealed. */
@@ -300,6 +303,7 @@ export function createGalaxyScene(
   // count: the draw call count tracks the repo count through the labels, not
   // the 16k stars.
   const starField = createStarField(options.layout, theme)
+  const sky = createGalaxySky(theme)
   const haze = createGalaxyHaze(options.layout, theme)
   const beamField = createBeamField(theme)
   const labels = createRepoLabels(options.layout.repos, theme)
@@ -311,11 +315,18 @@ export function createGalaxyScene(
   disc.add(starField.points)
   disc.add(haze.points)
   scene.add(disc)
+  // The sky hangs off the scene, never off the disc: it is the backdrop the
+  // galaxy turns in front of, not part of the galaxy.
+  scene.add(sky.points)
   scene.add(beamField.lines)
   for (const label of labels.meshes) scene.add(label)
 
   /** Every flat object that has to keep facing the viewer as the disc turns. */
   const orient = (): void => {
+    // The sky rides the eye, so a pan cannot parallax it and only a turn of
+    // the camera moves it. Done here rather than in `setCamera` so a scene
+    // that is built and never re-aimed still has its sky wrapped round it.
+    sky.follow(camera.position)
     labels.faceCamera(camera)
     faceCamera(
       camera,
@@ -367,6 +378,7 @@ export function createGalaxyScene(
     scene,
     camera,
     stars: starField.points,
+    sky: sky.points,
     beams: beamField.lines,
     labels: labels.meshes,
     contributors,
@@ -454,6 +466,7 @@ export function createGalaxyScene(
     },
     dispose() {
       starField.dispose()
+      sky.dispose()
       haze.dispose()
       beamField.dispose()
       labels.dispose()
