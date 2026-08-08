@@ -98,6 +98,144 @@ describe('bundle loader', () => {
     expect(loader.status().endReason).toBe('chunk-missing')
   })
 
+  /**
+   * The mobile bug. A chunk request that FAILS is not a chunk that is MISSING:
+   * the pump is 188 sequential requests, a phone drops one of them routinely,
+   * and ending history on that truncated the galaxy to the synthesized
+   * `private` repo for the rest of the page's life.
+   */
+  it('retries a chunk request that failed rather than ending history', async () => {
+    const files = new Map(encodeBundle(fixture(), { chunkSize: 3 }).files)
+    const requests: string[] = []
+    let drops = 1
+    const flaky: typeof fetch = async (input, init) => {
+      if (input.toString().endsWith('events/ee-01.json') && drops-- > 0)
+        throw new TypeError('Failed to fetch')
+      return stubFetch(files, requests)(input, init)
+    }
+    const loader = createBundleLoader({ fetchImpl: flaky })
+    await loader.boot()
+
+    expect(await loader.ensureChunk(1)).toBe(true)
+    expect(loader.status()).toMatchObject({
+      stalled: false,
+      historyEnded: true,
+      endReason: 'manifest-exhausted',
+      chunksLoaded: 2,
+    })
+  })
+
+  it('stalls a chunk it cannot reach, and resumes it on retry', async () => {
+    const files = new Map(encodeBundle(fixture(), { chunkSize: 3 }).files)
+    let offline = true
+    const flaky: typeof fetch = async (input, init) => {
+      if (offline && input.toString().endsWith('events/ee-01.json'))
+        throw new TypeError('Failed to fetch')
+      return stubFetch(files, [])(input, init)
+    }
+    const loader = createBundleLoader({ fetchImpl: flaky })
+    await loader.boot()
+
+    expect(await loader.ensureChunk(1)).toBe(false)
+    expect(loader.status()).toMatchObject({
+      // Not ended: the file may well be there, so the events already resident
+      // are kept and the pump can pick up from chunk 1 instead of chunk 0.
+      historyEnded: false,
+      endReason: null,
+      stalled: true,
+      chunksLoaded: 1,
+    })
+    // Held until the pump says otherwise, so `armPrefetch` cannot re-request an
+    // unreachable chunk on every consumed event.
+    expect(await loader.ensureChunk(1)).toBe(false)
+
+    offline = false
+    loader.retry()
+    expect(await loader.ensureChunk(1)).toBe(true)
+    expect(loader.status()).toMatchObject({
+      stalled: false,
+      historyEnded: true,
+      endReason: 'manifest-exhausted',
+      eventsLoaded: 5,
+    })
+  })
+
+  it('fetches ahead of the chunk it is decoding', async () => {
+    const files = new Map(encodeBundle(fixture(), { chunkSize: 1 }).files)
+    const requests: string[] = []
+    let release = (): void => undefined
+    const held = new Promise<void>((resolve) => (release = resolve))
+    const gated: typeof fetch = async (input, init) => {
+      if (input.toString().endsWith('events/ee-01.json')) await held
+      return stubFetch(files, requests)(input, init)
+    }
+    const loader = createBundleLoader({ fetchImpl: gated })
+    await loader.boot()
+
+    const pumped = loader.ensureChunk(4)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // Chunk 1 is still in flight and chunks 2 and 3 are already on the wire:
+    // unpipelined, a 94-chunk pump costs 94 round trips end to end.
+    const names = requests.map((url) => url.replace('/data/v1/', ''))
+    expect(names).toContain('events/ee-02.json')
+    expect(names).toContain('events/ee-03.json')
+    expect(names).not.toContain('events/ee-04.json')
+
+    release()
+    expect(await pumped).toBe(true)
+    expect(loader.status()).toMatchObject({ chunksLoaded: 5, eventsLoaded: 5 })
+  })
+
+  it('re-sends a read-ahead the network took out along with its chunk', async () => {
+    const files = new Map(encodeBundle(fixture(), { chunkSize: 1 }).files)
+    let offline = true
+    const flaky: typeof fetch = async (input, init) => {
+      if (offline && /(ee|pd)-0[123]\.json$/.test(input.toString()))
+        throw new TypeError('Failed to fetch')
+      return stubFetch(files, [])(input, init)
+    }
+    const loader = createBundleLoader({ fetchImpl: flaky })
+    await loader.boot()
+
+    expect(await loader.ensureChunk(4)).toBe(false)
+    // prettier-ignore
+    expect(loader.status()).toMatchObject({ stalled: true, historyEnded: false, chunksLoaded: 1 })
+
+    offline = false
+    loader.retry()
+    // The warmed chunks failed with the one being decoded. Serving those
+    // failures back from the read-ahead map would stall every later retry on
+    // requests nobody ever re-sent.
+    expect(await loader.ensureChunk(4)).toBe(true)
+    expect(loader.status()).toMatchObject({ chunksLoaded: 5, eventsLoaded: 5 })
+  })
+
+  it('separates a server that refuses a chunk from one that fails on it', async () => {
+    const files = new Map(encodeBundle(fixture(), { chunkSize: 3 }).files)
+    const serve = (status: number): typeof fetch => {
+      return async (input, init) =>
+        input.toString().endsWith('events/ee-01.json')
+          ? new Response('', { status })
+          : stubFetch(files, [])(input, init)
+    }
+    const refused = createBundleLoader({ fetchImpl: serve(404) })
+    await refused.boot()
+    await refused.ensureChunk(1)
+    expect(refused.status()).toMatchObject({
+      historyEnded: true,
+      endReason: 'chunk-missing',
+      stalled: false,
+    })
+
+    const edge = createBundleLoader({ fetchImpl: serve(503) })
+    await edge.boot()
+    await edge.ensureChunk(1)
+    expect(edge.status()).toMatchObject({
+      historyEnded: false,
+      stalled: true,
+    })
+  })
+
   it('rejects malformed versions, aborted boots, and unsafe bases', async () => {
     const files = new Map(encodeBundle(fixture(), { chunkSize: 3 }).files)
     const manifestText = files.get('manifest.json')!

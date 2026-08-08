@@ -14,6 +14,7 @@ import {
   type VizDriver,
   type VizDriverRenderData,
 } from '@/lib/viz/driver'
+import { pumpChunks } from './chunkPump'
 // prettier-ignore
 import { DAY_ALIVE, ENTITY_FILE, ENTITY_REPO, type SimInput } from '@/lib/viz/sim/types'
 // prettier-ignore
@@ -115,7 +116,7 @@ function ensureRuntime(): void {
   loading = bootRuntime()
     .then((head) => {
       publish(head)
-      void pumpChunks(head)
+      void runPump(head)
     })
     .catch(() => {
       loading = undefined
@@ -142,27 +143,20 @@ async function bootRuntime(): Promise<BundleHead> {
   return loader.boot()
 }
 /**
- * @description Draws the retained loader through every remaining event chunk so
- * the scene holds the whole history instead of the boot chunk's slice. Boot
- * publishes first and this runs after it, so first paint never waits on the
- * pump; `ensureChunk` fills every intervening chunk itself, so the enriched viz
- * is built once rather than once per chunk. A missing, malformed, or aborted
- * chunk only ends the loader's history: whatever arrived is published and the
- * ready state is never withdrawn.
+ * @description Hands the retained loader to the chunk pump so the scene holds
+ * the whole history instead of the boot chunk's slice. Boot publishes first and
+ * this runs after it, so first paint never waits on the pump. The pump owns the
+ * pacing and the recovery; this owns which loader is current and what a publish
+ * means.
  * @param head The booted payload, whose event list the loader keeps extending.
  */
-async function pumpChunks(head: BundleHead): Promise<void> {
+async function runPump(head: BundleHead): Promise<void> {
   const active = loader
-  const last = (active?.status().chunksTotal ?? 0) - 1
-  if (!active || last < 0) return
-  const booted = head.events.length
-  try {
-    await active.ensureChunk(last)
-  } catch {
-    // An aborted or unreachable chunk keeps whatever boot already published.
-  }
-  if (active !== loader || head.events.length === booted) return
-  publish(head)
+  if (!active) return
+  await pumpChunks(active, {
+    isCurrent: () => active === loader,
+    publish: () => publish(head),
+  })
 }
 /**
  * @description Publishes a ready state built from the events resident now, and

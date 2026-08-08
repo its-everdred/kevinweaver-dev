@@ -8,6 +8,7 @@ import {
   decodeRepos,
   expandChunk,
 } from './codec'
+import { fetchText, type TextFetch } from './fetchText'
 
 export const DEFAULT_BASE_URL = '/data/v1'
 export const PREFETCH_TRIGGER = 0.6
@@ -39,6 +40,13 @@ export interface LoaderStatus {
   residentThroughDay: number
   historyEnded: boolean
   endReason: LoaderEndReason | null
+  /**
+   * A chunk did not arrive but may still exist: every attempt at it failed
+   * rather than being refused. History is NOT ended, so `retry()` can pick the
+   * pump back up from where it stopped instead of the caller rebuilding the
+   * loader and refetching everything it already has.
+   */
+  stalled: boolean
   degraded: readonly string[]
   requestCount: number
 }
@@ -74,9 +82,27 @@ export interface BundleLoader {
   take(n: number): BundleEvent[]
   events(): AsyncIterableIterator<BundleEvent>
   ensureChunk(index: number): Promise<boolean>
+  /**
+   * Clears a stall so the next `ensureChunk` tries the chunk that failed again.
+   * Only the caller that owns the pump's pacing calls this: without the stall,
+   * `armPrefetch` would re-request an unreachable chunk on every consumed
+   * event.
+   */
+  retry(): void
   paths(): readonly string[]
   dispose(): void
 }
+
+/**
+ * Chunks fetched ahead of the one being decoded. The pump walks the whole
+ * manifest one chunk at a time because a chunk's dictionary slice only decodes
+ * on top of the slice before it, so without a read-ahead the wall clock is the
+ * chunk count times the round trip — measured at 22s on a phone at 150ms RTT
+ * for 94 chunks, which is 22s of a galaxy holding only its synthesized repo.
+ * Two keeps at most six requests in flight, inside the six-connection limit an
+ * HTTP/1.1 origin imposes, and roughly thirds the latency term.
+ */
+const CHUNK_READ_AHEAD = 2
 
 const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:/
 
@@ -91,22 +117,9 @@ function normalizeBaseUrl(raw: string): string {
   return raw.endsWith('/') ? raw.slice(0, -1) : raw
 }
 
-async function getText(
-  fetchImpl: typeof fetch,
-  url: string,
-  signal: AbortSignal
-): Promise<string | null> {
-  try {
-    const response = await fetchImpl(url, {
-      credentials: 'omit',
-      signal,
-    })
-    return response.ok ? await response.text() : null
-  } catch (error) {
-    if (signal.aborted) throw error
-    return null
-  }
-}
+/** The body, or null when there is none, for the decoders that only need that. */
+const bodyOf = (result: TextFetch): string | null =>
+  result.ok ? result.text : null
 
 function clampTrigger(value: number): number {
   return Math.min(1, Math.max(0, value))
@@ -123,6 +136,8 @@ class Loader implements BundleLoader {
   private readonly pathList: string[] = []
   private readonly chunkStart: number[] = []
   private readonly chunkLen: number[] = []
+  /** Chunk index to its two in-flight or warmed requests; see `chunkTexts`. */
+  private readonly inFlight = new Map<number, Promise<TextFetch[]>>()
   private bootPromise: Promise<BundleHead> | undefined
   private chunkPromise: Promise<boolean> | undefined
   private manifest: Manifest | undefined
@@ -136,6 +151,7 @@ class Loader implements BundleLoader {
   private phase: LoaderPhase = 'idle'
   private requestCount = 0
   private disposed = false
+  private stalled = false
   private readonly degraded: string[] = []
 
   constructor(options: LoaderOptions) {
@@ -170,6 +186,7 @@ class Loader implements BundleLoader {
       residentThroughDay: this.eventList.at(-1)?.day ?? -1,
       historyEnded: this.historyEnded,
       endReason: this.endReason,
+      stalled: this.stalled,
       degraded: [...(this.manifest?.degraded ?? []), ...this.degraded],
       requestCount: this.requestCount,
     }
@@ -222,6 +239,9 @@ class Loader implements BundleLoader {
       return false
     }
     if (index < this.chunksLoaded) return true
+    // Held until `retry()`, so a chunk the network could not deliver is asked
+    // for again on the pump's schedule rather than on every consumed event.
+    if (this.stalled) return false
     if (index > this.chunksLoaded) {
       while (this.chunksLoaded <= index && !this.historyEnded) {
         if (!(await this.ensureChunk(this.chunksLoaded))) return false
@@ -233,6 +253,10 @@ class Loader implements BundleLoader {
       this.chunkPromise = undefined
     })
     return this.chunkPromise
+  }
+
+  retry(): void {
+    if (!this.historyEnded) this.stalled = false
   }
 
   paths(): readonly string[] {
@@ -254,22 +278,21 @@ class Loader implements BundleLoader {
       chunkFileName(0),
       dictFileName(0),
     ] as const
-    const texts = await Promise.all(names.map((name) => this.request(name)))
+    const parts = await Promise.all(names.map((name) => this.request(name)))
     if (this.signal.aborted) {
       this.end('aborted')
       throw abortError()
     }
-    const manifestText = texts[0] ?? null
-    const reposText = texts[1] ?? null
-    const gridText = texts[2] ?? null
-    const eventText = texts[3] ?? null
-    const dictText = texts[4] ?? null
+    const manifestText = bodyOf(parts[0]!)
     assertVersion(manifestText, this.url(names[0]))
     const manifest = this.decodeManifest(manifestText, names[0])
     this.manifest = manifest
-    this.repos = this.decodeRepos(reposText, names[1])
-    this.grid = this.decodeGrid(gridText, names[2])
-    if (eventText === null || dictText === null) this.end('chunk-missing')
+    this.repos = this.decodeRepos(bodyOf(parts[1]!), names[1])
+    this.grid = this.decodeGrid(bodyOf(parts[2]!), names[2])
+    const eventText = bodyOf(parts[3]!)
+    const dictText = bodyOf(parts[4]!)
+    if (eventText === null || dictText === null)
+      this.missChunk(parts[3]!, parts[4]!)
     else if (!this.admitChunk(0, eventText, dictText))
       this.end(this.endReason ?? 'chunk-malformed')
     if (!this.historyEnded) {
@@ -285,25 +308,82 @@ class Loader implements BundleLoader {
   }
 
   private async loadChunk(index: number): Promise<boolean> {
-    const names = [chunkFileName(index), dictFileName(index)]
-    const texts = await Promise.all(names.map((name) => this.request(name)))
-    const eventText = texts[0] ?? null
-    const dictText = texts[1] ?? null
+    const pending = this.chunkTexts(index)
+    // Started before the current chunk is awaited, so the next chunk's round
+    // trip overlaps this one's. A chunk only DECODES on top of the one before
+    // it; nothing stops it being fetched early, and the pump is 94 chunks deep,
+    // which unpipelined is 94 round trips a phone pays end to end.
+    this.readAhead(index)
+    const parts = await pending.finally(() => this.forget(index, pending))
     if (this.signal.aborted) {
       this.end('aborted')
       return false
     }
-    if (eventText === null || dictText === null) {
-      this.end('chunk-missing')
-      return false
-    }
+    const eventText = bodyOf(parts[0]!)
+    const dictText = bodyOf(parts[1]!)
+    if (eventText === null || dictText === null)
+      return this.missChunk(parts[0]!, parts[1]!)
     return this.admitChunk(index, eventText, dictText)
   }
 
-  private async request(name: string): Promise<string | null> {
+  /** Warms the chunks after `index`, within the read-ahead depth. */
+  private readAhead(index: number): void {
+    const total = this.manifest?.chunks ?? 0
+    for (let step = 1; step <= CHUNK_READ_AHEAD; step += 1)
+      if (index + step < total) void this.chunkTexts(index + step)
+  }
+
+  /**
+   * The two requests one chunk needs, started at most once. The entry is
+   * dropped the moment the chunk is consumed, so the map holds at most
+   * `CHUNK_READ_AHEAD` bodies and a stall never resumes from a cached failure.
+   */
+  private chunkTexts(index: number): Promise<TextFetch[]> {
+    const warm = this.inFlight.get(index)
+    if (warm !== undefined) return warm
+    const names = [chunkFileName(index), dictFileName(index)]
+    const pending = Promise.all(names.map((name) => this.request(name)))
+    // A read-ahead that fails is forgotten rather than remembered: an outage
+    // long enough to take out the chunk being decoded takes out the chunks
+    // warmed behind it too, and serving those failures back from the map would
+    // make every later `retry()` stall on a request nobody ever re-sent. The
+    // rejection handler also absorbs the abort a disposed loader raises in a
+    // read-ahead nobody is left to consume.
+    void pending.then(
+      (parts) => {
+        if (parts.some((part) => !part.ok)) this.forget(index, pending)
+      },
+      () => this.forget(index, pending)
+    )
+    this.inFlight.set(index, pending)
+    return pending
+  }
+
+  /** Drops a warmed entry, unless a newer attempt has already replaced it. */
+  private forget(index: number, pending: Promise<TextFetch[]>): void {
+    if (this.inFlight.get(index) === pending) this.inFlight.delete(index)
+  }
+
+  /**
+   * A chunk that did not arrive. If every attempt at it merely failed, the file
+   * may well still be there and history stalls, recoverable by `retry()`; if
+   * the server refused it, this deployment does not have it and history ends.
+   */
+  private missChunk(...parts: readonly TextFetch[]): false {
+    if (!parts.some((part) => !part.ok && part.transient))
+      return this.end('chunk-missing')
+    if (!this.stalled) {
+      this.stalled = true
+      this.degraded.push('chunk-stalled')
+    }
+    this.notify()
+    return false
+  }
+
+  private async request(name: string): Promise<TextFetch> {
     const url = this.url(name)
     this.requestCount += 1
-    return getText(this.fetchImpl, url, this.signal)
+    return fetchText(this.fetchImpl, url, this.signal)
   }
 
   private decodeManifest(text: string | null, name: string): Manifest {
