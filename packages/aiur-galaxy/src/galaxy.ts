@@ -3,6 +3,7 @@ import {
   anchorRadius,
   armGeometry,
   clusterPoint,
+  clusterShape,
   type ArmGeometry,
 } from './galaxyCluster'
 import { corePin } from './privateRepo'
@@ -69,20 +70,24 @@ export interface UniverseLayout {
 
 const NEVER_ACTIVE = -1
 /**
- * Exponent that turns a repo's file count into its star count. Below 1 a big
- * repo still reads as bigger than a small one while giving up the field it
- * used to own: the largest repo here holds 7449 of the payload's 19784 files,
- * which was 38% of the disc at one star per file and is 19% of it at 0.62.
+ * Exponent that turns a repo's file count into its star count. A square root,
+ * so a repo holding a hundred times another's files gets ten times its stars.
+ * The payload's largest repo holds 43% of all paths and took 25% of the disc's
+ * vertices at 0.62, which is the "massive" the operator saw; at 0.5 it takes
+ * 18%. Pairs with the cluster's own square root — `clusterShape` spends the
+ * star count on length down the arm — so a repo's length and its brightness
+ * both come out as the fourth root of its file count.
  */
-const STAR_COMPRESSION = 0.62
+const STAR_COMPRESSION = 0.5
 /**
  * Multiplier on the compressed count. It sets how dense the disc is without
- * touching the shares the exponent decides, and it sets where folding begins:
- * under `STAR_DENSITY ** (1 / (1 - STAR_COMPRESSION))` files, about 18 here, a
- * repo keeps one star per file, because folding a handful of files saves no
- * vertices worth the star losing its name.
+ * touching the shares the exponent decides — dropping the exponent alone would
+ * have halved the disc — and it sets where folding begins: under
+ * `STAR_DENSITY ** (1 / (1 - STAR_COMPRESSION))` files, 25 here, a repo keeps
+ * one star per file, because folding a handful of files saves no vertices worth
+ * the star losing its name.
  */
-const STAR_DENSITY = 3
+const STAR_DENSITY = 5
 
 /** A repo paired with the step of its most recent contribution. */
 interface RepoRecency {
@@ -161,11 +166,12 @@ function orderByRecency(snapshot: UniverseSnapshot): readonly RepoRecency[] {
 
 /**
  * @description Appends a repo's stars, each one placed in the cluster centred
- * on the arm anchor its label is drawn on; `clusterPoint` owns that geometry.
- * A repo gets `starBudget` stars rather than one per file, so volume buys
- * neither area nor a proportional count, but every file still resolves: the
- * paths are folded onto the budget in sorted order, which puts a directory's
- * files on the same star or on neighbouring ones.
+ * on the arm anchor its label is drawn on; `clusterShape` and `clusterPoint`
+ * own that geometry. A repo gets `starBudget` stars rather than one per file,
+ * so volume buys a sublinear count and, through the shape, length down the arm
+ * rather than width across it. Every file still resolves: the paths are folded
+ * onto the budget in sorted order, which puts a directory's files on the same
+ * star or on neighbouring ones.
  */
 function appendStars(
   stars: StarPosition[],
@@ -176,9 +182,10 @@ function appendStars(
 ): void {
   const files = [...new Set(repo.files)].sort()
   const budget = starBudget(files.length)
+  const shape = clusterShape(arm, budget)
   const offset = stars.length
   for (const file of leadFiles(files, budget, repo.id, touched))
-    stars.push({ repoId: repo.id, file, ...clusterPoint(starKey(repo.id, file), arm) })
+    stars.push({ repoId: repo.id, file, ...clusterPoint(starKey(repo.id, file), shape) })
   for (let index = 0; index < files.length; index++) {
     const file = files[index]
     if (file !== undefined)
