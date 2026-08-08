@@ -48,16 +48,35 @@ export interface RepoLabels {
  * whatever its name is; only the width follows the text, so sixty labels read
  * as one family rather than as sixty different type sizes.
  */
-const LABEL_HEIGHT = 0.175
-/** Texture height the name is painted into; the width is measured per name. */
-const TEXTURE_HEIGHT = 64
+const LABEL_HEIGHT = 0.30625
+/**
+ * Texture height the name is painted into; the width is measured per name.
+ *
+ * Tall enough to hold the plate's fade as well as the glyphs. The text is 40px
+ * either way and `LABEL_HEIGHT` keeps the same ratio to this, so a label is
+ * exactly the size on screen that it was before the margin was added.
+ */
+const TEXTURE_HEIGHT = 112
 const LABEL_FONT = '600 40px monospace'
 /** Blank pixels kept either side of the text so glyphs never touch the edge. */
-const TEXTURE_PADDING = 16
+const TEXTURE_PADDING = 26
 /** Blur radius of the label's backdrop plate, in texture pixels. */
-const BACKDROP_BLUR = 10
-/** The plate itself: dark and translucent, so stars read faintly through it. */
-const BACKDROP_FILL = 'rgba(15, 17, 18, 0.72)'
+const BACKDROP_BLUR = 12
+/**
+ * Texture pixels between the plate's rectangle and the edge of the texture,
+ * and the ratio is the whole point. `blur(n)` is a gaussian of about n/2
+ * standard deviations, so a plate inset by only its own radius keeps barely
+ * two of them: the tail was still at alpha 31 of 255 when it met the texture
+ * bounds and stopped flat there, which is what read as a jagged edge. Four
+ * standard deviations of margin lets it reach zero on its own.
+ */
+const BACKDROP_INSET = BACKDROP_BLUR * 2
+/**
+ * The plate itself: dark and nearly opaque, so a label holds against the
+ * densest part of the disc. It was 0.72 over a lighter grey, which the core
+ * clusters were bright enough to show through.
+ */
+const BACKDROP_FILL = 'rgba(6, 7, 8, 0.9)'
 /**
  * Widest texture a label may ask for. Every WebGL 2 context guarantees at
  * least 2048, and a texture the driver refuses is a label that never renders
@@ -124,9 +143,9 @@ function paintBackdrop(ctx: CanvasRenderingContext2D, width: number): void {
   ctx.save()
   ctx.filter = `blur(${BACKDROP_BLUR}px)`
   ctx.fillStyle = BACKDROP_FILL
-  // Inset by the blur radius so the softened edge fades inside the texture
-  // rather than being clipped flat against its bounds.
-  const inset = BACKDROP_BLUR
+  // Inset well past the blur radius so the softened edge fades to nothing
+  // inside the texture rather than being clipped flat against its bounds.
+  const inset = BACKDROP_INSET
   ctx.fillRect(
     inset,
     inset,

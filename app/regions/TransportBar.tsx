@@ -107,9 +107,6 @@ export default function TransportBar(props: TransportBarProps): ReactNode {
       >
         <SkipEndIcon size={11} />
       </button>
-      <span className={styles.dateLabel} aria-hidden="true">
-        {snap.date || '–'}
-      </span>
     </div>
   )
 }

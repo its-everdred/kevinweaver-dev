@@ -121,8 +121,19 @@ export interface GalaxyScene {
    * @returns The arm now selected, or null when the click cleared it.
    */
   selectAt(x: number, y: number, width: number, height: number): RepoArm | null
-  /** Moves contributor nodes to eased positions, dragging their beams along. */
-  setContributors(nodes: readonly { actor: UniverseActor; x: number; y: number }[]): void
+  /**
+   * Moves contributor nodes to eased positions, dragging their beams along.
+   * @param nodes One per actor to draw, at its own opacity: a node faded to
+   * nothing is not drawn at all, and an actor missing from the list is hidden.
+   */
+  setContributors(
+    nodes: readonly {
+      actor: UniverseActor
+      x: number
+      y: number
+      alpha?: number
+    }[]
+  ): void
   /**
    * Turns the disc about its own axis, carrying its stars, haze, beams,
    * labels, and contributor nodes with it and leaving the camera alone: the
@@ -265,7 +276,10 @@ function addContributorNode(
   // are the same picture, and `SphereGeometry` is weight in the deferred
   // island that the first-load budget cannot pay for.
   const geometry = new PlaneGeometry(CONTRIBUTOR_SIZE, CONTRIBUTOR_SIZE)
-  const material = new MeshBasicMaterial({ color })
+  // Blended from the outset. An actor is faded out across the years before its
+  // own first commit, and a material that opts into transparency only when it
+  // is first needed would recompile mid-playback for two quads.
+  const material = new MeshBasicMaterial({ color, transparent: true })
   const mesh = new Mesh(geometry, material)
   mesh.position.set(0, 0, CONTRIBUTOR_DEPTH)
   scene.add(mesh)
@@ -417,14 +431,18 @@ export function createGalaxyScene(
     },
     setContributors(nodes) {
       // Hide every contributor first; only nodes present in the current frame
-      // become visible at their centroid. This prevents a stray node lingering
-      // at the field center when an actor has no contribution that day.
+      // become visible. An actor the glide has never seen at work has no place
+      // to stand, so it stays hidden rather than lingering at the field center.
       for (const contributor of contributors) contributor.mesh.visible = false
       const origins: BeamOrigin[] = []
       for (const node of nodes) {
         const existing = contributors.find((c) => c.actor === node.actor)
         if (!existing) continue
-        existing.mesh.visible = true
+        const alpha = node.alpha ?? 1
+        // A node faded away entirely is not drawn: a fully transparent quad
+        // still costs a draw call and still fills every pixel it covers.
+        existing.mesh.visible = alpha > 0
+        existing.mesh.material.opacity = alpha
         // The node sits over the day's work, so the disc's turn carries it the
         // same way it carries the stars that work landed on.
         existing.mesh.position.set(

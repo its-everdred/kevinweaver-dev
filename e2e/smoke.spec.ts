@@ -138,8 +138,8 @@ test.describe('smoke', () => {
     const clipPath = () => skip.evaluate((el) => getComputedStyle(el).clipPath)
     const box = async () => skip.boundingBox()
 
-    // Expected target, unchanged.
-    await expect(skip).toHaveAttribute('href', '#arc')
+    // Expected target: the git-log pane, renamed `arc` -> `log` with the nav.
+    await expect(skip).toHaveAttribute('href', '#log')
 
     // Hidden at rest (negative control): the sr-only clip leaves a ~1x1 box.
     expect(await clipPath()).toBe('inset(50%)')

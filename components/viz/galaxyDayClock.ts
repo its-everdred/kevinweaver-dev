@@ -4,6 +4,7 @@ import { beamReach } from '@/packages/aiur-galaxy/src/beamTiming'
 import {
   createContributorGlide,
   dayPhase,
+  firstContributionSteps,
   resolveContributors,
   type ContributorGlide,
   type ContributorNode,
@@ -87,7 +88,10 @@ export function createGalaxyDayClock(
   // to search per frame, and this answer never changes.
   const green = activeSteps(universe)
   const total = universe.stepCount
-  const glide = createContributorGlide()
+  // Each actor's own first day, resolved here for the same reason: the days
+  // before an actor existed are days its node fades out on, and asking the log
+  // that question per frame is the regression this whole clock exists to undo.
+  const glide = createContributorGlide(firstContributionSteps(universe))
   /** The day on screen, so a seek opens a transition the way an advance does. */
   let shown = -1
   /** When it opened, which is what its transition is measured from. */

@@ -1,9 +1,10 @@
 import { ShaderMaterial } from 'three'
+import type { BufferAttribute } from 'three'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createGalaxyScene } from '../src/galaxyScene'
-import type { GalaxyScene } from '../src/galaxyScene'
-import { layout } from './galaxyFixtures'
+import type { GalaxyScene, SceneContributor } from '../src/galaxyScene'
+import { frameAt, layout, vertexOf } from './galaxyFixtures'
 
 /**
  * The scene graph is the whole of what makes the sky a backdrop rather than
@@ -67,5 +68,66 @@ describe('the galaxy scene backdrop', () => {
     galaxy.dispose()
     expect(geometry).toHaveBeenCalledTimes(1)
     expect(material).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('a contributor node fading out', () => {
+  /** The node an actor is drawn as, or a thrown error when it has none. */
+  function nodeOf(galaxy: GalaxyScene, actor: 0 | 1): SceneContributor {
+    const found = galaxy.contributors.find((one) => one.actor === actor)
+    if (!found) throw new Error(`the scene draws no node for actor ${actor}`)
+    return found
+  }
+
+  it('blends the node, or an opacity below one changes nothing on screen', () => {
+    const galaxy = scene()
+    for (const node of galaxy.contributors)
+      expect(node.mesh.material.transparent).toBe(true)
+    galaxy.dispose()
+  })
+
+  it('carries each node its own opacity', () => {
+    const galaxy = scene()
+    galaxy.setContributors([
+      { actor: 0, x: 0.2, y: 0.4, alpha: 1 },
+      { actor: 1, x: 0.7, y: 0.7, alpha: 0.25 },
+    ])
+    expect(nodeOf(galaxy, 0).mesh.material.opacity).toBe(1)
+    expect(nodeOf(galaxy, 1).mesh.material.opacity).toBe(0.25)
+    expect(nodeOf(galaxy, 1).mesh.visible).toBe(true)
+    galaxy.dispose()
+  })
+
+  it('stops drawing a node that has faded out entirely', () => {
+    // A fully transparent billboard still costs a draw call and still fills
+    // its pixels. Playback spends half the default window on days the agent
+    // did not exist for, so this is most of a pass, not an edge case.
+    const galaxy = scene()
+    galaxy.setContributors([
+      { actor: 0, x: 0.2, y: 0.4, alpha: 1 },
+      { actor: 1, x: 0.7, y: 0.7, alpha: 0 },
+    ])
+    expect(nodeOf(galaxy, 0).mesh.visible).toBe(true)
+    expect(nodeOf(galaxy, 1).mesh.visible).toBe(false)
+    galaxy.dispose()
+  })
+
+  it('never lets an idle node drag the working actor beams', () => {
+    // An idle node is placed every frame now, so it re-anchors the beam field
+    // every frame too. Its own actor drew no beam today, and the beams that
+    // were drawn belong to somebody else.
+    const source = layout()
+    const galaxy = scene()
+    galaxy.setContributors([{ actor: 0, x: 0.2, y: 0.4, alpha: 1 }])
+    galaxy.setFrame(source, frameAt(2))
+    const ends = galaxy.beams.geometry.getAttribute('position') as BufferAttribute
+    const before = vertexOf(ends, 0)
+    // Step 2 is the human's day alone; the agent is idle and adrift.
+    galaxy.setContributors([
+      { actor: 0, x: 0.2, y: 0.4, alpha: 1 },
+      { actor: 1, x: 0.9, y: 0.9, alpha: 1 },
+    ])
+    expect(vertexOf(ends, 0)).toEqual(before)
+    galaxy.dispose()
   })
 })

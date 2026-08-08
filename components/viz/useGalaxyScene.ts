@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import type { RefObject } from 'react'
 import { formatDayISO } from '@/lib/viz/driver'
 import { orbitPosition, type OrbitState } from '@/lib/viz/orbit'
+import { contributorWander } from '@/packages/aiur-galaxy/src/contributors'
 // Imported per module rather than through the package barrel. The barrel also
 // re-exports the canvas-2D `renderUniverse`, which nothing in the app calls;
 // pulling it into the lazy island puts the deferred-JS budget over its cap.
@@ -187,8 +188,19 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
           const playback = days.day(clock.step, clock.direction)
           const stats = live.setFrame(layout, playback.frame, days.reach(now, animated))
           overflow = surfaceBeamOverflow(canvas, stats.beamOverflow, overflow)
+          // The float of an idle node is read off the same wall clock as the
+          // disc's turn, and is suppressed by reduced motion the same way. It
+          // is deliberately not an input to `settled` above: a position that
+          // moved with the clock would leave that key changing every frame and
+          // the loop would never idle again.
           live.setContributors(
-            days.glide.at(playback.targets, days.onward(), days.phase(now, animated))
+            days.glide.at(
+              playback.targets,
+              days.onward(),
+              days.phase(now, animated),
+              contributorWander(now - opened, reducedMotion),
+              playback.frame.step
+            )
           )
           live.render()
         }

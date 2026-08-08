@@ -134,7 +134,9 @@ describe('TransportBar behavior', () => {
     expect(getGalaxyTimeline().playing).toBe(false)
   })
 
-  it('shows the store date label when data is loaded', () => {
+  // The visible day now lives in the sticky header (it is readable at any
+  // scroll position there). The slider keeps the accessible readout.
+  it('leaves the visible day to the header and keeps it on the slider', () => {
     publishGalaxyTimeline({
       step: 5,
       date: '2020-01-06',
@@ -143,8 +145,12 @@ describe('TransportBar behavior', () => {
       direction: 'forward',
       windowStartISO: '2020-01-01',
     })
-    render(<TransportBar />)
-    expect(screen.getByText('2020-01-06')).toBeTruthy()
+    const { container } = render(<TransportBar />)
+    expect(container.textContent).not.toContain('2020-01-06')
+    expect(screen.getByRole('slider')).toHaveAttribute(
+      'aria-valuetext',
+      '2020-01-06 · day 6 of 10'
+    )
   })
 
   it('exposes a working seekGalaxyTimeline import surface', () => {

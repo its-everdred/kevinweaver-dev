@@ -1,0 +1,21 @@
+/*
+ * Section navigation.
+ *
+ * The list sheds below the sm breakpoint: the tmux status bar's window list is
+ * the navigation at that width (see the reflow budget in TmuxBar.tsx). This has
+ * to be a stylesheet rule rather than the inline `display: flex` it replaces,
+ * because an inline display declaration outranks `.kw-hide-sm { display: none }`
+ * — with the longer `contributions` label the nav overflowed a 412 px viewport
+ * by 60 px instead of shedding.
+ */
+.nav {
+  align-items: stretch;
+  display: flex;
+  gap: 2px;
+}
+
+@media (max-width: 720px) {
+  .nav {
+    display: none;
+  }
+}

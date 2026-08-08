@@ -56,6 +56,8 @@ declare global {
     axe?: {
       run(context: unknown, options: unknown): Promise<AxeResults>
     }
+    /** WebGL draw calls since navigation; see the reduced-motion idle test. */
+    __glDraws?: number
   }
 }
 
@@ -231,6 +233,77 @@ test('reduced motion halts the simulation @a11y', async ({ page }) => {
   expect(await page.evaluate(() => window.__viz!.inspect())).toEqual(before)
 })
 
+test('reduced motion stops the galaxy drawing, not just advancing @a11y', async ({
+  page,
+}, testInfo) => {
+  // Measured once, in the project that emulates the preference. The other
+  // three projects would each pay the pump's wall clock again to re-prove a
+  // property that has nothing to do with a viewport.
+  test.skip(
+    testInfo.project.name !== 'reduced-motion',
+    'measured in the reduced-motion project'
+  )
+  test.setTimeout(120_000)
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  // Counted at the only place a frame can cost anything. The loop keeps its
+  // rAF ticking under reduced motion; what it must never do is keep drawing.
+  // Anything in the scene whose position is a function of wall time — the
+  // disc's turn, an idle contributor node's float — either has to be stilled
+  // or it drags the loop back awake thirty times a second for nobody.
+  await page.addInitScript(() => {
+    window.__glDraws = 0
+    const tally = (proto: object): void => {
+      const target = proto as Record<string, (...args: unknown[]) => unknown>
+      for (const name of ['drawArrays', 'drawElements']) {
+        const original = target[name]
+        if (!original) continue
+        target[name] = function (this: unknown, ...args: unknown[]): unknown {
+          window.__glDraws = (window.__glDraws ?? 0) + 1
+          return original.apply(this, args)
+        }
+      }
+    }
+    tally(WebGL2RenderingContext.prototype)
+    tally(WebGLRenderingContext.prototype)
+  })
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await page.evaluate(() => {
+    document.querySelector('.kw-graph')?.scrollIntoView({ block: 'center' })
+  })
+  await expect(page.getByRole('img', { name: /repository map/i })).toBeVisible()
+  // Every chunk that lands rebuilds the scene and costs it another frame, so
+  // the pump has to be finished before a still frame means anything.
+  await expect
+    .poll(
+      async () => {
+        const value =
+          (await page.locator('html').getAttribute('data-kw-chunks')) ?? '0/1'
+        const [loaded, total] = value.split('/').map(Number)
+        return loaded === total && (total ?? 0) > 1
+      },
+      { timeout: 60_000, message: 'the pump never reached the last chunk' }
+    )
+    .toBe(true)
+  const draws = (): Promise<number> => page.evaluate(() => window.__glDraws ?? 0)
+  // The disc has to have been drawn at all, or everything below is vacuous.
+  await expect.poll(draws, { timeout: 10_000 }).toBeGreaterThan(0)
+  await expect
+    .poll(
+      async () => {
+        const before = await draws()
+        await page.waitForTimeout(1000)
+        return (await draws()) - before
+      },
+      { timeout: 30_000, message: 'the loop never stopped drawing at all' }
+    )
+    .toBe(0)
+  const settled = await draws()
+  // Five seconds is five days of playback and a hundred and fifty frames the
+  // loop would have drawn had anything left in the scene moved with the clock.
+  await page.waitForTimeout(5000)
+  expect(await draws()).toBe(settled)
+})
+
 test('a pause control exists and stops the animation @a11y', async ({
   page,
 }) => {
@@ -285,7 +358,7 @@ test('the bypass link is the first tab stop and is visible when focused @a11y', 
   const skip = page.getByRole('link', { name: /skip/i })
   await page.keyboard.press('Tab')
   await expect(skip).toBeFocused()
-  await expect(skip).toHaveAttribute('href', '#arc')
+  await expect(skip).toHaveAttribute('href', '#log')
   const box = await skip.boundingBox()
   expect(box).not.toBeNull()
   expect(box!.width).toBeGreaterThan(40)
@@ -337,6 +410,18 @@ test('reduced motion suppresses the boot overlay entirely @a11y', async ({
     // non-reduced path) or is suppressed entirely. Give the decision time to run
     // and then assert the dialog never appears.
     await page.waitForLoadState('domcontentloaded')
+    // Wait for the loader to have actually started before timing the overlay.
+    // The pump reads ahead and retries on a backoff, so "which requests exist
+    // after N milliseconds" is a race: under container load a context can reach
+    // the sample having made none at all, and the differential below then
+    // compares an empty list against a full one and fails on a difference that
+    // is only scheduling. `data-kw-chunks` is the pump's own progress signal,
+    // so waiting on it makes the two contexts comparable by construction.
+    await page.waitForFunction(
+      () => document.documentElement.dataset['kwChunks'] !== undefined,
+      undefined,
+      { timeout: 15_000 }
+    )
     await page.waitForTimeout(1500)
     await expect(page.getByRole('dialog')).toHaveCount(0)
     return requests

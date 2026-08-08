@@ -28,6 +28,15 @@ import {
 const META = REGION_META.tmuxBar
 const SECTIONS: readonly NavSection[] = NAV_SECTIONS
 
+/*
+ * The design system paints an inactive window `--text-dim` on the `--wins`
+ * surface: measured 4.05:1, which axe reports as a WCAG 1.4.3 violation as soon
+ * as a label is long enough for it to resolve the background (it returns
+ * "incomplete" for the short ones). `--text-muted` on the same surface measures
+ * 5.26:1. The active window is unaffected: `--text-strong` on `--bg3` is 5.8:1.
+ */
+const INACTIVE_WIN_COLOR = 'var(--text-muted)'
+
 function windows(active: string | null) {
   return SECTIONS.map((section) => (
     <a
@@ -35,7 +44,11 @@ function windows(active: string | null) {
       className={active === section.id ? 'win active' : 'win'}
       href={`#${section.id}`}
       key={section.id}
-      style={{ minHeight: '24px', padding: '0 var(--sp-2)' }}
+      style={{
+        color: active === section.id ? undefined : INACTIVE_WIN_COLOR,
+        minHeight: '24px',
+        padding: '0 var(--sp-2)',
+      }}
     >
       <span aria-hidden="true">{section.index}</span>
       <span

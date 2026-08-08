@@ -2,7 +2,9 @@
 
 import { useActiveSection } from '@/components/ds/TmuxBar'
 import Link from 'next/link'
+import { HeaderDate } from './HeaderDate'
 import { NAV_SECTIONS, REGION_META, type HeaderProps } from './_contract'
+import styles from './Header.module.css'
 
 export type HeaderFreshnessTone = 'fresh' | 'stale' | 'static'
 
@@ -94,11 +96,7 @@ export function Header({ id, className, style, freshness }: HeaderOwnProps) {
         kevinweaver.dev
       </Link>
       {NAV_SECTIONS.length > 0 ? (
-        <nav
-          aria-label="sections"
-          className="kw-hide-sm"
-          style={{ alignItems: 'stretch', display: 'flex', gap: '2px' }}
-        >
+        <nav aria-label="sections" className={styles.nav}>
           {NAV_SECTIONS.map((section) => (
             <a
               aria-current={active === section.id ? 'location' : undefined}
@@ -123,6 +121,7 @@ export function Header({ id, className, style, freshness }: HeaderOwnProps) {
       ) : null}
       <span style={{ flex: 1 }} />
       {freshness ? <FreshnessPill freshness={freshness} /> : null}
+      <HeaderDate />
     </header>
   )
 }

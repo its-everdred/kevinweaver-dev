@@ -5,7 +5,10 @@ import {
   BEAM_STAGGER_MS,
   beamOffset,
 } from '@/packages/aiur-galaxy/src/beamTiming'
-import { DAY_MIDPOINT } from '@/packages/aiur-galaxy/src/contributors'
+import {
+  DAY_MIDPOINT,
+  FADE_STEPS,
+} from '@/packages/aiur-galaxy/src/contributors'
 import { layoutUniverse } from '@/packages/aiur-galaxy/src/galaxy'
 import type { UniverseSnapshot } from '@/packages/aiur-galaxy/src/types'
 import { STEP_MS, createGalaxyDayClock } from './galaxyDayClock'
@@ -121,5 +124,14 @@ describe('createGalaxyDayClock', () => {
     days.advance(3, 'backward', 400, true)
     const shown = days.glide.at([{ actor: 0, x: 1, y: 0, active: true }], [], 0.25)
     expect(shown[0]?.x).toBeCloseTo(0.5, 12)
+  })
+
+  it('gives its glide each actor own first day, so a node can fade in', () => {
+    // The fixture's human first works on step 2, and the agent never does.
+    const days = clock()
+    days.glide.at([{ actor: 0, x: 0.4, y: 0.4, active: true }], [], DAY_MIDPOINT)
+    const early = days.glide.at([], [], DAY_MIDPOINT, undefined, 0)
+    expect(early[0]?.alpha).toBeCloseTo(1 - 2 / FADE_STEPS, 12)
+    expect(days.glide.at([], [], DAY_MIDPOINT, undefined, 2)[0]?.alpha).toBe(1)
   })
 })
