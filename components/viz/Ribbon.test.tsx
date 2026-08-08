@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import {
   afterAll,
   beforeAll,
@@ -20,6 +20,7 @@ import {
   getGalaxyTimeline,
   publishGalaxyTimeline,
   seekGalaxyTimeline,
+  setGalaxyPlaying,
 } from './galaxyTimeline'
 import { Ribbon } from './Ribbon'
 
@@ -94,10 +95,14 @@ const captured = new Set<number>()
 /** Live ResizeObserver callbacks, one per mounted strip. */
 const observers = new Set<() => void>()
 
+/** Every ring stroked since the last test, as `[x, y]` in backing pixels. */
+const rings: [number, number][] = []
+
 /**
  * jsdom implements no 2D context either, and without one the strip never
  * measures its pane. The paint itself is covered against a recording context in
- * ribbonWindow.test.ts; here it only has to exist and swallow the calls.
+ * ribbonWindow.test.ts and ribbonTravel.test.ts; here only the ring is kept,
+ * because where the ring is drawn is the one thing the frame loop decides.
  */
 const context2d = {
   fillStyle: '',
@@ -108,8 +113,15 @@ const context2d = {
   textBaseline: 'alphabetic',
   clearRect: () => {},
   fillRect: () => {},
-  strokeRect: () => {},
+  strokeRect: (x: number, y: number) => {
+    rings.push([x, y])
+  },
   fillText: () => {},
+}
+
+/** Where the last frame put the ring, or null when it drew none. */
+function ringAt(): [number, number] | null {
+  return rings.at(-1) ?? null
 }
 
 /** Reports a new pane size to every mounted strip, as a real resize would. */
@@ -119,10 +131,43 @@ function resizePane(width: number, height: number): void {
   act(() => observers.forEach((notify) => notify()))
 }
 
+/** What `(prefers-reduced-motion: reduce)` answers for the next mount. */
+let reduceMotion = false
+/** Animation frames the mounted strips have asked for and not yet been given. */
+const pending = new Map<number, FrameRequestCallback>()
+let nextFrame = 1
+/** The strip's clock, so a crossing depends on this file and not on the host. */
+let clockMs = 0
+
+/** Runs every frame the strips are waiting on, at `now` on their clock. */
+function runFrames(now: number): void {
+  clockMs = now
+  const due = [...pending.values()]
+  pending.clear()
+  act(() => due.forEach((callback) => callback(now)))
+}
+
 beforeAll(() => {
-  // jsdom ships no pointer capture, no layout, no ResizeObserver and no canvas
-  // context; all four are browser-side gaps, not component behavior, so they
-  // are filled here rather than guarded for in production code.
+  // jsdom ships no pointer capture, no layout, no ResizeObserver, no canvas
+  // context and no media queries; all five are browser-side gaps, not component
+  // behavior, so they are filled here rather than guarded for in production
+  // code. The frame queue is driven by hand so the ring's crossing is a
+  // function of a clock this file owns rather than of how long a test took.
+  window.matchMedia = ((query: string) => ({
+    matches: reduceMotion && query.includes('prefers-reduced-motion'),
+    media: query,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+  })) as unknown as typeof window.matchMedia
+  window.requestAnimationFrame = ((callback: FrameRequestCallback) => {
+    const id = nextFrame++
+    pending.set(id, callback)
+    return id
+  }) as typeof window.requestAnimationFrame
+  window.cancelAnimationFrame = ((id: number) => {
+    pending.delete(id)
+  }) as typeof window.cancelAnimationFrame
+  performance.now = () => clockMs
   Element.prototype.setPointerCapture = (pointerId: number) => {
     captured.add(pointerId)
   }
@@ -153,6 +198,10 @@ afterAll(() => {
 
 beforeEach(() => {
   captured.clear()
+  pending.clear()
+  rings.length = 0
+  reduceMotion = false
+  clockMs = 0
   HTMLCanvasElement.prototype.getBoundingClientRect = () =>
     new DOMRect(0, 0, CSS_W, CSS_H)
   publishGalaxyTimeline({
@@ -347,9 +396,11 @@ describe('the contribution grid as the seek surface', () => {
     // whole gesture — and the only seek surface — down with it.
     render(<Ribbon />)
     const target = ribbonCanvas()
-    const refuse = vi.spyOn(target, 'setPointerCapture').mockImplementation(() => {
-      throw new DOMException('No active pointer', 'NotFoundError')
-    })
+    const refuse = vi
+      .spyOn(target, 'setPointerCapture')
+      .mockImplementation(() => {
+        throw new DOMException('No active pointer', 'NotFoundError')
+      })
     expect(() =>
       fireEvent.pointerDown(target, { pointerId: 9, ...clientAt(0) })
     ).not.toThrow()
@@ -395,5 +446,142 @@ describe('the contribution grid as the seek surface', () => {
   it('claims the touch gesture so a finger scrubs instead of scrolling', () => {
     render(<Ribbon />)
     expect(ribbonCanvas().style.touchAction).toBe('none')
+  })
+})
+
+/**
+ * Days 699 and 700 both carry contributions and sit one weekday row apart in
+ * the newest window, so playing off one lands on the other: the advance the
+ * ring travels. The fixture is only empty every fifteenth day, which is why the
+ * pair is adjacent here and rarely is on the real payload.
+ */
+const FROM_DAY = 700
+const TO_DAY = 699
+
+/** Resumes the shared clock, then settles the ring on `FROM_DAY`. */
+function playFrom(): void {
+  act(() =>
+    publishGalaxyTimeline({
+      step: FROM_DAY,
+      date: formatDayISO(WINDOW_START, FROM_DAY),
+      playing: true,
+      total: DAY_COUNT,
+      direction: 'backward',
+      windowStartISO: WINDOW_START,
+    })
+  )
+}
+
+/** Hands the day on the way playback does, and reports where the ring went. */
+function advance(): [number, number] | null {
+  act(() => seekGalaxyTimeline(TO_DAY, DAY_COUNT))
+  return ringAt()
+}
+
+describe('the current day’s ring following playback', () => {
+  it('never asks for a frame while the clock is stopped', () => {
+    // Every committed screenshot baseline is taken after `__viz.pause()`, so a
+    // paused strip that has asked for a frame is a baseline that depends on
+    // when the shot was taken. It is also the always-on render loop that
+    // stalled this page once before.
+    render(<Ribbon />)
+    expect(pending.size).toBe(0)
+    act(() => seekGalaxyTimeline(TO_DAY, DAY_COUNT))
+    expect(pending.size).toBe(0)
+  })
+
+  it('carries the ring across, and lands it on the day within the slot', () => {
+    render(<Ribbon />)
+    playFrom()
+    const left = ringAt()!
+    const crossing = advance()!
+    // Asked for a frame, and is still on the square it is leaving.
+    expect(pending.size).toBe(1)
+    expect(crossing[1]).toBe(left[1])
+    runFrames(120)
+    const midway = ringAt()!
+    // A day is a second; the ring has to be home well before the next one.
+    runFrames(240)
+    const landed = ringAt()!
+    // Day 699 sits one weekday row above day 700, so the crossing runs up the
+    // column and the ring is strictly between the two squares on the way.
+    expect(landed[1]).toBeLessThan(left[1])
+    expect(midway[1]).toBeLessThan(left[1])
+    expect(midway[1]).toBeGreaterThan(landed[1])
+    // And the loop stops the moment it lands rather than running forever.
+    expect(pending.size).toBe(0)
+  })
+
+  it('settles the ring where a paused strip would have drawn it anyway', () => {
+    // The frame a baseline is taken of: the end of a crossing has to be the
+    // same pixels as a seek to that day with the clock stopped, or the strip
+    // has two resting states and only one of them is in the PNGs.
+    render(<Ribbon />)
+    playFrom()
+    advance()
+    runFrames(240)
+    const travelled = ringAt()!
+    rings.length = 0
+    act(() => setGalaxyPlaying(false))
+    act(() => seekGalaxyTimeline(FROM_DAY, DAY_COUNT))
+    act(() => seekGalaxyTimeline(TO_DAY, DAY_COUNT))
+    expect(ringAt()).toEqual(travelled)
+    expect(pending.size).toBe(0)
+  })
+
+  it('drops a crossing already in the air the instant playback pauses', () => {
+    // boot() plays for four seconds before it pauses, so the pause can land
+    // mid-crossing. A half-travelled ring in a baseline is a flake.
+    render(<Ribbon />)
+    playFrom()
+    advance()
+    runFrames(60)
+    const midway = ringAt()!
+    act(() => setGalaxyPlaying(false))
+    const settled = ringAt()!
+    expect(settled).not.toEqual(midway)
+    expect(pending.size).toBe(0)
+    // Exactly where a paused seek to that day puts it.
+    rings.length = 0
+    act(() => seekGalaxyTimeline(FROM_DAY, DAY_COUNT))
+    act(() => seekGalaxyTimeline(TO_DAY, DAY_COUNT))
+    expect(ringAt()).toEqual(settled)
+  })
+
+  it('snaps a seek instead of flying the ring across the year', () => {
+    // A seek is a discontinuity, not a step. Playback runs backward one green
+    // day at a time; a jump forward over four hundred of them is a scrub, and
+    // animating it would say the clock travelled when it did not.
+    render(<Ribbon />)
+    playFrom()
+    act(() => seekGalaxyTimeline(FROM_DAY - 300, DAY_COUNT))
+    expect(pending.size).toBe(0)
+    act(() => seekGalaxyTimeline(FROM_DAY, DAY_COUNT))
+    expect(pending.size).toBe(0)
+  })
+
+  it('puts the ring straight on the day under reduced motion', () => {
+    reduceMotion = true
+    render(<Ribbon />)
+    playFrom()
+    const left = ringAt()!
+    const landed = advance()!
+    expect(pending.size).toBe(0)
+    expect(landed[1]).toBeLessThan(left[1])
+    // And it is the same resting frame every other route to that day draws.
+    rings.length = 0
+    act(() => setGalaxyPlaying(false))
+    act(() => seekGalaxyTimeline(FROM_DAY, DAY_COUNT))
+    act(() => seekGalaxyTimeline(TO_DAY, DAY_COUNT))
+    expect(ringAt()).toEqual(landed)
+  })
+
+  it('lets the strip go without leaving a frame pending', () => {
+    render(<Ribbon />)
+    playFrom()
+    advance()
+    expect(pending.size).toBe(1)
+    cleanup()
+    expect(pending.size).toBe(0)
   })
 })

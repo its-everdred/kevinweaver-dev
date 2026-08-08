@@ -1,43 +1,26 @@
 import { formatDayISO } from '@/lib/viz/driver'
+import { LEVEL_COLORS, MARKER_COLOR } from './ribbonRamp'
 import {
-  CURRENT_RING,
-  CURRENT_SEPARATOR,
-  LEVEL_COLORS,
-  MARKER_COLOR,
-} from './ribbonRamp'
-import {
-  ribbonCell,
-  type RibbonLayout,
-  type RibbonWindow,
-} from './ribbonWindow'
+  paintRibbonRing,
+  type RibbonRingCtx,
+  type RibbonRingPaint,
+} from './ribbonRing'
 
 /** The slice of the 2D API the ribbon paints through. */
-export interface RibbonCtx {
+export interface RibbonCtx extends RibbonRingCtx {
   fillStyle: string | CanvasGradient | CanvasPattern
-  strokeStyle: string | CanvasGradient | CanvasPattern
-  lineWidth: number
   font: string
   textAlign: CanvasTextAlign
   textBaseline: CanvasTextBaseline
   clearRect(x: number, y: number, width: number, height: number): void
   fillRect(x: number, y: number, width: number, height: number): void
-  strokeRect(x: number, y: number, width: number, height: number): void
   fillText(text: string, x: number, y: number): void
 }
 
 /** Everything one ribbon frame is a pure function of. */
-export interface RibbonPaintOptions {
-  readonly grid: {
-    readonly level: ArrayLike<number>
-    readonly dayCount: number
-  }
-  readonly window: RibbonWindow
-  readonly layout: RibbonLayout
+export interface RibbonPaintOptions extends RibbonRingPaint {
   readonly widthPx: number
   readonly heightPx: number
-  readonly dpr: number
-  /** Current day index from the shared galaxy timeline. */
-  readonly step: number
   /** ISO date of payload day 0. */
   readonly windowStartISO: string
 }
@@ -51,13 +34,15 @@ export interface RibbonPaintOptions {
  *
  * Deterministic by construction — no clock, no randomness, integer lattice —
  * because the e2e suite screenshots this surface and asserts that two renders
- * of the same step are byte-identical.
+ * of the same step are byte-identical. `options.ring` is the one thing that
+ * moves, and it is a value the caller resolved from a clock it owns, not one
+ * this module reads: the paint stays a pure function of what it is handed.
  */
 export function paintRibbon(ctx: RibbonCtx, options: RibbonPaintOptions): void {
   ctx.clearRect(0, 0, options.widthPx, options.heightPx)
   paintCells(ctx, options)
   paintYearMarkers(ctx, options)
-  paintCurrentDay(ctx, options)
+  paintRibbonRing(ctx, options)
 }
 
 function paintCells(ctx: RibbonCtx, options: RibbonPaintOptions): void {
@@ -154,36 +139,4 @@ function paintYearMarkers(ctx: RibbonCtx, options: RibbonPaintOptions): void {
     ctx.fillText(mark.year, Math.min(mark.xPx, maxXPx), baselineYPx)
     lastLabelXPx = mark.xPx
   }
-}
-
-function paintCurrentDay(ctx: RibbonCtx, options: RibbonPaintOptions): void {
-  const { layout, step } = options
-  if (step < 0 || step >= options.grid.dayCount) return
-  // A day nothing landed on carries no highlight: the ring says "this is the
-  // day being played", and ringing an empty square reads as a false positive.
-  // Level 0 is exactly zero contributions — band 1's lower bound is 1 — so the
-  // level already on hand answers the question without a second series.
-  if ((options.grid.level[step] ?? 0) <= 0) return
-  const cell = ribbonCell(options.window, step)
-  if (!cell) return
-  const x = layout.originXPx + cell.column * layout.stepPx
-  const y = layout.originYPx + cell.row * layout.stepPx
-  const ringPx = Math.max(1, Math.round(Math.max(1, options.dpr)))
-  ctx.lineWidth = ringPx
-  // Two rings: a dark separator hugging the cell so the bright ring still
-  // reads on #39d353, then the bright ring itself in the gutter.
-  ctx.strokeStyle = CURRENT_SEPARATOR
-  ctx.strokeRect(
-    x - ringPx / 2,
-    y - ringPx / 2,
-    layout.cellPx + ringPx,
-    layout.cellPx + ringPx
-  )
-  ctx.strokeStyle = CURRENT_RING
-  ctx.strokeRect(
-    x - ringPx * 1.5,
-    y - ringPx * 1.5,
-    layout.cellPx + ringPx * 3,
-    layout.cellPx + ringPx * 3
-  )
 }
