@@ -4,7 +4,7 @@ import { Contact } from '@/app/regions/Contact'
 
 test('renders the authoritative contact surface without private facts', () => {
   render(<Contact />)
-  const region = screen.getByRole('region', { name: 'reach me' })
+  const region = screen.getByRole('region', { name: 'contact' })
   const links = screen.getAllByRole('link')
 
   expect(links).toHaveLength(3)

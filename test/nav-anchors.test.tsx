@@ -3,6 +3,7 @@ import { beforeAll, expect, test } from 'vitest'
 import { CareerLog } from '@/app/regions/CareerLog'
 import { Contact } from '@/app/regions/Contact'
 import { Header } from '@/app/regions/Header'
+import { Instrument } from '@/app/regions/Instrument'
 import { ManPage } from '@/app/regions/ManPage'
 import { TmuxBar } from '@/app/regions/TmuxBar'
 import { ANCHOR_TARGET, NAV_SECTIONS } from '@/app/regions/_contract'
@@ -25,6 +26,7 @@ function renderChrome() {
   return render(
     <>
       <Header />
+      <Instrument />
       <ManPage />
       <CareerLog />
       <Contact />

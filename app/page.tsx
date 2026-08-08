@@ -95,7 +95,7 @@ export default async function Page() {
 
   return (
     <>
-      <a className="skip sr-only" href="#arc">
+      <a className="skip sr-only" href="#log">
         skip the animation
       </a>
       <Header freshness={freshness} />

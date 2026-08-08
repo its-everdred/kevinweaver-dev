@@ -9,7 +9,7 @@ import { RepoInfo } from '@/components/viz/RepoInfo'
 import { Ribbon } from '@/components/viz/Ribbon'
 import { decodeGrid, decodeManifest } from '@/lib/bundle/codec'
 import type { GridSeries, Manifest } from '@/lib/bundle/schema'
-import { REGION_META, type InstrumentProps } from './_contract'
+import { ANCHOR_TARGET, REGION_META, type InstrumentProps } from './_contract'
 import styles from './Instrument.module.css'
 
 const META = REGION_META.instrument
@@ -40,8 +40,14 @@ function readCommittedHead(): { grid: GridSeries; manifest: Manifest } | null {
  * @returns The complete instrument region, including the server-rendered
  * DEC-011 contribution table (the canvas text equivalent + no-JS fallback).
  */
-export function Instrument({ id, className, style }: InstrumentProps) {
-  const instrumentClassName = ['kw-instr', className].filter(Boolean).join(' ')
+export function Instrument({
+  id = META.anchorId ?? undefined,
+  className,
+  style,
+}: InstrumentProps) {
+  const instrumentClassName = ['kw-instr', ANCHOR_TARGET.className, className]
+    .filter(Boolean)
+    .join(' ')
   const head = readCommittedHead()
 
   return (
@@ -50,6 +56,7 @@ export function Instrument({ id, className, style }: InstrumentProps) {
       className={instrumentClassName}
       id={id}
       style={style}
+      tabIndex={ANCHOR_TARGET.tabIndex}
     >
       <h2 className="sr-only" id={META.titleId}>
         {META.accessibleName}
