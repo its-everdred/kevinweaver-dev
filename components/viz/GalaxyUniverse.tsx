@@ -12,6 +12,7 @@ import type {
   UniverseSnapshot,
 } from '@/packages/aiur-galaxy/src/types'
 import { galaxyEventLog } from './galaxyEventLog'
+import { useGalaxyWheelZoom } from './galaxyWheelZoom'
 import {
   useInstrumentRuntime,
   type InstrumentRuntimeState,
@@ -61,7 +62,7 @@ function galaxyLabel(runtime: InstrumentRuntimeState): string {
   // The camera hint belongs in the name: a canvas with an `aria-label` never
   // announces its fallback subtree, so this is the only place a keyboard user
   // is told that the arrow and plus/minus keys drive the view.
-  return 'Repository map: one spiral disc where every repo is an arm and every file a star, brightening across the contribution window. Drag or use the arrow keys to rotate it, and pinch, press plus or minus, or use the zoom buttons to change the distance.'
+  return 'Repository map: one spiral disc where every repo is an arm and every file a star, brightening across the contribution window. Drag or arrow keys rotate it; pinch, plus or minus, or the zoom buttons change the distance; two-finger drag or Shift with the arrows moves the view; Home re-centres it.'
 }
 
 /**
@@ -81,6 +82,10 @@ export const GalaxyUniverse = memo(function GalaxyUniverse(): ReactNode {
   const sceneRef = useRef<GalaxyScene | null>(null)
   const camera = useGalaxyCamera()
   const pointer = useGalaxyPointer(camera, sceneRef)
+  // The wheel reaches the same reducer the buttons and the keys do, but only
+  // while the canvas holds focus and only while the dolly has somewhere to go,
+  // so a reader scrolling past the galaxy is never trapped by it.
+  useGalaxyWheelZoom(canvasRef, camera)
 
   const universe = useMemo(
     () => (viz ? buildGalaxyUniverse(viz.head) : null),

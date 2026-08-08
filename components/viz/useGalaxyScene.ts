@@ -159,7 +159,11 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
         if (reducedMotion && live) {
           const hover = pointerRef.current
           const orbit = orbitRef.current
-          const state = `${clock.step} ${clock.direction} ${hover?.x ?? ''},${hover?.y ?? ''} ${orbit.azimuth},${orbit.polar},${orbit.distance}`
+          // The pan pivot belongs in this key. Without it a pan under reduced
+          // motion changes nothing the key can see, so no frame is drawn and
+          // the gesture silently does nothing for the viewers most likely to
+          // need it.
+          const state = `${clock.step} ${clock.direction} ${hover?.x ?? ''},${hover?.y ?? ''} ${orbit.azimuth},${orbit.polar},${orbit.distance},${orbit.target.x},${orbit.target.y},${orbit.target.z}`
           if (state === settled) {
             raf = requestAnimationFrame(frame)
             return
@@ -170,8 +174,9 @@ export function useGalaxyScene(host: GalaxySceneHost): void {
           // The camera is read here rather than pushed on change so a scene
           // rebuilt for newly loaded data adopts the viewer's camera instead of
           // snapping back to the build framing.
-          const view = orbitPosition(orbitRef.current)
-          live.setCamera(view.x, view.y, view.z)
+          const orbit = orbitRef.current
+          const view = orbitPosition(orbit)
+          live.setCamera(view.x, view.y, view.z, orbit.target)
           live.setRotation(discSpin(now - opened, reducedMotion))
           const hover = pointerRef.current
           live.setHighlight(
