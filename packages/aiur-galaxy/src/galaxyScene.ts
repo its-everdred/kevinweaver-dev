@@ -134,8 +134,16 @@ export interface GalaxyScene {
    * host and a node that is never given one keeps its flat actor colour.
    */
   setContributorImage(actor: UniverseActor, image: TexImageSource): void
-  /** Places the camera at a world position, aimed at the disc center. */
-  setCamera(x: number, y: number, z: number): void
+  /**
+   * Places the camera at a world position, aimed at `pivot` — the disc center
+   * until the viewer pans, and the panned-to point after.
+   */
+  setCamera(
+    x: number,
+    y: number,
+    z: number,
+    pivot?: { x: number; y: number; z: number }
+  ): void
   /** Resizes the renderer and the camera aspect, never the camera position. */
   resize(width: number, height: number): void
   /** Renders one frame. */
@@ -433,8 +441,8 @@ export function createGalaxyScene(
       disc.matrixWorldNeedsUpdate = true
       placeLabels()
     },
-    setCamera(x, y, z) {
-      placeCamera(camera, x, y, z)
+    setCamera(x, y, z, pivot) {
+      placeCamera(camera, x, y, z, pivot)
       orient()
     },
     resize(width, height) {
@@ -456,23 +464,34 @@ export function createGalaxyScene(
 }
 
 /**
- * @description Places the camera at a world position and aims it at the disc
- * center. This is the only writer of the camera's position: resizing must not
- * refit it, or a user's rotation and zoom would be discarded on every resize.
+ * @description Places the camera at a world position and aims it at the pivot
+ * the viewer has panned to, which is the disc center until they pan. This is
+ * the only writer of the camera's position: resizing must not refit it, or a
+ * user's rotation and zoom would be discarded on every resize.
+ *
+ * The pivot is a parameter rather than a fixed origin because a pan moves the
+ * eye and the point it looks at by the same amount. Aiming at the origin while
+ * the eye travels turns a pan into a slow orbit about the middle of the disc —
+ * the view swings and nothing new enters the frame.
  * @param camera The scene camera.
  * @param x World x.
  * @param y World y.
  * @param z World z.
+ * @param pivot Point to aim at; the disc center when the viewer has not panned.
  */
 export function placeCamera(
   camera: PerspectiveCamera,
   x: number,
   y: number,
-  z: number
+  z: number,
+  pivot: { x: number; y: number; z: number } = ORIGIN
 ): void {
   camera.position.set(x, y, z)
-  camera.lookAt(0, 0, 0)
+  camera.lookAt(pivot.x, pivot.y, pivot.z)
 }
+
+/** The disc center, and so the pivot of a camera that has not been panned. */
+const ORIGIN = { x: 0, y: 0, z: 0 }
 
 /**
  * @description Applies a viewport size to the projection aspect alone, leaving

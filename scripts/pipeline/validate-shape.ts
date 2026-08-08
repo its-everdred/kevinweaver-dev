@@ -137,9 +137,22 @@ function validatePreviousRun(
   )
 }
 
+/**
+ * A drop in events means breakage only while both runs extracted by the same
+ * rules. Adding one pattern to the vendored list legitimately removed 85.6% of
+ * the corpus; the guard read that as a broken run and refused to publish it,
+ * which is the correct call on the evidence it had. Comparing the fingerprints
+ * gives it the missing evidence, and it re-arms on the very next run because
+ * the new fingerprint is written to state either way.
+ *
+ * The combined total is deliberately still compared: it comes from GitHub's
+ * contribution calendar rather than from the file corpus, so no extraction rule
+ * can move it and a fall there means something really did break.
+ */
 function regressed(bundle: EncodedBundle, prev: PipelineState): boolean {
+  const comparable = (prev.extractionRules ?? null) === bundle.extractionRules
   return (
-    bundle.manifest.events < (prev.events ?? 0) * 0.9 ||
+    (comparable && bundle.manifest.events < (prev.events ?? 0) * 0.9) ||
     bundle.combinedTotal < (prev.combinedTotal ?? 0)
   )
 }

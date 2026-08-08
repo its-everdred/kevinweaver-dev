@@ -22,6 +22,13 @@ export interface PipelineState {
   samlCanary?: 'ok' | 'failed'
   combinedTotal?: number
   events?: number
+  /**
+   * Fingerprint of the extraction rules that produced `events`, so the next run
+   * can tell whether its own count is comparable with this one's. Absent on
+   * state written before the field existed, which reads as "not comparable"
+   * and costs exactly one skipped event-count check.
+   */
+  extractionRules?: string
   repos: Readonly<Record<string, RepoPipelineState>>
   calendar?: Readonly<Record<string, unknown>>
   private?: Readonly<Record<string, number>>
@@ -51,6 +58,7 @@ const stateSchema = z
     samlCanary: z.enum(['ok', 'failed']).optional(),
     combinedTotal: z.number().int().nonnegative().optional(),
     events: z.number().int().nonnegative().optional(),
+    extractionRules: z.string().optional(),
     repos: z.record(z.string(), repoStateSchema),
     calendar: z.record(z.string(), z.unknown()).optional(),
     private: z.record(z.string(), z.number().int().nonnegative()).optional(),

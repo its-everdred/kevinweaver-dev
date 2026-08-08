@@ -263,6 +263,62 @@ async function expectDegradedPump(
   probe.view.unmount()
   errors.mockRestore()
 }
+/**
+ * The mobile bug. The pump is 94 chunks over 188 sequential requests; a phone
+ * drops one of those routinely, and a dropped request used to be indistinguish-
+ * able from a chunk the deployment does not have. History ended, every
+ * repository past that point lost its files, and the disc was left holding only
+ * the `private` repo synthesized from the first-byte grid — reported verbatim
+ * as "mobile doesnt render most of the galaxy, only private".
+ */
+test('recovers a dropped chunk request and reaches the whole history', async () => {
+  const files = pumpBundle()
+  let drops = 1
+  serveFlakyPump(files, 'events/ee-02.json', () => drops-- > 0)
+  const warnings = vi.spyOn(console, 'warn')
+  const probe = mountProbe(await freshRuntime())
+  // prettier-ignore
+  await waitFor(() => expect(reposWithFiles(probe.state())).toEqual([PUMP_REPOS, PUMP_REPOS]), { timeout: 5_000 })
+  expect(fileCount(probe.state())).toBe(PUMP_FILES)
+  expect(residentChunks()).toBe('6/6')
+  expect(warnings).not.toHaveBeenCalled()
+  probe.view.unmount()
+  warnings.mockRestore()
+})
+test('resumes a stalled pump and surfaces how much history is resident', async () => {
+  const files = pumpBundle()
+  let offline = true
+  serveFlakyPump(files, 'events/ee-02.json', () => offline)
+  const probe = mountProbe(await freshRuntime())
+  // Every attempt at chunk 2 fails, so the loader stalls with chunks 0 and 1.
+  await waitFor(() => expect(reposWithFiles(probe.state())).toEqual([3, 6]), {
+    timeout: 5_000,
+  })
+  expect(residentChunks()).toBe('2/6')
+  offline = false
+  // prettier-ignore
+  await waitFor(() => expect(reposWithFiles(probe.state())).toEqual([PUMP_REPOS, PUMP_REPOS]), { timeout: 10_000 })
+  expect(residentChunks()).toBe('6/6')
+  expect(probe.statuses()).toEqual(['loading', 'ready'])
+  probe.view.unmount()
+})
+/** What the pump published on the document element; see chunkPump.ts. */
+// prettier-ignore
+const residentChunks = (): string | undefined => document.documentElement.dataset.kwChunks
+/** Serves one bundle while one named file fails the way a dropped radio does. */
+function serveFlakyPump(
+  files: ReadonlyMap<string, string>,
+  flaky: string,
+  failing: () => boolean
+): void {
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+    const name = input.toString().split('/data/v1/')[1] ?? ''
+    if (name === flaky && failing()) throw new TypeError('Failed to fetch')
+    const body = files.get(name)
+    // prettier-ignore
+    return new Response(body ?? 'missing', { status: body === undefined ? 404 : 200 })
+  })
+}
 test('disposes the loader when the last instrument unmounts mid-pump', async () => {
   const held = gate()
   // prettier-ignore

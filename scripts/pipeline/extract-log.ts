@@ -44,6 +44,22 @@ export function isVendored(path: string): boolean {
   return VENDORED.some((pattern) => pattern.test(path))
 }
 
+/**
+ * @description Fingerprints the rules above, so a run can tell whether its
+ * event count is comparable with the previous run's. The regression guard
+ * assumes a large drop in events means something broke; that only holds while
+ * both runs extracted by the same rules. Adding one pattern here legitimately
+ * removed 85.6% of the corpus, which the guard read as breakage and refused.
+ *
+ * Derived from the patterns themselves rather than hand-versioned, because a
+ * constant somebody has to remember to bump is a constant that silently stops
+ * describing the thing it names.
+ * @returns A stable fingerprint of the current extraction rules.
+ */
+export function extractionRules(): string {
+  return VENDORED.map((pattern) => pattern.source).join('|')
+}
+
 /** Reports an unavailable or malformed preserved git history. */
 export class GitLogError extends Error {
   constructor(repo: string, message: string) {

@@ -144,6 +144,27 @@ const files = (): readonly string[] =>
   screen.getAllByRole('link').map((link) => link.textContent ?? '')
 
 /**
+ * What a screen reader is left with for one row: everything `aria-hidden`
+ * dropped, and the remaining columns joined by the space a block boundary
+ * inserts, because `.e` is a flex container and its children are blockified.
+ * `textContent` alone runs the columns together and would prove nothing about
+ * what is announced.
+ */
+function announced(row: Element): string {
+  const clone = row.cloneNode(true) as Element
+  for (const hidden of clone.querySelectorAll('[aria-hidden="true"]'))
+    hidden.remove()
+  return [...clone.children]
+    .map((child) => (child.textContent ?? '').trim())
+    .filter((text) => text.length > 0)
+    .join(' ')
+}
+
+const rowsOf = (container: HTMLElement): readonly Element[] => [
+  ...container.querySelectorAll('.kw-events .e'),
+]
+
+/**
  * Rows the pane holds while it reports no height. jsdom runs no layout, so the
  * capacity hook never measures and every case here sees the unmeasured default.
  */
@@ -246,15 +267,33 @@ describe('EventsTail', () => {
   it('logs the day the galaxy draws when no file event places it', () => {
     expect(UNPLACED_ROWS).toBeGreaterThan(0)
     park(UNPLACED_STEP)
-    render(<EventsTail />)
+    const { container } = render(<EventsTail />)
 
     // The galaxy fires a beam per synthesized contribution on this day. A log
     // reading off `head.events` alone called the same day empty.
     expect(screen.queryByText(/no contributions this day/i)).toBeNull()
-    expect(screen.getAllByText('unplaced contribution')).toHaveLength(
-      UNPLACED_ROWS
-    )
+    expect(rowsOf(container)).toHaveLength(UNPLACED_ROWS)
     expect(screen.getAllByText('private')).toHaveLength(UNPLACED_ROWS)
+  })
+
+  it('reads as ordinary work behind a redaction rather than as an apology', () => {
+    park(UNPLACED_STEP)
+    const { container } = render(<EventsTail />)
+
+    const redacted = [...container.querySelectorAll('.kw-events .e .redact')]
+    expect(redacted).toHaveLength(UNPLACED_ROWS)
+    for (const node of redacted)
+      expect(node.textContent).toMatch(/^[a-z]+\/[a-z]+\/[a-z]+\.[a-z]+$/)
+
+    // The class alone proves nothing: jsdom applies no styles, so dropping the
+    // rule out of the concatenated sheet would leave these rows reading as
+    // plain paths with every other assertion here still green. Every style in
+    // the document, because `precedence` has React hoist the tag out of the
+    // container and rename its key to `data-href`.
+    const sheets = [...document.querySelectorAll('style')]
+      .map((style) => style.textContent ?? '')
+      .join('')
+    expect(sheets).toContain('.kw-events .e .redact{filter:blur(')
   })
 
   it('names no file and links to none for a contribution it cannot place', () => {
@@ -262,9 +301,33 @@ describe('EventsTail', () => {
     const { container } = render(<EventsTail />)
 
     // The synthesized paths are pool slots, not filenames, and `private` is not
-    // a GitHub account: neither may reach the page.
-    expect(container.textContent).not.toContain('unplaced/')
+    // a GitHub account: neither may reach the page. The blur makes this matter
+    // more, not less, because it is paint over text anyone can still read out
+    // of the DOM, so the only safe thing to put there is something invented.
+    expect(container.textContent).not.toContain('unplaced')
     expect(screen.queryAllByRole('link')).toHaveLength(0)
+  })
+
+  it('tells a listener the row is private instead of reading it a fiction', () => {
+    park(UNPLACED_STEP)
+    const { container } = render(<EventsTail />)
+
+    // The path on screen is fabricated. Announcing it as though it were work
+    // would mislead precisely the viewer who cannot see that it is blurred, so
+    // it is out of the accessibility tree and the truth is in its place.
+    for (const row of rowsOf(container))
+      expect(announced(row)).toBe('kw private contribution')
+  })
+
+  it('leaves a row it can place reading as the file it names', () => {
+    park(2)
+    const { container } = render(<EventsTail />)
+
+    expect(rowsOf(container).map(announced)).toEqual([
+      'kw alpha src/newest.ts',
+      'ak beta docs/middle.md',
+      'kw alpha src/oldest.ts',
+    ])
   })
 
   it('announces an unplaced day as counted rather than as named files', () => {

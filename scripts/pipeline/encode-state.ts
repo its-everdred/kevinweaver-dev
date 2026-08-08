@@ -18,6 +18,9 @@ export function nextState(
     samlCanary: bundle.samlCanary.ok ? 'ok' : 'failed',
     combinedTotal: bundle.combinedTotal,
     events: bundle.manifest.events,
+    // Written on every run, including the one whose rules changed, so the
+    // guard re-arms immediately rather than staying disabled.
+    extractionRules: bundle.extractionRules,
     bundleHash: bundleHash(bundle),
     repos: nextRepositories(previous, input, bundle.manifest.generatedAt),
   }

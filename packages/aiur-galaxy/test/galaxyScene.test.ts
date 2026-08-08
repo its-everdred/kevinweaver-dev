@@ -376,4 +376,18 @@ describe('camera', () => {
     expect(forward.y).toBeCloseTo(0, 12)
     expect(forward.z).toBeCloseTo(-1, 12)
   })
+
+  it('aims at the pivot the viewer panned to, not at the origin', () => {
+    // A pan moves the eye and the point it looks at by the same amount. Aiming
+    // at a fixed origin instead turns a pan into a slow orbit about the middle
+    // of the disc: the eye travels, the view swings, and nothing new enters the
+    // frame. The gesture's own tests cannot see this because they end at the
+    // orbit state; only the camera shows it.
+    const camera = new PerspectiveCamera(60, 1, 0.1, 100)
+    placeCamera(camera, 2, 0, 4, { x: 2, y: 0, z: 0 })
+    const forward = new Vector3(0, 0, -1).applyQuaternion(camera.quaternion)
+    expect(forward.x).toBeCloseTo(0, 12)
+    expect(forward.y).toBeCloseTo(0, 12)
+    expect(forward.z).toBeCloseTo(-1, 12)
+  })
 })

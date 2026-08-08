@@ -8,12 +8,10 @@ import {
   type InstrumentRuntimeState,
 } from './instrumentRuntime'
 import { getGalaxyTimeline, subscribeGalaxyTimeline } from './galaxyTimeline'
-import { paintRibbon } from './ribbonPaint'
+import { useRibbonCanvas } from './ribbonCanvas'
 import {
   RIBBON_DEFAULT_COLUMNS,
-  ribbonLayout,
   ribbonWindow,
-  type RibbonLayout,
   type RibbonWindow,
 } from './ribbonWindow'
 import { useRibbonInteraction } from './useRibbonInteraction'
@@ -52,52 +50,13 @@ export const Ribbon = memo(function Ribbon(): ReactNode {
     return subscribeGalaxyTimeline(() => setSnapshot(getGalaxyTimeline()))
   }, [])
 
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || !grid) return
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
-    const measure = (): RibbonLayout =>
-      ribbonLayout(canvas.width, canvas.height, dpr, grid.dayCount)
-    const resize = (): void => {
-      const rect = canvas.getBoundingClientRect()
-      canvas.width = Math.round(rect.width * dpr)
-      canvas.height = Math.round(rect.height * dpr)
-      // The text alternative names the stretch on screen, so it has to follow
-      // the lattice the pane's width just measured out.
-      setColumns(measure().columns)
-    }
-    const draw = (): void => {
-      // The clock is read here, not closed over: the draw is a pure function
-      // of (payload, step, geometry), which is what makes it screenshotable.
-      const step = getGalaxyTimeline().step
-      const layout = measure()
-      paintRibbon(ctx, {
-        dpr,
-        grid,
-        heightPx: canvas.height,
-        layout,
-        step,
-        widthPx: canvas.width,
-        window: ribbonWindow(step, grid.dayCount, startWeekday, layout.columns),
-        windowStartISO,
-      })
-    }
-    resize()
-    draw()
-    // Resizing the backing store blanks it, so every resize repaints.
-    const observer = new ResizeObserver(() => {
-      resize()
-      draw()
-    })
-    observer.observe(canvas)
-    const unsubscribe = subscribeGalaxyTimeline(draw)
-    return () => {
-      observer.disconnect()
-      unsubscribe()
-    }
-  }, [grid, startWeekday, windowStartISO])
+  useRibbonCanvas({
+    canvasRef,
+    grid,
+    onColumns: setColumns,
+    startWeekday,
+    windowStartISO,
+  })
 
   return (
     <div

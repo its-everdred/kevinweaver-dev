@@ -85,12 +85,7 @@ export function RepoInfo(): ReactNode {
             </button>
           </p>
           {synthetic ? (
-            <p className={styles.note}>
-              days the contribution graph counts that the file history cannot
-              place: pull requests, issues, reviews, and work in repositories
-              that were never cloned, private work among them. Contribution
-              volumes rather than named files.
-            </p>
+            <p className={styles.note}>contributions to private repos</p>
           ) : null}
           <dl className={styles.rows}>
             {rows.map((row) => (

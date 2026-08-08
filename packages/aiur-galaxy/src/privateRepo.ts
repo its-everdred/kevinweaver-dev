@@ -171,6 +171,11 @@ function dayFiles(counted: number, step: number, actor: UniverseActor): number {
  * @description Names one synthesized star. Deliberately not file-shaped: it
  * carries only its slot in the pool, because a name like `src/index.ts` would
  * claim knowledge of what these days touched that no part of the payload has.
+ *
+ * The events log does print a file-shaped path for these, but it invents one
+ * from a fixed vocabulary keyed on this handle and blurs it (privatePath.ts).
+ * That is a rendering, and it stays one: this handle is the star's identity, so
+ * anything derived from real data here would move the layout as well as leak.
  */
 function slotPath(slot: number): string {
   return `unplaced/${String(slot + 1).padStart(3, '0')}`

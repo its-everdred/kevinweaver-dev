@@ -129,6 +129,23 @@ const RECENCY = snapshot([
   { id: 3, name: 'a/newest', files: paths(40), lastStep: 9 },
 ])
 
+/**
+ * Payload-shaped repo sizes — one giant, a short head, a long tail — with size
+ * decorrelated from recency, so the giant sits wherever its last commit puts it
+ * rather than conveniently at the core. `DENSE` gives every repo the same file
+ * count, and equal sizes is precisely the case a size-blind cluster gets right:
+ * the arms only come apart once one repo holds forty times its neighbour's
+ * stars, which is what the real payload looks like.
+ */
+const SPREAD = snapshot(
+  Array.from({ length: 90 }, (_, index) => ({
+    id: index + 1,
+    name: `a/r${index + 1}`,
+    files: paths(Math.max(1, Math.round(7400 / (index + 1) ** 2))),
+    lastStep: 1 + ((index * 17) % 90),
+  }))
+)
+
 describe('layoutUniverse', () => {
   it('is deterministic: same snapshot, identical coordinates vertex for vertex', () => {
     const first = layoutUniverse(RECENCY)
@@ -289,7 +306,10 @@ describe('layoutUniverse', () => {
     // label is painted on the arm anchor, and the along-arm smear this replaced
     // ran a repo's stars two fifths of the disc radius from that anchor on
     // average and half again the whole disc radius at the tail, which put a
-    // repo's stars nowhere near its own name. Now: 0.087 and 0.221 of it.
+    // repo's stars nowhere near its own name. Clustering brought that to 0.087
+    // and 0.221 of the disc radius; sizing the cluster by star count leaves it
+    // at 0.072 and 0.203, because the reach a repo of this size gets down the
+    // arm is shorter than the fixed one it used to get across it.
     const layout = layoutUniverse(DENSE)
     const reaches = layout.repos.flatMap((repo) => labelReach(layout, repo))
     const mean = reaches.reduce((sum, gap) => sum + gap, 0) / reaches.length
@@ -301,20 +321,34 @@ describe('layoutUniverse', () => {
   it('fills the space between the arms while leaving the arms legible', () => {
     const layout = layoutUniverse(DENSE)
     // A mid-disc ring, cut into 36 ten-degree wedges. The twelve emptiest
-    // wedges are the space between the arms: at least 15% of the ring's stars
-    // must land there, against the 33% a structureless field would score. That
-    // space used to be filled by a per-star scatter wide enough to throw a
-    // repo's own stars across the disc; now it is filled by the overlapping
-    // tails of the clusters either side of the ring, which is why tightening
-    // each repo onto its label raised this from 0.153 to 0.191 rather than
-    // emptying the gaps.
-    expect(sparsestThirdShare(layout, 0.16, 0.24)).toBeGreaterThanOrEqual(0.15)
+    // wedges are the space between the arms, and a structureless field would
+    // put 33% of the ring's stars there. The floor was 15%, measured at a
+    // cluster 0.48 of a `t` wide against a 0.455 gap between the two arms —
+    // that is, at an arm so wide it ran into its neighbour everywhere, which is
+    // why the winding was not visible and is the complaint this round answers.
+    // An arm narrower than the gap between arms necessarily empties that gap
+    // somewhat, so the floor drops to 10% and the reading falls from 0.191 to
+    // 0.114: still a third of what a featureless field would score, so a disc
+    // rather than two bare curves, and no longer bought by erasing the spiral.
+    expect(sparsestThirdShare(layout, 0.16, 0.24)).toBeGreaterThanOrEqual(0.1)
     // And the arms must be legible, not merely present: the busiest wedge
     // carries nearly twice its share. The previous 1.3 bound passed at a
     // scatter wide enough that the spiral read as fog, so it is raised here to
-    // the contrast the arms actually have to hold. Clustering helps this one
-    // outright — 1.950 before, 2.271 now.
+    // the contrast the arms actually have to hold — 1.950 at that scatter,
+    // 2.271 once repos were clustered, 2.180 now.
     expect(peakOverMean(layout, 0.16, 0.24)).toBeGreaterThanOrEqual(1.9)
+  })
+
+  it('keeps the arms legible when one repo dwarfs the rest', () => {
+    // `peakOverMean` only ever had a floor, and a floor alone reads a single
+    // bright blob as a triumph: on payload-shaped sizes the outer ring scored
+    // 9.05 not because its arms stood out but because the giant's whole budget
+    // landed in one ten-degree wedge. An arm is a ridge, not a spike, so the
+    // contrast is bounded on both sides; spreading that budget down the arm
+    // halves the peak to 4.43 without flattening the ring to featureless.
+    const layout = layoutUniverse(SPREAD)
+    expect(peakOverMean(layout, 0.24, 0.34)).toBeGreaterThanOrEqual(1.9)
+    expect(peakOverMean(layout, 0.24, 0.34)).toBeLessThanOrEqual(5)
   })
 
   it('keeps a one-file repo and a 7449-file repo in range', () => {
@@ -324,10 +358,10 @@ describe('layoutUniverse', () => {
         { id: 2, name: 'a/huge', files: paths(7449), lastStep: 0 },
       ])
     )
-    // One file is one star; 7449 files fold onto 755. Both ends of that range
+    // One file is one star; 7449 files fold onto 432. Both ends of that range
     // still have to land inside the field.
     expect(starsOf(layout, 1).length).toBe(1)
-    expect(starsOf(layout, 2).length).toBe(755)
+    expect(starsOf(layout, 2).length).toBe(432)
     // Folded or not, every file resolves to a star: nothing is dropped.
     expect(layout.starIndex.size).toBe(7450)
     for (const star of layout.stars) {
@@ -338,15 +372,11 @@ describe('layoutUniverse', () => {
       expect(star.z).toBeGreaterThanOrEqual(0)
       expect(star.z).toBeLessThanOrEqual(1)
     }
-    // Volume must not buy area: the huge repo stays inside its own annulus,
-    // whose width is the cluster's radial diameter and never the file count.
-    // Compression works the other axis, how many stars fill that annulus, so
-    // the two rules meet rather than collide: a big repo is denser than a small
-    // one, but neither wider nor proportionally denser. The bound is restated
-    // as that diameter — two cluster reaches, under 40% of the disc radius —
-    // rather than the bare 0.2 that held the old smear. Clustering costs a
-    // little on this axis (0.140 to 0.151) and buys it back many times over on
-    // the arc, which is the axis the streak ran down.
+    // Volume must not buy width. The bound is the annulus the huge repo lies
+    // in, and its ceiling is two arm widths plus what the arm's own pitch adds
+    // as the cluster runs down it — never the file count, which now buys length
+    // along the arm instead. 0.358 of the disc radius when both reaches were
+    // fixed, 0.325 now, both inside the 40% this has held since the smear.
     const huge = radialRange(layout, 2)
     expect(huge.max - huge.min).toBeLessThan(DISC_FIELD_RADIUS * 0.4)
   })
@@ -378,8 +408,8 @@ describe('layoutUniverse', () => {
     expect(layout.repos.map((repo) => repo.ordinal)).toEqual([0, 1, 2])
     expect(layout.repos.map((repo) => repo.name)).toEqual(['a/newest', 'a/middle', 'a/oldest'])
     for (const repo of layout.repos) {
-      // Forty files, thirty stars: `starCount` counts vertices, not files.
-      expect(repo.starCount).toBe(30)
+      // Forty files, thirty-two stars: `starCount` counts vertices, not files.
+      expect(repo.starCount).toBe(32)
       expect(layout.stars[repo.starOffset]?.repoId).toBe(repo.repoId)
     }
   })

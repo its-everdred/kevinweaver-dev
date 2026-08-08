@@ -41,10 +41,47 @@ describe('bundle validator', () => {
   })
 
   it('reports regression against a prior successful corpus', () => {
-    const findings = validateBundle(encodeBundle(validInput()), {
+    const bundle = encodeBundle(validInput())
+    const findings = validateBundle(bundle, {
       schema: 1,
       events: 50_000,
-      combinedTotal: 50_000,
+      // Same rules as the run under test, so the event count is comparable and
+      // the collapse below is real. Without this the guard rightly stands down
+      // and this case would silently stop testing the event path it names.
+      extractionRules: bundle.extractionRules,
+      combinedTotal: 0,
+      repos: {},
+    }).findings
+
+    expect(findings.map((finding) => finding.code)).toContain('E_REGRESSION')
+  })
+
+  it('stands down on an event collapse the extraction rules explain', () => {
+    const bundle = encodeBundle(validInput())
+    const findings = validateBundle(bundle, {
+      schema: 1,
+      events: 50_000,
+      // A different fingerprint: the prior corpus was gathered under rules this
+      // run no longer uses, so its event count says nothing about this one.
+      // Adding the vendored-path list dropped 85.6% of the corpus, and the
+      // guard refused to publish the intended result.
+      extractionRules: 'rules-from-a-previous-era',
+      combinedTotal: 0,
+      repos: {},
+    }).findings
+
+    expect(findings.map((finding) => finding.code)).not.toContain('E_REGRESSION')
+  })
+
+  it('still catches a combined-total fall whatever the extraction rules', () => {
+    const bundle = encodeBundle(validInput())
+    const findings = validateBundle(bundle, {
+      schema: 1,
+      events: 0,
+      extractionRules: 'rules-from-a-previous-era',
+      // The contribution calendar is GitHub's own total and no extraction rule
+      // can move it, so a fall here means something really did break.
+      combinedTotal: bundle.combinedTotal + 1,
       repos: {},
     }).findings
 

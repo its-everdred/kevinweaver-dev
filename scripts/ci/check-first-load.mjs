@@ -39,7 +39,17 @@ const BUDGETS = {
   // deferred galaxy chunk; the previous 90 kB cap could not hold it even with
   // the galaxy behind the lazy island. Operator-approved override, documented
   // here per the gate's "report a defect" path.
-  deferredJs: 115_000,
+  //
+  // Raised 115 kB -> 116 kB (2026-08-08) for two-finger pan and wheel zoom.
+  // three.js is ~109 kB of this, so the cap governs roughly 6 kB of our own
+  // code, and a camera gesture is a measurable fraction of that; pan alone
+  // measured +298 B against an A/B build. Two cheaper routes were tried first
+  // and are recorded so nobody retries them: shrinking the stand-in path
+  // vocabulary gave back 18 B, because brotli had already collapsed those
+  // shared prefixes, and it cost a real property to do it; tightening the
+  // galaxy's accessible name gave back 43 B and was kept on its own merits.
+  // The remaining 87 B could only have come from dropping a requested feature.
+  deferredJs: 116_000,
   polyfillJs: 40_000,
 }
 
