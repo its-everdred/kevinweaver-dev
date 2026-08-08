@@ -7,6 +7,8 @@ import type { BundleEvent } from '@/lib/bundle/schema'
 import { dayContributions } from './galaxyDay'
 import { isUnplaced, repoLabel } from './galaxyEventLog'
 import { useInstrumentRuntime } from './instrumentRuntime'
+import { PrivateFile, PRIVATE_FILE_CSS } from './privateFile'
+import { privatePath } from './privatePath'
 import { useDayClock, useDayReveal, type DayRange } from './useDayReveal'
 import { useRowCapacity } from './useRowCapacity'
 
@@ -18,20 +20,9 @@ const EVENTS_CSS = `
 .kw-events .e .repo{color:var(--aqua);flex:0 0 auto;}
 .kw-events .e a.file{display:flex;align-items:center;min-height:24px;}
 .kw-events .e .file{color:var(--text-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-/* Italic, not dimmer: the stand-in label has to read as something other than a
-   path without dropping below the contrast the rest of the log is checked at. */
-.kw-events .e .unplaced{font-style:italic;}
 .kw-events .e .actor{flex:0 0 auto;color:var(--purple);}
 .kw-events .tail{color:var(--text-faint);}
-`
-
-/**
- * What a row says in place of a filename for a contribution the file history
- * cannot place. The galaxy draws these from `unplaced/NNN` slots of a bounded
- * pool, which are positions in a synthesized repo and not paths; printing one
- * would claim the payload named a file it never saw.
- */
-const UNPLACED_LABEL = 'unplaced contribution'
+${PRIVATE_FILE_CSS}`
 
 interface Row {
   readonly key: string
@@ -39,7 +30,7 @@ interface Row {
   readonly file: string
   readonly actor: string
   readonly href: string
-  /** True when `file` is the stand-in label rather than a path. */
+  /** True when `file` is a fabricated stand-in rather than a path in a repo. */
   readonly unplaced: boolean
 }
 
@@ -51,7 +42,8 @@ interface Row {
  * ends. Only the rows the pane can show are ever mounted, so a three-line day
  * and the payload's eight-thousand-line day cost the same DOM. A row that names
  * a file links to it on the host; a day the contribution graph counts and the
- * file history cannot place names none, and says so per row.
+ * file history cannot place names none, and shows an invented path behind a
+ * blur so the log reads as work under redaction rather than as an apology.
  * @returns A live, role=log window onto the day's per-repo file contributions.
  */
 export function EventsTail(): ReactNode {
@@ -92,21 +84,10 @@ export function EventsTail(): ReactNode {
         {rows.map((row) => (
           <p className="e" key={row.key}>
             <span className="actor">{row.actor}</span>
-            <span className="repo">{row.repo}</span>
-            {row.href ? (
-              <a
-                className="file"
-                href={row.href}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {row.file}
-              </a>
-            ) : (
-              <span className={row.unplaced ? 'file unplaced' : 'file'}>
-                {row.file}
-              </span>
-            )}
+            <span aria-hidden={row.unplaced || undefined} className="repo">
+              {row.repo}
+            </span>
+            <RowFile row={row} />
           </p>
         ))}
         {events.length === 0 ? (
@@ -115,6 +96,23 @@ export function EventsTail(): ReactNode {
       </div>
     </div>
   )
+}
+
+/**
+ * @description Renders a row's file column: a link to the file on its host when
+ * the history places the contribution, and the redacted stand-in when it cannot.
+ * @param row The row being drawn.
+ * @returns The file column.
+ */
+function RowFile({ row }: { readonly row: Row }): ReactNode {
+  if (row.href)
+    return (
+      <a className="file" href={row.href} rel="noreferrer" target="_blank">
+        {row.file}
+      </a>
+    )
+  if (row.unplaced) return <PrivateFile path={row.file} />
+  return <span className="file">{row.file}</span>
 }
 
 /**
@@ -143,7 +141,8 @@ function buildRows(
     out.push({
       key: String(index),
       repo: shortRepo(repoLabel(head, event.repo)),
-      file: unplaced ? UNPLACED_LABEL : shortPath(event.path),
+      // Keyed on the pool slot, never on the row, so a star keeps one name.
+      file: unplaced ? privatePath(event.path) : shortPath(event.path),
       actor: event.actor === 1 ? 'ak' : 'kw',
       // Never a link for the synthesized repo: it names no file to link to, and
       // github.com/private is somebody else's page.

@@ -157,7 +157,7 @@ describe('RepoInfo', () => {
     expect(value('last active')).toBe('2026-02-05')
   })
 
-  it('explains that the private repo stands for days the history cannot place', () => {
+  it('says what the private repo stands for, and links it nowhere', () => {
     ready()
     publishGalaxySelection({
       repoId: -1,
@@ -167,12 +167,12 @@ describe('RepoInfo', () => {
     })
     render(<RepoInfo />)
 
-    // It stands for days the calendar counts and the history cannot attribute,
-    // private work among them but not only private work, and its stars are
-    // volume rather than named files. A claim the pane has to make, because
-    // every other repo in the disc means the literal opposite.
-    expect(screen.getByText(/cannot\s+place/i)).toBeInTheDocument()
-    expect(screen.getByText(/rather than named files/i)).toBeInTheDocument()
+    // A claim the pane has to make, because every other repo in the disc means
+    // the literal opposite. The operator asked for it in one line, so this
+    // asserts the line rather than a paragraph it no longer carries.
+    expect(
+      screen.getByText('contributions to private repos')
+    ).toBeInTheDocument()
     // And it is not a GitHub URL: github.com/private is somebody else's page.
     expect(screen.queryByRole('link', { name: 'private' })).toBeNull()
     expect(screen.getByText('private')).toBeInTheDocument()
