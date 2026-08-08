@@ -1,5 +1,11 @@
 import { formatDayISO } from '@/lib/viz/driver'
 import {
+  CURRENT_RING,
+  CURRENT_SEPARATOR,
+  LEVEL_COLORS,
+  MARKER_COLOR,
+} from './ribbonRamp'
+import {
   ribbonCell,
   type RibbonLayout,
   type RibbonWindow,
@@ -37,24 +43,6 @@ export interface RibbonPaintOptions {
 }
 
 /**
- * Contribution density bands, green like GitHub's contribution graph, over the
- * empty-day slab. Concrete hex, never CSS tokens: the canvas 2D API does not
- * resolve `var()`, it just paints the fallback black.
- */
-const LEVEL_COLORS = [
-  '#504945',
-  '#0e4429',
-  '#006d32',
-  '#26a641',
-  '#39d353',
-] as const
-/** Year label and boundary rule: 5.898:1 on the #1d2021 pane surface. */
-const MARKER_COLOR = '#a89984'
-/** The current day's ring, over a dark separator that keeps it off #39d353. */
-const CURRENT_RING = '#fbf1c7'
-const CURRENT_SEPARATOR = '#1d2021'
-
-/**
  * @description Paints one frame of the contribution grid: as many weeks of
  * density squares as the pane is wide, the year boundaries along the strip, and
  * a ring on the current day when anything landed on it.
@@ -81,7 +69,13 @@ function paintCells(ctx: RibbonCtx, options: RibbonPaintOptions): void {
       // Days outside the payload stay empty canvas rather than reading as a
       // zero-contribution day that never existed.
       if (day < 0 || day >= grid.dayCount) continue
-      const level = Math.max(0, Math.min(4, grid.level[day] ?? 0))
+      // Clamped to the ramp, not to a hard-coded four: the payload's band
+      // ladder and the ramp are the same length, so a band above the clamp
+      // would be a band the strip cannot tell apart from the one below it.
+      const level = Math.max(
+        0,
+        Math.min(LEVEL_COLORS.length - 1, grid.level[day] ?? 0)
+      )
       ctx.fillStyle = LEVEL_COLORS[level] ?? LEVEL_COLORS[0]
       ctx.fillRect(
         x,
