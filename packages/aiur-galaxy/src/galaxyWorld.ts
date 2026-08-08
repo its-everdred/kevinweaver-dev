@@ -12,6 +12,10 @@ export interface GalaxySceneTheme {
   readonly contributor: number
   readonly agent: number
   readonly label: number
+  /** Distant galaxies in the surround, behind everything in the disc. */
+  readonly skyGalaxy: number
+  /** The nebulae they hang in. */
+  readonly skyNebula: number
 }
 
 export const DEFAULT_THEME: GalaxySceneTheme = {
@@ -32,6 +36,14 @@ export const DEFAULT_THEME: GalaxySceneTheme = {
   // repo name is the only text inside the disc, so colouring it away from the
   // blue-white star ramp keeps it reading as a label rather than a hot star.
   label: 0x39d353,
+  // A shade cooler and bluer than `star`. Aerial perspective is the cue the
+  // eye actually reads for distance: things far away lose contrast and go
+  // cool, and the sky is drawn at a twelfth of a star's brightness besides.
+  skyGalaxy: 0x8fa4c8,
+  // Muted indigo. Real emission nebulae run violet, and it is the one hue
+  // nothing in the disc uses — the agent's orchid is four times brighter and
+  // sits on a moving node, so the two are never mistaken for each other.
+  skyNebula: 0x6d5aa6,
 }
 
 /** Field-to-world scale of the disc, per axis. */

@@ -32,6 +32,8 @@ export const THEME: GalaxySceneTheme = {
   contributor: 0x61afef,
   agent: 0xc678dd,
   label: 0xd8dee9,
+  skyGalaxy: 0x8fa4c8,
+  skyNebula: 0x6d5aa6,
 }
 
 export const ORIGINS = [
