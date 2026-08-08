@@ -9,13 +9,14 @@ import {
   Group,
   LineBasicMaterial,
   LineSegments,
-  Material,
   Mesh,
   MeshBasicMaterial,
   PerspectiveCamera,
   PlaneGeometry,
   Points,
+  SRGBColorSpace,
   Scene,
+  Texture,
   Vector3,
   WebGLRenderer,
 } from 'three'
@@ -58,6 +59,16 @@ export interface SceneContributor {
   readonly mesh: Mesh<PlaneGeometry, MeshBasicMaterial>
 }
 
+/**
+ * How much of one beam is drawn, by its index among the beams of the step. One
+ * factor for the whole step made a day's lines grow, hold, and retract in
+ * lockstep; asking per beam is what lets them arrive at their own moments.
+ */
+export type BeamReach = (beam: number) => number
+
+/** Every beam whole, for callers that draw a day rather than animate one. */
+const WHOLE_BEAM: BeamReach = () => 1
+
 /** What one frame cost, so the host can surface a beam budget overrun. */
 export interface GalaxyFrameStats {
   /** Star vertices written this frame; 0 when the step did not change. */
@@ -84,13 +95,14 @@ export interface GalaxyScene {
   readonly contributors: SceneContributor[]
   /**
    * Promotes the stars this frame names, re-aims the beams, sets the labels.
-   * @param reach How much of each beam is drawn, from `beamReach`: the day's
-   * beams grow out of their contributor node and retract back into it.
+   * @param reach How much of each beam is drawn, from `beamReach`: a beam
+   * grows out of its contributor node at its own moment in the day and is
+   * drawn back into it after a brief hold.
    */
   setFrame(
     layout: UniverseLayout,
     frame: UniverseFrame,
-    reach?: number
+    reach?: BeamReach
   ): GalaxyFrameStats
   /** Marks the repo the viewer is highlighting, whose label stays revealed. */
   setHighlight(repoId: number | null): void
@@ -115,6 +127,13 @@ export interface GalaxyScene {
    * @param spin The angle the disc has turned through, in radians.
    */
   setRotation(spin: number): void
+  /**
+   * Gives an actor's node its avatar once the host has decoded one. The image
+   * never arrives from here: this module owns no `Image` and no `document`
+   * beyond the guarded label canvas, so the fetch belongs to the browser-only
+   * host and a node that is never given one keeps its flat actor colour.
+   */
+  setContributorImage(actor: UniverseActor, image: TexImageSource): void
   /** Places the camera at a world position, aimed at the disc center. */
   setCamera(x: number, y: number, z: number): void
   /** Resizes the renderer and the camera aspect, never the camera position. */
@@ -162,7 +181,7 @@ export interface BeamField {
     frame: UniverseFrame,
     origins: readonly BeamOrigin[],
     turn?: DiscTurn,
-    reach?: number
+    reach?: BeamReach
   ): BeamStats
   /** Re-anchors the drawn beams as their contributor nodes glide into place. */
   setOrigins(origins: readonly BeamOrigin[]): void
@@ -183,7 +202,47 @@ export const MAX_BEAMS = 2048
 const BEAM_OPACITY = 0.75
 /** How near a pointer must come to an arm anchor to highlight it, in pixels. */
 const PICK_RADIUS = 56
+/**
+ * How far an avatar's tint is lifted toward white. A `MeshBasicMaterial`
+ * multiplies its map by its color, so the full actor color would leave the
+ * photograph as a solid blue or purple square; lifting most of the way to white
+ * leaves a wash that still says which of the two nodes this is at the dozen
+ * screen pixels they are usually seen at.
+ */
+const AVATAR_TINT = 0.6
+/** What the tint is lifted toward, built once rather than per avatar. */
+const AVATAR_WHITE = toColor(0xffffff)
 
+/**
+ * @description Paints a decoded avatar onto a contributor node, replacing any
+ * image it already carries. The image is uploaded from wherever the host got
+ * it; nothing here fetches, decodes, or waits.
+ * @param node The contributor node.
+ * @param image The decoded image, from the browser-only host.
+ */
+export function paintContributor(node: SceneContributor, image: TexImageSource): void {
+  const material = node.mesh.material
+  const texture = new Texture(image)
+  texture.colorSpace = SRGBColorSpace
+  texture.needsUpdate = true
+  // Only the first avatar lifts the tint, or a replacement would wash the node
+  // one step further toward white every time one arrived.
+  if (!material.map) material.color.lerp(AVATAR_WHITE, AVATAR_TINT)
+  material.map?.dispose()
+  material.map = texture
+  material.needsUpdate = true
+}
+
+/**
+ * @description Releases everything a contributor node owns: its plane, its
+ * material, and the avatar texture if one ever reached it.
+ * @param node The contributor node.
+ */
+export function releaseContributor(node: SceneContributor): void {
+  node.mesh.geometry.dispose()
+  node.mesh.material.map?.dispose()
+  node.mesh.material.dispose()
+}
 
 function addContributorNode(
   scene: Scene,
@@ -303,7 +362,7 @@ export function createGalaxyScene(
     beams: beamField.lines,
     labels: labels.meshes,
     contributors,
-    setFrame(layout, frame, reach = 1) {
+    setFrame(layout, frame, reach = WHOLE_BEAM) {
       frameShown = frame
       const promoted = starField.setFrame(layout, frame)
       const beams = beamField.setFrame(layout, frame, contributorOrigins(), turn, reach)
@@ -362,6 +421,10 @@ export function createGalaxyScene(
       }
       beamField.setOrigins(origins)
     },
+    setContributorImage(actor, image) {
+      const node = contributors.find((contributor) => contributor.actor === actor)
+      if (node) paintContributor(node, image)
+    },
     setRotation(spin) {
       if (spin === spun) return
       spun = spin
@@ -386,11 +449,7 @@ export function createGalaxyScene(
       haze.dispose()
       beamField.dispose()
       labels.dispose()
-      for (const contributor of contributors) {
-        contributor.mesh.geometry.dispose()
-        const material = contributor.mesh.material
-        if (material instanceof Material) material.dispose()
-      }
+      for (const contributor of contributors) releaseContributor(contributor)
       renderer.dispose()
     },
   }
@@ -538,7 +597,7 @@ export function createBeamField(
    */
   const fields = new Float64Array(maxBeams * 3)
   /** How much of each beam is drawn, held so a re-anchor keeps the fraction. */
-  let reachDrawn = 1
+  let reachDrawn: BeamReach = WHOLE_BEAM
   /** The step the beams currently resolve, so a repeat re-aims rather than rebuilds. */
   let resolvedStep = Number.NaN
   /** The layout those beams were resolved against; a rebuild invalidates them. */
@@ -550,12 +609,15 @@ export function createBeamField(
     for (const origin of origins) anchors[origin.actor]?.set(origin.x, origin.y, origin.z)
   }
 
-  const reachFrom = (origin: number, star: number | undefined): number =>
-    origin * (1 - reachDrawn) + (star ?? origin) * reachDrawn
+  const reachFrom = (origin: number, star: number | undefined, reach: number): number =>
+    origin * (1 - reach) + (star ?? origin) * reach
 
   const writeBeam = (beam: number, actor: UniverseActor): void => {
     const point = anchors[actor]
     if (!point) return
+    // Resolved here rather than per step: which stars a day names is fixed, but
+    // where each of its beams has got to is the one thing that is not.
+    const reach = reachDrawn(beam)
     const offset = beam * 6
     const target = beam * 3
     positions[offset] = point.x
@@ -563,9 +625,9 @@ export function createBeamField(
     positions[offset + 2] = point.z
     // The far end is weighted between the node and the star rather than
     // offset from the node, so a whole beam ends exactly on its star.
-    positions[offset + 3] = reachFrom(point.x, targets[target])
-    positions[offset + 4] = reachFrom(point.y, targets[target + 1])
-    positions[offset + 5] = reachFrom(point.z, targets[target + 2])
+    positions[offset + 3] = reachFrom(point.x, targets[target], reach)
+    positions[offset + 4] = reachFrom(point.y, targets[target + 1], reach)
+    positions[offset + 5] = reachFrom(point.z, targets[target + 2], reach)
   }
 
   /** Uploads only the beams in the draw range, not the whole capped buffer. */
@@ -577,7 +639,7 @@ export function createBeamField(
 
   return {
     lines,
-    setFrame(layout, frame, origins, turn = DISC_STILL, reach = 1) {
+    setFrame(layout, frame, origins, turn = DISC_STILL, reach = WHOLE_BEAM) {
       anchor(origins)
       reachDrawn = reach
       if (frame.step !== resolvedStep || layout !== resolvedLayout) {

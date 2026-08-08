@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { formatDayISO, weekdayOfISO } from '@/lib/viz/driver'
+import { BAND_LOWER_BOUNDS } from '@/lib/viz/tokens/level'
 import {
   PLAYBACK_WINDOW_STEPS,
   playbackWindowEnd,
@@ -34,7 +35,16 @@ const WINDOW_DAYS = COLUMNS * 7
  */
 const NEWEST_WINDOW_START = 356
 
-const LEVELS = Array.from({ length: DAY_COUNT }, (_, day) => day % 5)
+/**
+ * Every band the payload can hand the ribbon, cycled day by day. The ladder is
+ * `grid.bands`, ten log2-doubling lower bounds, and the real bundle reaches all
+ * ten — so the fixture exercises ten and not the four greens the strip used to
+ * squash them into.
+ */
+const LEVELS = Array.from(
+  { length: DAY_COUNT },
+  (_, day) => day % BAND_LOWER_BOUNDS.length
+)
 const GRID = { level: LEVELS, dayCount: DAY_COUNT }
 
 type Call = [string, ...unknown[]]
@@ -127,6 +137,47 @@ function labelsAt(calls: readonly Call[]): [string, number][] {
     call[1] as string,
     call[2] as number,
   ])
+}
+
+/**
+ * The fill every band is painted with, in band order, recovered from a real
+ * paint rather than read off the module's constants: what the scale has to
+ * carry is the colour the canvas is actually handed for a day at that level.
+ */
+function paintedRamp(): (string | undefined)[] {
+  const visible = ribbonWindow(NEWEST, DAY_COUNT, START_WEEKDAY, LAYOUT.columns)
+  const ramp: (string | undefined)[] = []
+  let style = ''
+  for (const call of paint(NEWEST).calls) {
+    if (call[0] === 'set:fillStyle') style = call[1] as string
+    if (call[0] !== 'fillRect') continue
+    if (call[3] !== LAYOUT.cellPx || call[4] !== LAYOUT.cellPx) continue
+    const column = Math.round(
+      ((call[1] as number) - LAYOUT.originXPx) / LAYOUT.stepPx
+    )
+    const row = Math.round(
+      ((call[2] as number) - LAYOUT.originYPx) / LAYOUT.stepPx
+    )
+    const level = LEVELS[visible.start + column * 7 + row]
+    if (level !== undefined) ramp[level] = style
+  }
+  return ramp
+}
+
+/** WCAG relative luminance of an opaque `#rrggbb`. */
+function luminance(hex: string): number {
+  const channel = (index: number): number => {
+    const raw =
+      Number.parseInt(hex.slice(1 + index * 2, 3 + index * 2), 16) / 255
+    return raw <= 0.04045 ? raw / 12.92 : ((raw + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * channel(0) + 0.7152 * channel(1) + 0.0722 * channel(2)
+}
+
+/** WCAG contrast ratio between two opaque `#rrggbb`. */
+function contrast(a: string, b: string): number {
+  const [low, high] = [luminance(a), luminance(b)].sort((x, y) => x - y)
+  return ((high ?? 0) + 0.05) / ((low ?? 0) + 0.05)
 }
 
 /** The x of every year rule a paint drew: the full-height, hairline fills. */
@@ -347,6 +398,45 @@ describe('painting the contribution grid', () => {
     expect(named(calls, 'clearRect')).toHaveLength(1)
   })
 
+  it('gives every band the payload can produce its own colour', () => {
+    // The operator could not read a day's volume off four greens, and the
+    // reason was that the strip clamped a ten-band ladder into five fills: a
+    // day of 8 commits and a day of 300 were painted the same #39d353. The
+    // payload hands over `grid.bands`, and however many bounds that ladder has
+    // is how many fills the scale needs.
+    const ramp = paintedRamp()
+    expect(ramp).toHaveLength(BAND_LOWER_BOUNDS.length)
+    expect(new Set(ramp).size).toBe(BAND_LOWER_BOUNDS.length)
+  })
+
+  it('climbs the ramp without a jump, from the empty day’s grey up', () => {
+    // The scale has to start where "nothing" ends: every band is lighter than
+    // the one below it, so the ramp reads as one run of increasing volume
+    // rather than as a grey, a dark hole, and then some greens.
+    const ramp = paintedRamp().map((fill) => luminance(fill ?? '#000000'))
+    for (let band = 1; band < ramp.length; band += 1)
+      expect(ramp[band] ?? 0).toBeGreaterThan(ramp[band - 1] ?? 0)
+    // And the darkest green sits nearer the empty grey than GitHub's #0e4429
+    // did — the operator's "a little bit closer to the gray of 0 commit days".
+    const empty = ramp[0] ?? 0
+    expect(Math.abs((ramp[1] ?? 0) - empty)).toBeLessThan(
+      Math.abs(luminance('#0e4429') - empty)
+    )
+  })
+
+  it('keeps the current day’s ring readable against every band', () => {
+    // The ring is a bright stroke over a dark separator, and one of the two has
+    // to clear 3:1 on whatever the cell under it is painted — including the new
+    // darkest green, which the bright stroke alone has to carry.
+    for (const fill of paintedRamp()) {
+      const readable = Math.max(
+        contrast(fill ?? '#000000', '#fbf1c7'),
+        contrast(fill ?? '#000000', '#1d2021')
+      )
+      expect(readable, `ring unreadable on ${fill}`).toBeGreaterThanOrEqual(3)
+    }
+  })
+
   it('marks the year boundaries along the strip', () => {
     const labels = named(paint(NEWEST).calls, 'fillText').map((call) => call[1])
     expect(labels).toEqual(['2025', '2026'])
@@ -498,8 +588,8 @@ describe('painting the contribution grid', () => {
   it('leaves a day with no contributions unringed', () => {
     // Level 0 is exactly zero contributions: band 1's lower bound is 1, so a
     // day only falls to level 0 when nothing landed on it.
-    const empty = 795
-    const busy = 796
+    const empty = 790
+    const busy = 791
     expect(LEVELS[empty]).toBe(0)
     expect(LEVELS[busy]).toBeGreaterThan(0)
     expect(named(paint(empty).calls, 'strokeRect')).toHaveLength(0)
@@ -510,7 +600,7 @@ describe('painting the contribution grid', () => {
 
   it('still paints the empty day’s square, it just does not ring it', () => {
     // The day is drawn like any other day on screen; only the highlight goes.
-    const cells = named(paint(795).calls, 'fillRect').filter(
+    const cells = named(paint(790).calls, 'fillRect').filter(
       (call) => call[3] === LAYOUT.cellPx && call[4] === LAYOUT.cellPx
     )
     expect(cells).toHaveLength(NEWEST - NEWEST_WINDOW_START + 1)

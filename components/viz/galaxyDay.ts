@@ -2,10 +2,11 @@
 
 import type { BundleHead } from '@/lib/bundle/loader'
 import type { BundleEvent } from '@/lib/bundle/schema'
+import { galaxyEventLog, repoLabel } from './galaxyEventLog'
 
 /** A repository that took at least one contribution on the day being played. */
 export interface DayRepo {
-  /** Payload repository id — the same id the galaxy selection publishes. */
+  /** Payload repository id, the same id the galaxy selection publishes. */
   readonly id: number
   /** Full `"owner/name"`, or a placeholder when the record never resolved. */
   readonly name: string
@@ -29,7 +30,8 @@ export function eventDayForStep(dayCount: number, step: number): number {
 
 /**
  * @description The contributions recorded on the day a step lands on, most
- * recent first.
+ * recent first. Read from the same merged log the galaxy draws, so a day the
+ * disc lights is never a day this reports as empty.
  * @param head The decoded payload, or null while it is still loading.
  * @param step The current timeline step.
  * @returns That day's events, empty for a day with none.
@@ -37,7 +39,8 @@ export function eventDayForStep(dayCount: number, step: number): number {
  * The payload's log is emitted newest day first and the loader asserts that
  * ordering, so a day's slice already reads most recent first. Within a day the
  * payload carries nothing finer than the commit an event came from, so the
- * order it was written in is the order that stands.
+ * order it was written in is the order that stands. A synthesized day carries
+ * no order at all, only volume.
  */
 export function dayContributions(
   head: BundleHead | null,
@@ -46,16 +49,9 @@ export function dayContributions(
   if (!head) return []
   const day = eventDayForStep(head.manifest.dayCount, step)
   if (day < 0) return []
-  return head.events.filter((event) => event.day === day)
+  return galaxyEventLog(head).byDay.get(day) ?? []
 }
 
-/**
- * @description The repositories contributed to on the day a step lands on, in
- * the order their first contribution of that day appears.
- * @param head The decoded payload, or null while it is still loading.
- * @param step The current timeline step.
- * @returns One entry per repository, empty for a day with no contributions.
- */
 /**
  * @description Counts the files a repo owns, which is not the number of stars
  * the disc draws for it: the layout folds a large repo's files onto fewer
@@ -70,12 +66,23 @@ export function repoFileCount(
   repoOf: ArrayLike<number>,
   repoId: number
 ): number {
+  // The synthesized repo owns no file entity, and `repoOf` marks the repo
+  // entities themselves with -1, so counting its matches would report the
+  // payload's repo count as though it were a file count.
+  if (repoId < 0) return 0
   let count = 0
   for (let index = 0; index < repoOf.length; index += 1)
     if (repoOf[index] === repoId) count += 1
   return count
 }
 
+/**
+ * @description The repositories contributed to on the day a step lands on, in
+ * the order their first contribution of that day appears.
+ * @param head The decoded payload, or null while it is still loading.
+ * @param step The current timeline step.
+ * @returns One entry per repository, empty for a day with no contributions.
+ */
 export function dayRepos(
   head: BundleHead | null,
   step: number
@@ -89,7 +96,7 @@ export function dayRepos(
     }
     byId.set(event.repo, {
       id: event.repo,
-      name: head?.repos[event.repo]?.name ?? `repo-${event.repo}`,
+      name: repoLabel(head, event.repo),
       count: 1,
     })
   }

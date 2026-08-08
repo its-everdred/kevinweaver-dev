@@ -1,5 +1,14 @@
+import {
+  anchorPoint,
+  anchorRadius,
+  armGeometry,
+  clusterPoint,
+  type ArmGeometry,
+} from './galaxyCluster'
 import { corePin } from './privateRepo'
 import type { UniverseRepo, UniverseSnapshot } from './types'
+
+export { DISC_FIELD_RADIUS, hash01 } from './galaxyCluster'
 
 /** A star in the disc, in normalized field units (every axis in [0, 1]). */
 export interface StarPosition {
@@ -58,32 +67,7 @@ export interface UniverseLayout {
   readonly starCount: number
 }
 
-/** Half-extent of the disc in field units, leaving a margin for labels. */
-export const DISC_FIELD_RADIUS = 0.42
-
 const NEVER_ACTIVE = -1
-const ARM_COUNT = 2
-/** Radians of arm rotation between the core and the rim. */
-const ARM_WINDING = 2.2 * Math.PI
-/** Width of the per-star position along its repo's arm, centered on zero. */
-const ALONG_SPAN = 2.1
-/** Radial smear, wide enough that adjacent repos blend instead of banding. */
-const RADIAL_SMEAR = 0.16
-/**
- * Radians the along-arm offset turns per unit. Held at `ARM_WINDING *
- * RADIAL_SMEAR` so the along-arm smear runs *down* the arm rather than across
- * it; everything that spreads a star off the arm is a jitter below.
- */
-const ANGULAR_SMEAR = ARM_WINDING * RADIAL_SMEAR
-/**
- * Half-width of the cross-arm scatter, in radians. Wide enough that the disc
- * reads as a star field rather than as two drawn lines: at 1.9 rad the two
- * arms, half a turn apart, overlap in the space between them, so that space is
- * populated while the arms stay the densest part of the ring.
- */
-const ANGULAR_JITTER = 1.5
-/** Cross-arm radial scatter, which decouples a star's radius from its angle. */
-const RADIAL_JITTER = 0.055
 /**
  * Exponent that turns a repo's file count into its star count. Below 1 a big
  * repo still reads as bigger than a small one while giving up the field it
@@ -99,26 +83,12 @@ const STAR_COMPRESSION = 0.62
  * vertices worth the star losing its name.
  */
 const STAR_DENSITY = 3
-const DISC_THICKNESS = 0.09
-/** How much of the disc's thickness the rim loses relative to the core. */
-const CORE_BULGE = 0.65
-/** Largest radial coordinate a star can reach, used to normalize to the field. */
-const MAX_RADIAL = 1 + (ALONG_SPAN / 2) * RADIAL_SMEAR + RADIAL_JITTER
 
 /** A repo paired with the step of its most recent contribution. */
 interface RepoRecency {
   readonly repo: UniverseRepo
   readonly lastStep: number
 }
-
-/** An arm segment before per-star smearing: radius in [0, 1], angle in radians. */
-interface ArmGeometry {
-  readonly t: number
-  readonly angle: number
-}
-
-/** A position in normalized field units, every axis in [0, 1]. */
-type FieldPoint = Pick<StarPosition, 'x' | 'y' | 'z'>
 
 /**
  * @description Builds the repo-qualified key that identifies a star.
@@ -131,10 +101,10 @@ export function starKey(repoId: number, file: string): string {
 /**
  * @description Lays a universe out as one spiral disc: radius encodes recency,
  * so the most recently active repo sits at the core and the least recently
- * active at the rim, and every file reaches a star smeared along its repo's
- * arm. Deterministic: recency comes from the contribution log and positions
- * from a hash of stable identifiers, never from randomness, input order, or the
- * clock.
+ * active at the rim, and every file reaches a star in the cluster its repo's
+ * label sits on. Deterministic: recency comes from the contribution log and
+ * positions from a hash of stable identifiers, never from randomness, input
+ * order, or the clock.
  * @param snapshot The universe snapshot to position.
  * @returns The arm segments, every star, and a star key to vertex index map
  * that stays total over files even where several of them share a star.
@@ -157,8 +127,8 @@ export function layoutUniverse(snapshot: UniverseSnapshot): UniverseLayout {
       name: entry.repo.name,
       ordinal,
       lastStep: entry.lastStep,
-      ...fieldPoint(arm.t, arm.angle, 0),
-      radius: (arm.t / MAX_RADIAL) * DISC_FIELD_RADIUS,
+      ...anchorPoint(arm),
+      radius: anchorRadius(arm.t),
       starOffset,
       starCount: stars.length - starOffset,
     })
@@ -190,40 +160,12 @@ function orderByRecency(snapshot: UniverseSnapshot): readonly RepoRecency[] {
 }
 
 /**
- * @description Maps a recency ordinal onto one of the disc's spiral arms. The
- * square root keeps the core dense and shrinks the step between neighbours,
- * which is what lets the radial smear blend them into an arm.
- */
-function armGeometry(ordinal: number, total: number): ArmGeometry {
-  const t = Math.sqrt((ordinal + 0.5) / Math.max(1, total))
-  const arm = ordinal % ARM_COUNT
-  return { t, angle: (arm * 2 * Math.PI) / ARM_COUNT + t * ARM_WINDING }
-}
-
-/**
- * @description Projects a radial coordinate, angle, and depth into field units.
- * A negative radius mirrors the star across the center, filling the core rather
- * than clamping the innermost repos into a hot spot.
- */
-function fieldPoint(radial: number, angle: number, depth: number): FieldPoint {
-  const scaled = (radial / MAX_RADIAL) * DISC_FIELD_RADIUS
-  return {
-    x: 0.5 + Math.cos(angle) * scaled,
-    y: 0.5 + Math.sin(angle) * scaled,
-    z: 0.5 + depth,
-  }
-}
-
-/**
- * @description Appends a repo's stars, positioned along its arm and then
- * scattered off it, so the disc reads as a star field with spiral structure
- * rather than as stars glued to two thin curves. The along-arm offset moves a
- * star down the arm; the two jitters move it off the arm, and being densest at
- * zero they leave the arm the busiest part of the disc while still populating
- * the space between arms. A repo gets `starBudget` stars rather than one per
- * file, so volume buys neither area nor a proportional count, but every file
- * still resolves: the paths are folded onto the budget in sorted order, which
- * puts a directory's files on the same star or on neighbouring ones.
+ * @description Appends a repo's stars, each one placed in the cluster centred
+ * on the arm anchor its label is drawn on; `clusterPoint` owns that geometry.
+ * A repo gets `starBudget` stars rather than one per file, so volume buys
+ * neither area nor a proportional count, but every file still resolves: the
+ * paths are folded onto the budget in sorted order, which puts a directory's
+ * files on the same star or on neighbouring ones.
  */
 function appendStars(
   stars: StarPosition[],
@@ -235,14 +177,8 @@ function appendStars(
   const files = [...new Set(repo.files)].sort()
   const budget = starBudget(files.length)
   const offset = stars.length
-  for (const file of leadFiles(files, budget, repo.id, touched)) {
-    const key = starKey(repo.id, file)
-    const along = (hash01(`${key}:along`) - 0.5) * ALONG_SPAN
-    const angle = arm.angle + along * ANGULAR_SMEAR + scatter(key, 'angle') * ANGULAR_JITTER
-    const radial = arm.t + along * RADIAL_SMEAR + scatter(key, 'radial') * RADIAL_JITTER
-    const depth = (hash01(`${key}:depth`) - 0.5) * DISC_THICKNESS * (1 - arm.t * CORE_BULGE)
-    stars.push({ repoId: repo.id, file, ...fieldPoint(radial, angle, depth) })
-  }
+  for (const file of leadFiles(files, budget, repo.id, touched))
+    stars.push({ repoId: repo.id, file, ...clusterPoint(starKey(repo.id, file), arm) })
   for (let index = 0; index < files.length; index++) {
     const file = files[index]
     if (file !== undefined)
@@ -301,27 +237,4 @@ function firstTouches(snapshot: UniverseSnapshot): ReadonlyMap<string, number> {
     if (previous === undefined || contribution.step < previous) steps.set(key, contribution.step)
   }
   return steps
-}
-
-/**
- * @description Deterministic scatter in (-1, 1), densest at zero. Summing two
- * hashes gives a triangular distribution, which is what keeps the arm the
- * brightest part of the disc while its tails reach the space between arms; a
- * single hash would spread every star with equal probability and flatten the
- * spiral out of the field.
- */
-function scatter(key: string, axis: string): number {
-  return hash01(`${key}:${axis}`) + hash01(`${key}:${axis}:spread`) - 1
-}
-
-/**
- * @description Deterministic string hash returning a fraction in [0, 1).
- */
-export function hash01(input: string): number {
-  let h = 2166136261
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return ((h >>> 0) % 1000) / 1000
 }

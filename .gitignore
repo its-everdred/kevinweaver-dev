@@ -11,10 +11,17 @@
 /playwright-report
 /blob-report
 /playwright/.cache
+# Suffixed copies of the above, set aside while comparing two runs. The
+# anchored names do not cover them, which is how a set of them reached a
+# commit; a finished run left in the tree is debris under any name.
+/test-results-*
+/playwright-report-*
 
 # next.js
 /.next/
 /out/
+# Build output set aside while comparing two builds, for the same reason.
+/.next-*
 /.swc
 next-env.d.ts
 

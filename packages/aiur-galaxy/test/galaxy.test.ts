@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { layoutUniverse, starKey } from '../src/galaxy'
-import type { StarPosition, UniverseLayout } from '../src/galaxy'
+import { DISC_FIELD_RADIUS, layoutUniverse, starKey } from '../src/galaxy'
+import type { RepoArm, StarPosition, UniverseLayout } from '../src/galaxy'
 import { PRIVATE_REPO_ID } from '../src/privateRepo'
 import type { UniverseContribution, UniverseSnapshot } from '../src/types'
 
@@ -49,6 +49,17 @@ function meanRadius(layout: UniverseLayout, repoId: number): number {
 function radialRange(layout: UniverseLayout, repoId: number): { min: number; max: number } {
   const radii = starsOf(layout, repoId).map(radiusOf)
   return { min: Math.min(...radii), max: Math.max(...radii) }
+}
+
+/**
+ * How far every star of a repo sits from the arm anchor its label is drawn on.
+ * A repo reads as a place in the disc only while these stay small: the name is
+ * painted at the anchor, so a star far from it is a star nothing identifies.
+ */
+function labelReach(layout: UniverseLayout, repo: RepoArm): number[] {
+  return layout.stars
+    .slice(repo.starOffset, repo.starOffset + repo.starCount)
+    .map((star) => Math.hypot(star.x - repo.x, star.y - repo.y))
 }
 
 /** Ten-degree slices of the disc, so an occupied bin is a readable wedge. */
@@ -249,6 +260,10 @@ describe('layoutUniverse', () => {
   })
 
   it('overlaps the radial ranges of repos adjacent in recency order', () => {
+    // This is the floor under the cluster reach, and the reason a repo cannot
+    // simply be tightened to a dot on its label: neighbouring clusters have to
+    // meet, or the disc reads as a ring of separate beads rather than as one
+    // continuous field.
     const layout = layoutUniverse(
       snapshot(
         Array.from({ length: 8 }, (_, index) => ({
@@ -269,16 +284,36 @@ describe('layoutUniverse', () => {
     }
   })
 
-  it('spreads stars across a wide angular band rather than onto thin arm curves', () => {
+  it('clusters a repo’s stars around the label that names them', () => {
+    // The operator's ask: a repo is a place in the disc, not a streak. Its
+    // label is painted on the arm anchor, and the along-arm smear this replaced
+    // ran a repo's stars two fifths of the disc radius from that anchor on
+    // average and half again the whole disc radius at the tail, which put a
+    // repo's stars nowhere near its own name. Now: 0.087 and 0.221 of it.
+    const layout = layoutUniverse(DENSE)
+    const reaches = layout.repos.flatMap((repo) => labelReach(layout, repo))
+    const mean = reaches.reduce((sum, gap) => sum + gap, 0) / reaches.length
+    expect(mean).toBeLessThan(DISC_FIELD_RADIUS * 0.1)
+    // And no straggler: the cluster is bounded, not merely centred.
+    expect(Math.max(...reaches)).toBeLessThan(DISC_FIELD_RADIUS * 0.25)
+  })
+
+  it('fills the space between the arms while leaving the arms legible', () => {
     const layout = layoutUniverse(DENSE)
     // A mid-disc ring, cut into 36 ten-degree wedges. The twelve emptiest
     // wedges are the space between the arms: at least 15% of the ring's stars
-    // must land there, against the 33% a structureless field would score.
+    // must land there, against the 33% a structureless field would score. That
+    // space used to be filled by a per-star scatter wide enough to throw a
+    // repo's own stars across the disc; now it is filled by the overlapping
+    // tails of the clusters either side of the ring, which is why tightening
+    // each repo onto its label raised this from 0.153 to 0.191 rather than
+    // emptying the gaps.
     expect(sparsestThirdShare(layout, 0.16, 0.24)).toBeGreaterThanOrEqual(0.15)
     // And the arms must be legible, not merely present: the busiest wedge
     // carries nearly twice its share. The previous 1.3 bound passed at a
     // scatter wide enough that the spiral read as fog, so it is raised here to
-    // the contrast the arms actually have to hold.
+    // the contrast the arms actually have to hold. Clustering helps this one
+    // outright — 1.950 before, 2.271 now.
     expect(peakOverMean(layout, 0.16, 0.24)).toBeGreaterThanOrEqual(1.9)
   })
 
@@ -304,12 +339,16 @@ describe('layoutUniverse', () => {
       expect(star.z).toBeLessThanOrEqual(1)
     }
     // Volume must not buy area: the huge repo stays inside its own annulus,
-    // whose width comes from the smear and jitter constants and never from the
-    // file count. Compression works the other axis, how many stars fill that
-    // annulus, so the two rules meet rather than collide: a big repo is denser
-    // than a small one, but neither wider nor proportionally denser.
+    // whose width is the cluster's radial diameter and never the file count.
+    // Compression works the other axis, how many stars fill that annulus, so
+    // the two rules meet rather than collide: a big repo is denser than a small
+    // one, but neither wider nor proportionally denser. The bound is restated
+    // as that diameter — two cluster reaches, under 40% of the disc radius —
+    // rather than the bare 0.2 that held the old smear. Clustering costs a
+    // little on this axis (0.140 to 0.151) and buys it back many times over on
+    // the arc, which is the axis the streak ran down.
     const huge = radialRange(layout, 2)
-    expect(huge.max - huge.min).toBeLessThan(0.2)
+    expect(huge.max - huge.min).toBeLessThan(DISC_FIELD_RADIUS * 0.4)
   })
 
   it('orders repos sharing a last-activity step by repo id, whatever the input order', () => {

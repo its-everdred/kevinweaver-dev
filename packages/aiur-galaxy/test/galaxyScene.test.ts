@@ -1,13 +1,24 @@
-import { LineBasicMaterial, PerspectiveCamera, Vector3 } from 'three'
+import {
+  LineBasicMaterial,
+  Mesh,
+  MeshBasicMaterial,
+  PerspectiveCamera,
+  PlaneGeometry,
+  SRGBColorSpace,
+  Vector3,
+} from 'three'
 import type { BufferAttribute } from 'three'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
   createBeamField,
+  paintContributor,
   pickRepoArm,
   placeCamera,
+  releaseContributor,
   repoScreenPosition,
   resizeCamera,
+  type SceneContributor,
 } from '../src/galaxyScene'
 import { createStarField } from '../src/galaxyStars'
 import {
@@ -99,7 +110,7 @@ describe('createBeamField', () => {
   it('draws a beam back into its node as the day ends', () => {
     const source = layout()
     const beams = createBeamField(THEME)
-    beams.setFrame(source, frameAt(0), ORIGINS, DISC_STILL, 0)
+    beams.setFrame(source, frameAt(0), ORIGINS, DISC_STILL, () => 0)
     const ends = beams.lines.geometry.getAttribute('position') as BufferAttribute
     // Both ends of the line sit on the square it radiates from: the beam has
     // retracted into it rather than vanishing off the star it reached.
@@ -108,10 +119,25 @@ describe('createBeamField', () => {
     beams.dispose()
   })
 
+  it('gives each beam its own reach, so a day arrives a strike at a time', () => {
+    const source = layout()
+    const field = createStarField(source, THEME)
+    const beams = createBeamField(THEME)
+    // The whole point of the stagger: one line is still inside its node while
+    // the next has already landed. A single reach for the step cannot say this.
+    beams.setFrame(source, frameAt(0), ORIGINS, DISC_STILL, (beam) => (beam === 0 ? 0 : 1))
+    const stars = field.points.geometry.getAttribute('position') as BufferAttribute
+    const ends = beams.lines.geometry.getAttribute('position') as BufferAttribute
+    expect(vertexOf(ends, 1)).toEqual([ORIGINS[0]?.x, ORIGINS[0]?.y, ORIGINS[0]?.z])
+    expect(vertexOf(ends, 3)).toEqual(vertexOf(stars, indexOf(source, 1, 'd.ts')))
+    field.dispose()
+    beams.dispose()
+  })
+
   it('draws a beam part of the way out of its node as the day opens', () => {
     const source = layout()
     const beams = createBeamField(THEME)
-    beams.setFrame(source, frameAt(0), ORIGINS, DISC_STILL, 0.5)
+    beams.setFrame(source, frameAt(0), ORIGINS, DISC_STILL, () => 0.5)
     const ends = beams.lines.geometry.getAttribute('position') as BufferAttribute
     const star = source.stars[indexOf(source, 0, 'a.ts')]
     const origin = ORIGINS[0]
@@ -129,7 +155,7 @@ describe('createBeamField', () => {
   it('keeps a part-drawn beam anchored to a node that is still moving', () => {
     const source = layout()
     const beams = createBeamField(THEME)
-    beams.setFrame(source, frameAt(0), ORIGINS, DISC_STILL, 0)
+    beams.setFrame(source, frameAt(0), ORIGINS, DISC_STILL, () => 0)
     // The node glides while its beams grow, so a re-anchor has to carry the
     // far end with it. Leaving it where the last write put it strands a
     // retracted beam behind the square instead of holding it inside it.
@@ -157,6 +183,89 @@ describe('createBeamField', () => {
     const material = vi.spyOn(beams.lines.material as LineBasicMaterial, 'dispose')
     beams.dispose()
     expect(geometry).toHaveBeenCalledTimes(1)
+    expect(material).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('contributor avatars', () => {
+  /**
+   * What the host hands over once an avatar has decoded. Three only ever
+   * stores it and passes it to the GL upload, so a one-pixel stand-in proves
+   * everything a node without a GL context can be asked to prove.
+   */
+  const AVATAR: ImageData = {
+    colorSpace: 'srgb',
+    data: new Uint8ClampedArray(4),
+    width: 1,
+    height: 1,
+  }
+
+  function contributorNode(color: number): SceneContributor {
+    return {
+      actor: 0,
+      mesh: new Mesh(new PlaneGeometry(1, 1), new MeshBasicMaterial({ color })),
+    }
+  }
+
+  it('paints the avatar onto the node as its texture', () => {
+    const node = contributorNode(THEME.contributor)
+    paintContributor(node, AVATAR)
+    expect(node.mesh.material.map?.image).toBe(AVATAR)
+    // `needsUpdate` is write-only on a texture; the version it bumps is what
+    // says the image is queued for upload rather than sitting there unread.
+    expect(node.mesh.material.map?.version).toBeGreaterThan(0)
+    expect(node.mesh.material.map?.colorSpace).toBe(SRGBColorSpace)
+    releaseContributor(node)
+  })
+
+  it('keeps the actor colour as a tint, so the two nodes stay apart', () => {
+    const human = contributorNode(THEME.contributor)
+    const agent = contributorNode(THEME.agent)
+    const flat = human.mesh.material.color.clone()
+    paintContributor(human, AVATAR)
+    paintContributor(agent, AVATAR)
+    // Lightened, or the photograph underneath it is a solid blue square; still
+    // its own colour, because at a dozen screen pixels that is the whole of
+    // what tells kw's node from AK's.
+    expect(human.mesh.material.color.r).toBeGreaterThan(flat.r)
+    expect(human.mesh.material.color.g).toBeGreaterThan(flat.g)
+    expect(human.mesh.material.color.b).toBeGreaterThan(flat.b)
+    expect(human.mesh.material.color.getHex()).not.toBe(agent.mesh.material.color.getHex())
+    releaseContributor(human)
+    releaseContributor(agent)
+  })
+
+  it('never lightens twice or strands the texture it replaces', () => {
+    const node = contributorNode(THEME.contributor)
+    paintContributor(node, AVATAR)
+    const first = node.mesh.material.map
+    if (!first) throw new Error('the node took no avatar')
+    const released = vi.spyOn(first, 'dispose')
+    const tinted = node.mesh.material.color.getHex()
+    paintContributor(node, AVATAR)
+    expect(released).toHaveBeenCalledTimes(1)
+    expect(node.mesh.material.color.getHex()).toBe(tinted)
+    releaseContributor(node)
+  })
+
+  it('releases the node geometry, material, and avatar together', () => {
+    const node = contributorNode(THEME.contributor)
+    paintContributor(node, AVATAR)
+    const geometry = vi.spyOn(node.mesh.geometry, 'dispose')
+    const material = vi.spyOn(node.mesh.material, 'dispose')
+    const texture = node.mesh.material.map
+    if (!texture) throw new Error('the node took no avatar')
+    const map = vi.spyOn(texture, 'dispose')
+    releaseContributor(node)
+    expect(geometry).toHaveBeenCalledTimes(1)
+    expect(material).toHaveBeenCalledTimes(1)
+    expect(map).toHaveBeenCalledTimes(1)
+  })
+
+  it('releases a node that never got an avatar', () => {
+    const node = contributorNode(THEME.contributor)
+    const material = vi.spyOn(node.mesh.material, 'dispose')
+    releaseContributor(node)
     expect(material).toHaveBeenCalledTimes(1)
   })
 })

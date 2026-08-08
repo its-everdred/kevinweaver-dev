@@ -6,6 +6,7 @@ import { layoutUniverse } from '../src/galaxy'
 import { buildGalaxyPoints, createStarField } from '../src/galaxyStars'
 import { STAR_FRAGMENT_SHADER, STAR_VERTEX_SHADER } from '../src/galaxyShader'
 import type { UniverseSnapshot } from '../src/types'
+import { universeFrame } from '../src/universePlayback'
 import {
   THEME,
   changedVertices,
@@ -15,6 +16,18 @@ import {
   layout,
   toHex,
 } from './galaxyFixtures'
+
+/**
+ * How far a star's color has travelled from the flash toward the permanent lit
+ * color: 0 is `currentStar`, 1 is `liveStar`. Read off the raw buffer floats
+ * rather than a packed hex, so a single day slot of decay is measurable instead
+ * of being rounded away by the 8-bit round trip.
+ */
+function mix(rgb: readonly number[]): number {
+  const from = new Color(THEME.currentStar)
+  const to = new Color(THEME.liveStar)
+  return ((rgb[0] ?? 0) - from.r) / (to.r - from.r)
+}
 
 /** Rec.709 relative luminance of an already-linearized three.js color. */
 function luminance(hex: number): number {
@@ -187,10 +200,15 @@ describe('createStarField', () => {
     field.setFrame(source, frameAt(3))
     field.setFrame(source, frameAt(4))
     field.setFrame(source, frameAt(5))
-    // Zapped at step 0, still bright five steps later: brightness never reverts.
-    expect(toHex(colorOf(field.points, indexOf(source, 0, 'a.ts')))).toBe(THEME.liveStar)
-    expect(toHex(colorOf(field.points, indexOf(source, 1, 'd.ts')))).toBe(THEME.liveStar)
-    expect(toHex(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBe(THEME.liveStar)
+    // Zapped at step 0, still lit five steps later and further through its fade
+    // than the star zapped at step 2: brightness never reverts, and the flash
+    // decays in step order instead of every lit star sharing one color.
+    const oldest = mix(colorOf(field.points, indexOf(source, 0, 'a.ts')))
+    const newer = mix(colorOf(field.points, indexOf(source, 0, 'b.ts')))
+    expect(oldest).toBeGreaterThan(newer)
+    expect(newer).toBeGreaterThan(0)
+    expect(oldest).toBeLessThan(1)
+    expect(mix(colorOf(field.points, indexOf(source, 1, 'd.ts')))).toBeCloseTo(oldest, 10)
     expect(toHex(colorOf(field.points, indexOf(source, 2, 'q.ts')))).toBe(THEME.star)
     field.dispose()
   })
@@ -340,5 +358,123 @@ describe('createStarField', () => {
     field.dispose()
     expect(geometry).toHaveBeenCalledTimes(1)
     expect(material).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('contribution flash fade', () => {
+  /**
+   * The operator's ask, stated here rather than imported: the flash decays over
+   * a week of day slots. Written independently of whatever constant the field
+   * uses, so shortening the fade fails these tests instead of moving with them.
+   */
+  const WEEK = 7
+  /**
+   * One contribution, far enough from either end of the timeline that the whole
+   * week can be walked in both directions. The shared six-step fixture cannot
+   * reach the end of a week, and `galaxyFixtures` belongs to another change in
+   * flight, so this one is local.
+   */
+  const TOUCH = WEEK + 1
+  const FADING: UniverseSnapshot = {
+    repos: [
+      { id: 0, name: 'a/lit', files: ['a.ts'] },
+      { id: 1, name: 'a/quiet', files: ['q.ts'] },
+    ],
+    contributions: [{ step: TOUCH, repo: 0, file: 'a.ts', actor: 0 as const }],
+    stepCount: TOUCH + WEEK + 2,
+  }
+
+  function fading(): ReturnType<typeof layoutUniverse> {
+    return layoutUniverse(FADING)
+  }
+
+  function forward(step: number): ReturnType<typeof universeFrame> {
+    return universeFrame(FADING, step, 'forward')
+  }
+
+  it('eases the flash back to the lit color over a week of day slots', () => {
+    const source = fading()
+    const field = createStarField(source, THEME)
+    const star = indexOf(source, 0, 'a.ts')
+    const shades: number[] = []
+    for (let age = 0; age <= WEEK; age++) {
+      field.setFrame(source, forward(TOUCH + age))
+      shades.push(mix(colorOf(field.points, star)))
+    }
+    // Full flash on the day of the commit, all the way back to the permanent
+    // lit color a week later, and strictly on its way there in between.
+    expect(shades[0]).toBeCloseTo(0, 6)
+    expect(shades[WEEK]).toBeCloseTo(1, 6)
+    for (let age = 1; age <= WEEK; age++)
+      expect(shades[age]).toBeGreaterThan(shades[age - 1] ?? 1)
+    // A week is the whole of it: the slot after lands on `liveStar` and stays.
+    field.setFrame(source, forward(TOUCH + WEEK + 1))
+    expect(toHex(colorOf(field.points, star))).toBe(THEME.liveStar)
+    field.dispose()
+  })
+
+  it('lands the fade on the lit color, never back on the untouched one', () => {
+    const source = fading()
+    const field = createStarField(source, THEME)
+    const star = indexOf(source, 0, 'a.ts')
+    const quiet = indexOf(source, 1, 'q.ts')
+    for (let step = TOUCH; step < FADING.stepCount; step++) {
+      field.setFrame(source, forward(step))
+      // Brightness is cumulative: a star the log has named never goes dark
+      // again, and a star it has not named never lights.
+      expect(toHex(colorOf(field.points, star))).not.toBe(THEME.star)
+      expect(toHex(colorOf(field.points, quiet))).toBe(THEME.star)
+    }
+    expect(toHex(colorOf(field.points, star))).toBe(THEME.liveStar)
+    field.dispose()
+  })
+
+  it('shows a seek the shade a play-through would have reached', () => {
+    const source = fading()
+    const played = createStarField(source, THEME)
+    const jumped = createStarField(source, THEME)
+    const star = indexOf(source, 0, 'a.ts')
+    for (let age = 0; age <= 3; age++) played.setFrame(source, forward(TOUCH + age))
+    jumped.setFrame(source, forward(TOUCH))
+    jumped.setFrame(source, forward(TOUCH + 3))
+    expect(colorOf(jumped.points, star)).toEqual(colorOf(played.points, star))
+    // Mid-fade, so the two agree on a shade rather than on either end of it.
+    expect(mix(colorOf(played.points, star))).toBeGreaterThan(0)
+    expect(mix(colorOf(played.points, star))).toBeLessThan(1)
+    played.dispose()
+    jumped.dispose()
+  })
+
+  it('ages the flash in playback order when the disc plays backward', () => {
+    const source = fading()
+    const field = createStarField(source, THEME)
+    const star = indexOf(source, 0, 'a.ts')
+    const shades: number[] = []
+    // Backward playback meets a contribution at its own step and walks away
+    // from it toward the past, so the flash ages down the timeline, not up it.
+    for (let age = 0; age <= WEEK; age++) {
+      field.setFrame(source, universeFrame(FADING, TOUCH - age, 'backward'))
+      shades.push(mix(colorOf(field.points, star)))
+    }
+    expect(shades[0]).toBeCloseTo(0, 6)
+    expect(shades[WEEK]).toBeCloseTo(1, 6)
+    for (let age = 1; age <= WEEK; age++)
+      expect(shades[age]).toBeGreaterThan(shades[age - 1] ?? 1)
+    field.dispose()
+  })
+
+  it('writes the week behind the step, never the whole field', () => {
+    const source = fading()
+    const field = createStarField(source, THEME)
+    field.setFrame(source, forward(TOUCH))
+    const colors = field.points.geometry.getAttribute('color').array as Float32Array
+    const before = Float32Array.from(colors)
+    const written = field.setFrame(source, forward(TOUCH + 1))
+    // One star sits inside the fade window. Every other vertex in the disc is
+    // named by nothing this week and must not be written at all.
+    expect(written).toBe(1)
+    expect(changedVertices(before, colors)).toEqual([indexOf(source, 0, 'a.ts')])
+    expect(source.starCount).toBeGreaterThan(1)
+    field.dispose()
   })
 })

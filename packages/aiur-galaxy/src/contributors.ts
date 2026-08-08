@@ -9,21 +9,15 @@ import type { UniverseActor } from './types'
  * it from `universeRender` pulled that entire renderer into the lazy island's
  * chunk, which has a hard byte budget it does not fit inside.
  *
- * The day-to-day move of a node is here too, and so is how far its beams are
- * drawn: a beam starts at the node and is measured from it, so the two are one
- * transition and are stated once.
+ * The day-to-day move of a node is here too. How far its beams are drawn is
+ * not: that runs on its own clock now, and lives in `beamTiming`.
  */
 
 /** Both actors, in the order the scene draws them. */
 const ACTORS = [0, 1] as const
 
-/**
- * How long a day's change takes to draw, in milliseconds. Playback holds a day
- * for a second and both halves of the change happen inside it: the closing
- * day's beams retract over one transition and the opening day's grow over
- * another, which leaves them at full length for the third of a second between.
- */
-export const DAY_TRANSITION_MS = 320
+/** Where a node passes through its own day, as a fraction of the day's slot. */
+export const DAY_MIDPOINT = 0.5
 
 /** A contributor node to draw, with its label and per-actor color. */
 export interface ContributorNode {
@@ -40,62 +34,48 @@ export interface ContributorPoint {
   readonly y: number
 }
 
-/** A contributor node's steady move from the day it left to the day it is on. */
+/** A contributor node's unbroken path through the days it works on. */
 export interface ContributorGlide {
   /** Opens a day: wherever the nodes are drawn now is what they move from. */
   open(): void
   /**
-   * Places the nodes part of the way through that move.
+   * Places the nodes on that path.
    * @param targets Where the day being drawn puts them.
-   * @param phase How far through the move the scene is, from `dayTransition`.
+   * @param next Where the day after that puts them; an actor missing from it
+   * has nowhere to go on and rests on the day being drawn instead.
+   * @param phase How far through the day's slot the scene is, from `dayPhase`.
    * @returns One point per target, in the same array on every frame.
    */
   at(
     targets: readonly ContributorNode[],
+    next: readonly ContributorNode[],
     phase: number
   ): readonly ContributorPoint[]
 }
 
 /**
- * @description How far through a day's change the scene is.
- * @param sinceMs Milliseconds since the day being drawn became the current one.
- * @param animated False under reduced motion and while the clock is paused,
- * where a day's change is not drawn at all.
- * @returns 0 at the start of the change and 1 once it is done; always 1 when
- * nothing may animate, so the scene lands straight on the final state.
- */
-export function dayTransition(sinceMs: number, animated: boolean): number {
-  if (!animated) return 1
-  if (!(sinceMs > 0)) return 0
-  return Math.min(1, sinceMs / DAY_TRANSITION_MS)
-}
-
-/**
- * @description How much of the way from its contributor node toward its star a
- * beam is drawn. Beams grow out of the node as a day opens and are drawn back
- * into it as the day closes, rather than appearing and vanishing whole.
+ * @description How far through its slot the day being drawn is.
  * @param sinceMs Milliseconds since the day being drawn became the current one.
  * @param slotMs How long a day is held for.
- * @param animated Whether a day's change may be drawn at all.
- * @returns A fraction in [0, 1], a whole beam through the middle of the day.
+ * @param animated False under reduced motion and while the clock is paused,
+ * where a day's change is not drawn at all.
+ * @returns A fraction in [0, 1]; always `DAY_MIDPOINT` when nothing may
+ * animate, because that is the point a moving node passes its own day at, and
+ * a still frame of a day has to be the day itself.
  */
-export function beamReach(
-  sinceMs: number,
-  slotMs: number,
-  animated: boolean
-): number {
-  return Math.min(
-    dayTransition(sinceMs, animated),
-    dayTransition(slotMs - sinceMs, animated)
-  )
+export function dayPhase(sinceMs: number, slotMs: number, animated: boolean): number {
+  if (!animated) return DAY_MIDPOINT
+  if (!(sinceMs > 0)) return 0
+  return Math.min(1, sinceMs / slotMs)
 }
 
 /**
- * @description Moves contributor nodes between their days at a steady speed:
- * a fixed distance over a fixed time, which is the whole of "steady". The
- * exponential ease this replaces covered a fixed fraction of what was left
- * every frame, so it started fast and crept at the end. Its buffers are
- * allocated once, because this runs on the frame path.
+ * @description Carries contributor nodes along one unbroken path through the
+ * disc. A node reaches the day it is on at the midpoint of that day's slot and
+ * spends the rest of the slot on its way to the next day, so it is always in
+ * motion: the previous glide landed on the day and then stood still for the
+ * remaining two thirds of the second. Its buffers are allocated once, because
+ * this runs on the frame path.
  * @returns A glide holding one node per actor.
  */
 export function createContributorGlide(): ContributorGlide {
@@ -112,17 +92,14 @@ export function createContributorGlide(): ContributorGlide {
         start.y = point.y
       }
     },
-    at(targets, phase) {
+    at(targets, next, phase) {
       shown.length = 0
       for (const target of targets) {
         const point = points[target.actor]
         const start = from[target.actor]
         if (!point || !start) continue
         if (!start.placed) place(start, target)
-        // Weighted rather than offset from the start, so the node lands
-        // exactly on its day: a seek and a pass through settle on one frame.
-        point.x = start.x * (1 - phase) + target.x * phase
-        point.y = start.y * (1 - phase) + target.y * phase
+        glidePoint(point, start, target, onwardOf(next, target), phase)
         shown.push(point)
       }
       return shown
@@ -138,6 +115,36 @@ function place(
   start.placed = true
   start.x = target.x
   start.y = target.y
+}
+
+/** Where this actor is bound after today, or today's own place when it is idle. */
+function onwardOf(
+  next: readonly ContributorNode[],
+  target: ContributorNode
+): ContributorNode {
+  return next.find((node) => node.actor === target.actor) ?? target
+}
+
+/**
+ * Places a node on the leg of its path the slot has reached: it closes on its
+ * day over the first half and leaves for the next one over the second, so the
+ * day's end leaves it half way along that leg and the next day's midpoint puts
+ * it exactly on the next day. Each leg is weighted rather than offset from
+ * where it began, so the node lands on a day's own position to the last bit.
+ */
+function glidePoint(
+  point: { x: number; y: number },
+  start: { readonly x: number; readonly y: number },
+  target: ContributorNode,
+  onward: ContributorNode,
+  phase: number
+): void {
+  const closing = phase <= DAY_MIDPOINT
+  const leg = closing ? start : target
+  const toward = closing ? target : onward
+  const along = closing ? phase / DAY_MIDPOINT : phase - DAY_MIDPOINT
+  point.x = leg.x * (1 - along) + toward.x * along
+  point.y = leg.y * (1 - along) + toward.y * along
 }
 
 /** @description The star a contribution names, or undefined when absent. */

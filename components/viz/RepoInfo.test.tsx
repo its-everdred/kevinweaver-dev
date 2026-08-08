@@ -34,9 +34,16 @@ function repo(id: number, short: string, actor: 0 | 1, from: string, ext: string
 const HEAD: BundleHead = {
   manifest: { v: 1, generatedAt: '2026-02-05T12:00:00Z', commit: 'fixture-commit', days: ['2026-02-05', '2026-02-01'], refs: 'all', windowStart: '2026-02-01', windowEnd: '2026-02-05', dayCount: 5, repoCount: 2, repoCountDefinition: 'ownerPublicNonFork', actors: [{ id: 0, login: 'human-fixture', kind: 'human' }, { id: 1, login: 'agent-fixture', kind: 'agent' }], degraded: [], chunkSize: 10, chunks: 1, events: 3 },
   repos: [repo(0, 'alpha', 0, '2026-02-01'), repo(1, 'beta', 1, '2026-02-02'), repo(2, 'gamma', 0, '2026-02-03', ['bak', 'css', 'example', 'html', 'jpg', 'js', 'json', 'lock'])],
-  grid: { start: '2026-02-01', dayCount: 5, human: [1, 0, 2, 0, 1], agent: [0, 3, 0, 1, 0], privateMonthly: [], privateStart: '2026-02', bands: [0, 1, 2, 4, 8, 16, 32, 64, 128, 256] },
+  grid: { start: '2026-02-01', dayCount: 5, human: [1, 0, 2, 0, 1], agent: [0, 3, 0, 0, 0], privateMonthly: [], privateStart: '2026-02', bands: [0, 1, 2, 4, 8, 16, 32, 64, 128, 256] },
   events: [{ day: 0, repo: 1, path: 'docs/latest.md', actor: 1 }, { day: 2, repo: 0, path: 'src/needle.ts', actor: 0 }, { day: 4, repo: 0, path: 'src/other.ts', actor: 0 }],
 }
+
+/**
+ * The one step this calendar counts and the file history cannot place, so the
+ * galaxy draws it out of the synthesized repo. Step 3 is grey in both and is
+ * the only day the pane may call empty.
+ */
+const UNPLACED_STEP = 1
 
 /** Reads a definition list value by its term, the way the pane pairs them. */
 function value(label: string): string {
@@ -109,6 +116,32 @@ describe('RepoInfo', () => {
     expect(screen.getByText(/no repos this day/i)).toBeInTheDocument()
   })
 
+  it('lists the synthesized repo on a day no file event places', () => {
+    ready()
+    park(UNPLACED_STEP)
+    render(<RepoInfo />)
+
+    // The galaxy lights this day out of the synthesized repo, so a day list
+    // reading off `head.events` alone contradicted the disc beside it.
+    expect(screen.queryByText(/no repos this day/i)).toBeNull()
+    expect(screen.getByRole('button', { name: /^private/ })).toBeInTheDocument()
+  })
+
+  it('pins the synthesized repo without building it a GitHub link', () => {
+    ready()
+    park(UNPLACED_STEP)
+    render(<RepoInfo />)
+
+    fireEvent.click(screen.getByRole('button', { name: /^private/ }))
+
+    expect(getGalaxySelection().repoId).toBe(-1)
+    // github.com/private is somebody else's page.
+    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.getByText('private')).toBeInTheDocument()
+    // And it owns no file entity, so there is no file count to report.
+    expect(screen.queryByText('files')).toBeNull()
+  })
+
   it('pins the pane to a repo clicked in the day list', () => {
     ready()
     render(<RepoInfo />)
@@ -124,7 +157,7 @@ describe('RepoInfo', () => {
     expect(value('last active')).toBe('2026-02-05')
   })
 
-  it('explains that the private repo aggregates every private repository', () => {
+  it('explains that the private repo stands for days the history cannot place', () => {
     ready()
     publishGalaxySelection({
       repoId: -1,
@@ -134,10 +167,12 @@ describe('RepoInfo', () => {
     })
     render(<RepoInfo />)
 
-    // It aggregates many repositories and its stars are volume, not named
-    // files — a claim the pane has to make, because every other repo in the
-    // disc means the literal opposite.
-    expect(screen.getByText(/every private repository/i)).toBeInTheDocument()
+    // It stands for days the calendar counts and the history cannot attribute,
+    // private work among them but not only private work, and its stars are
+    // volume rather than named files. A claim the pane has to make, because
+    // every other repo in the disc means the literal opposite.
+    expect(screen.getByText(/cannot\s+place/i)).toBeInTheDocument()
+    expect(screen.getByText(/rather than named files/i)).toBeInTheDocument()
     // And it is not a GitHub URL: github.com/private is somebody else's page.
     expect(screen.queryByRole('link', { name: 'private' })).toBeNull()
     expect(screen.getByText('private')).toBeInTheDocument()

@@ -7,11 +7,11 @@ import { type OrbitState } from '@/lib/viz/orbit'
 // Per module, not through the barrel: see the note in useGalaxyScene.ts.
 import { buildUniverse } from '@/packages/aiur-galaxy/src/buildUniverse'
 import type { GalaxyScene } from '@/packages/aiur-galaxy/src/galaxyScene'
-import { privateRepo } from '@/packages/aiur-galaxy/src/privateRepo'
 import type {
   UniverseActor,
   UniverseSnapshot,
 } from '@/packages/aiur-galaxy/src/types'
+import { galaxyEventLog } from './galaxyEventLog'
 import {
   useInstrumentRuntime,
   type InstrumentRuntimeState,
@@ -35,29 +35,22 @@ export const GALAXY_CHUNK_MARKER = 'kw-galaxy-universe'
 export function buildGalaxyUniverse(head: BundleHead): UniverseSnapshot {
   const { dayCount } = head.manifest
   const repos = head.repos.map((repo) => ({ id: repo.id, name: repo.name }))
+  // Both halves come from `galaxyEventLog`, which synthesizes the `private`
+  // stand-ins once per payload. The disc used to synthesize its own: the two
+  // agreed only because both were pure functions of the same head, so any
+  // divergence in either would have shown as the disc firing beams at a day
+  // the log beside it called empty.
+  const { events, synthetic } = galaxyEventLog(head)
   // A bundle event counts its day back from the newest, while a timeline step
-  // counts forward from the oldest; `grid.human` is indexed by the latter, so
-  // its index is already a step and needs no conversion of its own.
-  const events = head.events.map((event) => ({
-    repo: event.repo,
-    path: event.path,
-    step: dayCount - 1 - event.day,
-    actor: event.actor as UniverseActor,
-  }))
-  // Most green days name no file the history can place, so they are
-  // synthesized into one more repo here, before the universe is built.
-  // Everything after this point treats `private` as ordinary; see
-  // privateRepo.ts for what those stars do and do not claim to be.
-  const synthetic = privateRepo({
-    human: head.grid.human,
-    agent: head.grid.agent,
-    covered: new Set(events.map((event) => event.step)),
-    stepCount: dayCount,
-  })
-  if (!synthetic) return buildUniverse(repos, events, dayCount)
+  // counts forward from the oldest.
   return buildUniverse(
-    [...repos, synthetic.repo],
-    events.concat(synthetic.events),
+    synthetic ? [...repos, synthetic] : repos,
+    events.map((event) => ({
+      repo: event.repo,
+      path: event.path,
+      step: dayCount - 1 - event.day,
+      actor: event.actor as UniverseActor,
+    })),
     dayCount
   )
 }
