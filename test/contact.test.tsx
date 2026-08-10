@@ -11,12 +11,12 @@ test('renders the authoritative contact surface without private facts', () => {
   expect(links.map((link) => link.textContent)).toEqual([
     'github.com/its-everdred',
     'github.com/its-applekid',
-    'linkedin.com/in/kevinweaver',
+    'linkedin.com/in/kevinweaver2',
   ])
   expect(links.map((link) => link.getAttribute('href'))).toEqual([
     'https://github.com/its-everdred',
     'https://github.com/its-applekid',
-    'https://linkedin.com/in/kevinweaver',
+    'https://www.linkedin.com/in/kevinweaver2/',
   ])
   for (const link of links) {
     expect(link).toHaveAttribute('rel', 'me noopener')

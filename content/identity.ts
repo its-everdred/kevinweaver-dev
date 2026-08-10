@@ -90,8 +90,8 @@ export const IDENTITY = {
     },
     {
       id: 'linkedin',
-      label: 'linkedin.com/in/kevinweaver',
-      href: 'https://linkedin.com/in/kevinweaver',
+      label: 'linkedin.com/in/kevinweaver2',
+      href: 'https://www.linkedin.com/in/kevinweaver2/',
       rel: EXTERNAL_REL,
       external: true,
       note: null,
