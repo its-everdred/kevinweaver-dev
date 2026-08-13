@@ -1,4 +1,8 @@
-export function calendar() {
+import type { CalendarBundle } from './calendar.ts'
+import type { DiscoveryResult } from './discover.ts'
+import type { ExtractResult, ExtractedEvent, RepoExtract } from './extract.ts'
+
+export function calendar(): CalendarBundle {
   return {
     source: 'github-graphql',
     generatedAt: '2026-07-31T00:00:00Z',
@@ -22,7 +26,7 @@ export function calendar() {
   }
 }
 
-export function discovery() {
+export function discovery(): DiscoveryResult {
   return {
     windowStart: '2026-07-31',
     windowEnd: '2026-07-31',
@@ -53,7 +57,7 @@ export function discovery() {
   }
 }
 
-export function extraction() {
+export function extraction(): ExtractResult {
   return {
     events: [
       event('owner/current', '2026-07-31'),
@@ -109,7 +113,7 @@ function events(repoName: string, index: number) {
   }))
 }
 
-function event(repo: string, day: string) {
+function event(repo: string, day: string): ExtractedEvent {
   return {
     day,
     repo,
@@ -125,7 +129,7 @@ function repo(
   day: string,
   status: 'ok' | 'stale',
   consecutiveFailures: number
-) {
+): RepoExtract {
   return {
     n: name,
     first: day,

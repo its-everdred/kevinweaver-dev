@@ -11,14 +11,18 @@ const responseSchema = z.object({ user: z.object({ contributionsCollection: z.ob
 const secondResolution = (date: Date) => new Date(Math.floor(date.getTime() / 1000) * 1000).toISOString();
 
 const monthEnd = (year: number, month: number) => new Date(Date.UTC(year, month, 0, 23, 59, 59)).toISOString().replace(".000Z", "Z");
+const monthCountThrough = (pStart: string, now: Date) => {
+  const [year, month] = pStart.split("-").map(Number); if (!year || !month) throw new Error("Invalid month start");
+  return (now.getUTCFullYear() - year) * 12 + (now.getUTCMonth() + 1 - month) + 1;
+};
 export function monthWindows(pStart: string, monthCount: number) {
   const [year, month] = pStart.split("-").map(Number); if (!year || !month || monthCount < 1) throw new Error("Invalid month window");
   return Array.from({ length: monthCount }, (_, index) => { const date = new Date(Date.UTC(year, month - 1 + index, 1)); const y = date.getUTCFullYear(); const m = date.getUTCMonth() + 1; const key = `${y}-${String(m).padStart(2, "0")}`; return { key, from: `${key}-01T00:00:00Z`, to: monthEnd(y, m) }; });
 }
 
-export async function fetchPrivateAggregate(request: GraphqlRequest, opts: { pStart?: string; monthCount?: number } = {}) {
+export async function fetchPrivateAggregate(request: GraphqlRequest, opts: { pStart?: string; monthCount?: number; now?: Date } = {}) {
   await assertSamlVisibility(request);
-  const pStart = opts.pStart ?? "2010-01"; const monthCount = opts.monthCount ?? 199; const windows = monthWindows(pStart, monthCount);
+  const pStart = opts.pStart ?? "2010-01"; const monthCount = opts.monthCount ?? monthCountThrough(pStart, opts.now ?? new Date()); const windows = monthWindows(pStart, monthCount);
   const actors: ActorPrivateSeries[] = [];
   for (const login of ["its-everdred", "its-applekid"] as const) {
     const values = await Promise.all(windows.map(async (window) => { const response = await request<unknown>(QUERY, { login, from: window.from, to: window.to }); const parsed = responseSchema.safeParse(response); if (!parsed.success) throw new Error(`Private response shape invalid: ${parsed.error.message}`); return parsed.data.user.contributionsCollection; }));

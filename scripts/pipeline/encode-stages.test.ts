@@ -85,6 +85,14 @@ describe('live stage boundary taxonomy', () => {
     )
   })
 
+  it('derives the private monthly count from the calendar window', async () => {
+    await resolveStages(prior, undefined)
+    expect(stages.private).toHaveBeenCalledWith(expect.any(Function), {
+      pStart: '2026-07',
+      monthCount: 1,
+    })
+  })
+
   it.each([
     [
       'calendar unavailable',

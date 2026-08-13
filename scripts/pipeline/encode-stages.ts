@@ -15,6 +15,8 @@ import { calendarFromGrid, extractionNames, extractionPriors, privateFromGrid, r
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import * as stageAdapters from './encode-stage-adapters.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { monthCount } from './validate-format.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { assembleInput } from './encode-stage-input.ts'
 
 type Client = GraphqlRequest
@@ -34,6 +36,7 @@ export async function resolveStages(
   const privateAggregate = await privateFor(
     client,
     calendar.windowStart,
+    calendar.windowEnd,
     fallback
   )
   const discovery = await discoveryFor(client, calendar)
@@ -72,12 +75,14 @@ async function calendarFor(
 async function privateFor(
   client: Client,
   start: string,
+  end: string,
   fallback: Awaited<ReturnType<typeof readPriorGrid>>
 ): Promise<Private> {
   const fetch = await loadStage('./private.ts', 'fetchPrivateAggregate')
+  const months = monthCount(start, end)
   try {
     return stageAdapters.privateValue(
-      await fetch(client, { pStart: start.slice(0, 7) })
+      await fetch(client, { pStart: start.slice(0, 7), monthCount: months })
     )
   } catch (error) {
     if (error instanceof SamlCanaryError) throw calendarRefusal(error)
