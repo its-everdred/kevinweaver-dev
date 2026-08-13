@@ -84,6 +84,7 @@ export function createContribClient(token: string): GraphqlRequest {
 const yearWindow = (year: number) => ({ from: `${year}-01-01T00:00:00Z`, to: `${year}-12-31T23:59:59Z` });
 const checkedAt = (now: Date) => new Date(Math.floor(now.getTime() / 1000) * 1000).toISOString();
 const generatedAt = () => checkedAt(new Date());
+const isoDay = (date: Date) => date.toISOString().slice(0, 10);
 
 export async function assertSamlVisibility(request: GraphqlRequest, now = new Date()): Promise<SamlCanary> {
   const current = now.getUTCFullYear();
@@ -135,9 +136,10 @@ export function mergeActorDays(actors: ActorCalendar[], windowStart: string, win
   return dateRange(windowStart, windowEnd).map((date) => ({ date, e: byLogin.get("its-everdred")?.get(date) ?? 0, a: byLogin.get("its-applekid")?.get(date) ?? 0 }));
 }
 
-export async function fetchCalendarBundle(request: GraphqlRequest, opts: { windowStart?: string; windowEnd?: string; previous?: CalendarBundle } = {}) {
-  const windowStart = opts.windowStart ?? "2010-01-01"; const windowEnd = opts.windowEnd ?? "2026-07-31";
-  const canary = await assertSamlVisibility(request); const years = new Set(dateRange(windowStart, windowEnd).map((date) => date.slice(0, 4)));
+export async function fetchCalendarBundle(request: GraphqlRequest, opts: { windowStart?: string; windowEnd?: string; now?: Date; previous?: CalendarBundle } = {}) {
+  const now = opts.now ?? new Date();
+  const windowStart = opts.windowStart ?? "2010-01-01"; const windowEnd = opts.windowEnd ?? isoDay(now);
+  const canary = await assertSamlVisibility(request, now); const years = new Set(dateRange(windowStart, windowEnd).map((date) => date.slice(0, 4)));
   try {
     const actors: ActorCalendar[] = [];
     for (const login of ["its-everdred", "its-applekid"] as const) {

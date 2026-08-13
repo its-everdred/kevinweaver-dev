@@ -2,7 +2,7 @@
 export const BUNDLE_VERSION = 1 as const
 export const DEFAULT_CHUNK_SIZE = 1500
 export const MAX_DICT_SLICE_GZIP_BYTES = 12_288
-export const FIRST_BYTE_BROTLI_BUDGET_BYTES = 12_288
+export const FIRST_BYTE_BROTLI_BUDGET_BYTES = 16_384
 export const BAND_COUNT = 10
 export const DATA_ROOT = 'public/data/v1'
 

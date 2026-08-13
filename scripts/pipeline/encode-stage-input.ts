@@ -9,6 +9,8 @@ import { BAND_LOWER_BOUNDS } from '../../lib/viz/tokens/level.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { currentSecond, requiredCommit } from './encode-stage-runtime.ts'
 // @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
+import { monthCount } from './validate-format.ts'
+// @ts-expect-error Node 24 loads this explicit TypeScript extension directly.
 import { sortedHeads } from './encode-heads.ts'
 
 type Private = Pick<PrivateAggregate, 'p' | 'degraded'>
@@ -44,13 +46,20 @@ function inputGrid(
   calendar: CalendarBundle,
   privateAggregate: Private
 ): EncodeInput['grid'] {
+  const months = monthCount(calendar.windowStart, calendar.windowEnd)
   return {
     start: calendar.windowStart,
     e: calendar.combined.map((day) => day.e),
     a: calendar.combined.map((day) => day.a),
-    p: privateAggregate.p,
+    p: padMonths(privateAggregate.p, months),
     bands: BAND_LOWER_BOUNDS,
   }
+}
+
+function padMonths(values: readonly number[], expected: number): number[] {
+  const months = values.slice(0, expected)
+  while (months.length < expected) months.push(0)
+  return months
 }
 
 function combinedTotal(calendar: CalendarBundle): number {
