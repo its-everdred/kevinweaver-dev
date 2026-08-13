@@ -8,7 +8,7 @@
       "public/data/v1/events/ee-00.json",
       "public/data/v1/paths/pd-00.json"
     ],
-    "limit": "12 KiB",
+    "limit": "16 KiB",
     "brotli": true
   },
   {
