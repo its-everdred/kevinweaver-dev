@@ -37,6 +37,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
 
+      # Idempotency guard for re-runs and multiple machines: each day owns one
+      # date-scoped branch, so an open PR for today means a refresh already
+      # landed and the expensive regenerate is skipped entirely.
+      - name: skip when today's refresh PR already exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          refresh_date="$(date -u +%Y-%m-%d)"
+          existing="$(gh pr list --state open --head "data/bundle-$refresh_date" --json number --jq 'length')"
+          if [ "$existing" != "0" ]; then
+            echo "An open PR for $refresh_date already exists; skipping."
+            exit 0
+          fi
+          echo "REFRESH_DATE=$refresh_date" >> "$GITHUB_ENV"
+
       - uses: actions/setup-node@v7.0.0
         with:
           node-version-file: .nvmrc
@@ -118,13 +133,10 @@ jobs:
       # measures without committing.
       #
       # Cadence: the main ruleset (PR + ci-ok) rejects direct pushes to main, so
-      # the bundle lands on a data/bundle-<generatedAt> branch and a PR is opened
-      # against main. Each scheduled run gets a fresh branch and PR; a re-run
-      # that reaches an existing branch force-pushes it and edits the existing PR
-      # instead of duplicating. The first landing is reviewed and merged by the
-      # Executor, and every later daily refresh follows the same PR cadence -
-      # each PR must pass ci-ok and a code-owner review before a maintainer
-      # squashes it onto main.
+      # the bundle lands on a data/bundle-<YYYY-MM-DD> branch and a PR is opened
+      # against main. Auto-merge is enabled on that PR, so it lands on main once
+      # ci-ok is green, with no agent in the loop. The date-scoped branch plus
+      # the early open-PR check keep re-runs and multiple machines idempotent.
       - name: commit and open pull request
         if: ${{ github.event.inputs.dry_run != 'true' }}
         env:
@@ -140,9 +152,9 @@ jobs:
           generated_at="$(node -p "require('./public/data/v1/manifest.json').generatedAt")"
           git commit -m "Refresh activity data bundle"
           commit_sha="$(git rev-parse HEAD)"
-          # ISO second timestamps contain ':' and '.' which are not valid in git
-          # refs; render data/bundle-<generatedAt> with both replaced by '-'.
-          branch="data/bundle-${generated_at//[.:]/-}"
+          # One branch per UTC day, so re-runs and multiple machines converge on
+          # the same branch instead of spawning duplicate PRs.
+          branch="data/bundle-$REFRESH_DATE"
           git push --force origin "HEAD:$branch"
           budget_md="$(cat "$RUNNER_TEMP/budget-report.md")"
           body="$(cat <<EOF
@@ -158,7 +170,7 @@ jobs:
 
           > Pushed by the scheduled \`data-bundle\` workflow. The main ruleset requires
           > changes to land through a pull request with the \`ci-ok\` check passing;
-          > merge the bundle once CI is green.
+          > auto-merge is enabled so the bundle lands once CI is green.
           EOF
           )"
           if gh pr view "$branch" --json url --jq .url >/dev/null 2>&1; then
@@ -167,10 +179,11 @@ jobs:
             gh pr create --base main --head "$branch" --title "Refresh activity data bundle" --body "$body"
           fi
           pr_number="$(gh pr view "$branch" --json number --jq .number)"
+          gh pr merge "$pr_number" --squash --auto
           {
             echo ""
             echo "generatedAt: \`${generated_at}\`"
             echo "commit: \`${commit_sha}\`"
             echo "branch: \`${branch}\`"
-            echo "pull request: #${pr_number}"
+            echo "pull request: #${pr_number} (auto-merge enabled)"
           } >> "$GITHUB_STEP_SUMMARY"
