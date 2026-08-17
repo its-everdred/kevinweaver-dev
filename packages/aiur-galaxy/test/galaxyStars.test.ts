@@ -213,7 +213,7 @@ describe('createStarField', () => {
     field.dispose()
   })
 
-  it('writes only the vertices the step it leaves and the step it enters name', () => {
+  it('writes only vertices inside the file fade window', () => {
     const source = layout()
     const field = createStarField(source, THEME)
     field.setFrame(source, frameAt(1))
@@ -222,9 +222,13 @@ describe('createStarField', () => {
     const before = Float32Array.from(colors)
     const written = field.setFrame(source, frameAt(3))
     const changed = changedVertices(before, colors)
-    // Step 3 names nothing; only step 2's star demotes from current to live.
-    expect(changed).toEqual([indexOf(source, 0, 'b.ts')])
-    expect(written).toBe(1)
+    // All three touched stars are still fading; the quiet repo remains unwritten.
+    expect(changed).toEqual([
+      indexOf(source, 0, 'a.ts'),
+      indexOf(source, 0, 'b.ts'),
+      indexOf(source, 1, 'd.ts'),
+    ])
+    expect(written).toBe(3)
     field.dispose()
   })
 
@@ -250,9 +254,13 @@ describe('createStarField', () => {
     const colors = field.points.geometry.getAttribute('color').array as Float32Array
     const before = Float32Array.from(colors)
     const written = field.setFrame(source, frameAt(1))
-    expect(changedVertices(before, colors)).toEqual([indexOf(source, 0, 'b.ts')])
+    expect(changedVertices(before, colors)).toEqual([
+      indexOf(source, 0, 'a.ts'),
+      indexOf(source, 0, 'b.ts'),
+      indexOf(source, 1, 'd.ts'),
+    ])
     expect(toHex(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBe(THEME.liveStar)
-    expect(written).toBe(1)
+    expect(written).toBe(3)
     field.dispose()
   })
 
@@ -262,7 +270,8 @@ describe('createStarField', () => {
     field.setFrame(source, frameAt(0))
     // Jump past step 2 without rendering it: its star must still be bright.
     field.setFrame(source, frameAt(5))
-    expect(toHex(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBe(THEME.liveStar)
+    expect(mix(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBeGreaterThan(0)
+    expect(mix(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBeLessThan(1)
     expect(toHex(colorOf(field.points, indexOf(source, 2, 'q.ts')))).toBe(THEME.star)
     field.dispose()
   })
@@ -271,13 +280,15 @@ describe('createStarField', () => {
     const source = layout()
     const field = createStarField(source, THEME)
     field.setFrame(source, frameAt(3))
-    expect(toHex(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBe(THEME.liveStar)
+    expect(mix(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBeGreaterThan(0)
+    expect(mix(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBeLessThan(1)
     // Seeking back past step 2 — which the rolling window does every time it
     // rolls over — must return b.ts to untouched, or the second pass replays
     // over an already fully lit disc.
     field.setFrame(source, frameAt(1))
     expect(toHex(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBe(THEME.star)
-    expect(toHex(colorOf(field.points, indexOf(source, 0, 'a.ts')))).toBe(THEME.liveStar)
+    expect(mix(colorOf(field.points, indexOf(source, 0, 'a.ts')))).toBeGreaterThan(0)
+    expect(mix(colorOf(field.points, indexOf(source, 0, 'a.ts')))).toBeLessThan(1)
     field.dispose()
   })
 
@@ -318,10 +329,11 @@ describe('createStarField', () => {
     field.setFrame(source, frameAt(2))
     field.setSelection(source, frameAt(2), 0)
     field.setSelection(source, frameAt(2), null)
-    // a.ts was lit on step 0 and stays live; b.ts is this step's contribution;
+    // a.ts was lit on step 0 and stays in its fade; b.ts is this step's contribution;
     // c.ts was never touched. Deselecting must give all three back, not blank
     // the repo out.
-    expect(toHex(colorOf(field.points, indexOf(source, 0, 'a.ts')))).toBe(THEME.liveStar)
+    expect(mix(colorOf(field.points, indexOf(source, 0, 'a.ts')))).toBeGreaterThan(0)
+    expect(mix(colorOf(field.points, indexOf(source, 0, 'a.ts')))).toBeLessThan(1)
     expect(toHex(colorOf(field.points, indexOf(source, 0, 'b.ts')))).toBe(THEME.currentStar)
     expect(toHex(colorOf(field.points, indexOf(source, 0, 'c.ts')))).toBe(THEME.star)
     field.dispose()
@@ -429,18 +441,33 @@ describe('contribution flash fade', () => {
     field.dispose()
   })
 
-  it('shows a seek the shade a play-through would have reached', () => {
+  it('shows a direct seek the shade a play-through would have reached', () => {
     const source = fading()
     const played = createStarField(source, THEME)
     const jumped = createStarField(source, THEME)
     const star = indexOf(source, 0, 'a.ts')
-    for (let age = 0; age <= 3; age++) played.setFrame(source, forward(TOUCH + age))
-    jumped.setFrame(source, forward(TOUCH))
-    jumped.setFrame(source, forward(TOUCH + 3))
+    const age = Math.floor(MONTH / 2)
+    for (let elapsed = 0; elapsed <= age; elapsed++)
+      played.setFrame(source, forward(TOUCH + elapsed))
+    jumped.setFrame(source, forward(TOUCH + age))
     expect(colorOf(jumped.points, star)).toEqual(colorOf(played.points, star))
     // Mid-fade, so the two agree on a shade rather than on either end of it.
     expect(mix(colorOf(played.points, star))).toBeGreaterThan(0)
     expect(mix(colorOf(played.points, star))).toBeLessThan(1)
+    played.dispose()
+    jumped.dispose()
+  })
+
+  it('shows the same direct-seek fade during backward playback', () => {
+    const source = fading()
+    const played = createStarField(source, THEME)
+    const jumped = createStarField(source, THEME)
+    const star = indexOf(source, 0, 'a.ts')
+    const age = Math.floor(MONTH / 2)
+    for (let elapsed = 0; elapsed <= age; elapsed++)
+      played.setFrame(source, universeFrame(FADING, TOUCH - elapsed, 'backward'))
+    jumped.setFrame(source, universeFrame(FADING, TOUCH - age, 'backward'))
+    expect(colorOf(jumped.points, star)).toEqual(colorOf(played.points, star))
     played.dispose()
     jumped.dispose()
   })

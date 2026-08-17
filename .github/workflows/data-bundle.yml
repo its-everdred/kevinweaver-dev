@@ -14,13 +14,6 @@ on:
         type: boolean
         default: false
 
-permissions:
-  # actions: write dispatches CI on the generated branch because a PR opened by
-  # github.token leaves pull_request workflows awaiting manual approval.
-  actions: write
-  contents: write
-  pull-requests: write
-
 concurrency:
   group: data-bundle
   cancel-in-progress: false
@@ -31,6 +24,12 @@ env:
 
 jobs:
   regenerate:
+    permissions:
+      # actions: write dispatches CI on the generated branch because a PR opened by
+      # github.token leaves pull_request workflows awaiting manual approval.
+      actions: write
+      contents: write
+      pull-requests: write
     # Never let a fork's scheduled copy of this workflow run.
     if: github.repository == 'its-everdred/kevinweaver-dev'
     runs-on: ubuntu-24.04

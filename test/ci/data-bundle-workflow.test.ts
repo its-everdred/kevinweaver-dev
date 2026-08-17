@@ -14,7 +14,7 @@ const CI_WORKFLOW = readFileSync(
 describe('daily data bundle workflow', () => {
   it('can dispatch CI with the repository token', () => {
     expect(DATA_WORKFLOW).toMatch(
-      /permissions:[\s\S]*?actions: write[\s\S]*?contents: write/
+      /jobs:\n  regenerate:\n    permissions:[\s\S]*?actions: write[\s\S]*?contents: write/
     )
     expect(CI_WORKFLOW).toMatch(/on:\n[\s\S]*?workflow_dispatch:/)
   })

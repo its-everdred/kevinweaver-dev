@@ -8,6 +8,7 @@ import {
 import type { Color } from 'three'
 import { hash01, starKey } from './galaxy'
 import type { StarPosition, UniverseLayout } from './galaxy'
+import { RECENT_FILE_STEPS } from './universePlayback'
 import type { UniverseFrame } from './universePlayback'
 import { createPointMaterial } from './galaxyShader'
 import {
@@ -155,16 +156,6 @@ function starAppearance(star: StarPosition): StarAppearance {
 }
 
 /**
- * Day slots a contribution's flash decays over before the star settles on its
- * permanent lit color. One step is one day, so this is a month: inside the
- * rolling year roughly two days in five carry nothing and are skipped, which
- * puts a month of timeline at roughly twelve to thirty slots on screen. That
- * is long enough that a commit reads as a glow the eye can follow across the
- * disc, where the single slot it used to last read as a blink.
- */
-const STAR_FADE_STEPS = 30
-
-/**
  * @description Creates the disc's star field, where brightness is cumulative
  * history rather than current state: a star only ever moves from untouched to
  * live, and the step that names it flashes it before it eases back over the
@@ -193,17 +184,14 @@ export function createStarField(
    * Built once, from the palette: a step reads it and never writes it.
    */
   const ramp: Color[] = []
-  for (let age = 0; age < STAR_FADE_STEPS; age++)
-    ramp.push(toColor(theme.currentStar).lerp(live, (age / STAR_FADE_STEPS) ** 2))
+  for (let age = 0; age < RECENT_FILE_STEPS; age++)
+    ramp.push(toColor(theme.currentStar).lerp(live, (age / RECENT_FILE_STEPS) ** 2))
   /** Outside the ramp a star is simply lit, which is where the fade lands. */
   const shade = (age: number): Color => ramp[age] ?? live
   /**
-   * Star key to the step of its most recent contribution, for every star still
-   * inside the fade window. This is the per-star equivalent of the frame's
-   * `recentRepos`: that map is repo-granular, and a repo's whole arm flashing
-   * because one of its files was touched is neither what a commit did nor a
-   * write count the field can pay. Entries are facts about the contribution
-   * log, so the color they produce depends only on the frame's own step.
+   * Star keys painted by the preceding frame, mapped to their age in days. The
+   * frame carries the authoritative ages so a seek and a play-through render
+   * the same shade; this local copy identifies stars that just left the window.
    */
   const recent = new Map<string, number>()
   // Outside the clamped step range in both directions, so the first frame
@@ -250,20 +238,21 @@ export function createStarField(
     seeked: boolean
   ): number => {
     let written = 0
-    for (const [key, at] of recent) {
-      const age = Math.abs(frame.step - at)
-      // A star the frame no longer holds live is one playback has stepped back
-      // past. It keeps the brightness it has — that never reverts — but it is
-      // not still flashing, so it leaves the window with the stars that aged
-      // out of it.
-      const flashing = age < STAR_FADE_STEPS && frame.liveFiles.has(key)
-      if (!flashing) {
-        recent.delete(key)
-        if (seeked) continue
-      }
+    const expired = new Set(recent.keys())
+    recent.clear()
+    for (const [key, age] of frame.recentFiles) {
+      recent.set(key, age)
+      expired.delete(key)
       const index = source.starIndex.get(key)
       if (index === undefined) continue
-      writeColor(colors, index, flashing ? shade(age) : live)
+      writeColor(colors, index, shade(age))
+      written++
+    }
+    if (seeked) return written
+    for (const key of expired) {
+      const index = source.starIndex.get(key)
+      if (index === undefined) continue
+      writeColor(colors, index, live)
       written++
     }
     return written
@@ -294,8 +283,8 @@ export function createStarField(
         writeColor(colors, index, untouched)
         continue
       }
-      const at = recent.get(key)
-      writeColor(colors, index, at === undefined ? live : shade(Math.abs(frame.step - at)))
+       const age = recent.get(key)
+       writeColor(colors, index, age === undefined ? live : shade(age))
     }
     return repo.starCount
   }
@@ -312,9 +301,6 @@ export function createStarField(
       const seeked = Math.abs(frame.step - lastStep) !== 1
       if (seeked) reset()
       const written = seeked ? paint(source, frame.liveFiles, live) : 0
-      // Recorded before the fade pass, so this step's own stars come out of it
-      // at age 0 rather than needing a promotion of their own.
-      for (const key of frame.currentFiles) recent.set(key, frame.step)
       const promoted = written + fadeRecent(source, frame, seeked)
       lastStep = frame.step
       // The viewer's selection outranks playback: a step that repainted the
