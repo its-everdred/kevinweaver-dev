@@ -14,12 +14,6 @@ on:
         type: boolean
         default: false
 
-permissions:
-  # contents: write to push the data/bundle-* branch; pull-requests: write so
-  # the workflow can open and update the data-bundle PR via gh.
-  contents: write
-  pull-requests: write
-
 concurrency:
   group: data-bundle
   cancel-in-progress: false
@@ -30,6 +24,12 @@ env:
 
 jobs:
   regenerate:
+    permissions:
+      # actions: write dispatches CI on the generated branch because a PR opened by
+      # github.token leaves pull_request workflows awaiting manual approval.
+      actions: write
+      contents: write
+      pull-requests: write
     # Never let a fork's scheduled copy of this workflow run.
     if: github.repository == 'its-everdred/kevinweaver-dev'
     runs-on: ubuntu-24.04
@@ -179,6 +179,9 @@ jobs:
             gh pr create --base main --head "$branch" --title "Refresh activity data bundle" --body "$body"
           fi
           pr_number="$(gh pr view "$branch" --json number --jq .number)"
+          # workflow_dispatch is the one recursive-run exception GitHub permits
+          # for github.token, so this produces ci-ok without manual approval.
+          gh workflow run ci.yml --ref "$branch"
           gh pr merge "$pr_number" --squash --auto
           {
             echo ""
