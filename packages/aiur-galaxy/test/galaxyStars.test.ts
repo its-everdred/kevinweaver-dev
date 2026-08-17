@@ -364,24 +364,24 @@ describe('createStarField', () => {
 describe('contribution flash fade', () => {
   /**
    * The operator's ask, stated here rather than imported: the flash decays over
-   * a week of day slots. Written independently of whatever constant the field
+   * a month of day slots. Written independently of whatever constant the field
    * uses, so shortening the fade fails these tests instead of moving with them.
    */
-  const WEEK = 7
+  const MONTH = 30
   /**
    * One contribution, far enough from either end of the timeline that the whole
-   * week can be walked in both directions. The shared six-step fixture cannot
-   * reach the end of a week, and `galaxyFixtures` belongs to another change in
+   * month can be walked in both directions. The shared six-step fixture cannot
+   * reach the end of a month, and `galaxyFixtures` belongs to another change in
    * flight, so this one is local.
    */
-  const TOUCH = WEEK + 1
+  const TOUCH = MONTH + 1
   const FADING: UniverseSnapshot = {
     repos: [
       { id: 0, name: 'a/lit', files: ['a.ts'] },
       { id: 1, name: 'a/quiet', files: ['q.ts'] },
     ],
     contributions: [{ step: TOUCH, repo: 0, file: 'a.ts', actor: 0 as const }],
-    stepCount: TOUCH + WEEK + 2,
+    stepCount: TOUCH + MONTH + 2,
   }
 
   function fading(): ReturnType<typeof layoutUniverse> {
@@ -392,23 +392,23 @@ describe('contribution flash fade', () => {
     return universeFrame(FADING, step, 'forward')
   }
 
-  it('eases the flash back to the lit color over a week of day slots', () => {
+  it('eases the flash back to the lit color over a month of day slots', () => {
     const source = fading()
     const field = createStarField(source, THEME)
     const star = indexOf(source, 0, 'a.ts')
     const shades: number[] = []
-    for (let age = 0; age <= WEEK; age++) {
+    for (let age = 0; age <= MONTH; age++) {
       field.setFrame(source, forward(TOUCH + age))
       shades.push(mix(colorOf(field.points, star)))
     }
     // Full flash on the day of the commit, all the way back to the permanent
-    // lit color a week later, and strictly on its way there in between.
+    // lit color a month later, and strictly on its way there in between.
     expect(shades[0]).toBeCloseTo(0, 6)
-    expect(shades[WEEK]).toBeCloseTo(1, 6)
-    for (let age = 1; age <= WEEK; age++)
+    expect(shades[MONTH]).toBeCloseTo(1, 6)
+    for (let age = 1; age <= MONTH; age++)
       expect(shades[age]).toBeGreaterThan(shades[age - 1] ?? 1)
-    // A week is the whole of it: the slot after lands on `liveStar` and stays.
-    field.setFrame(source, forward(TOUCH + WEEK + 1))
+    // A month is the whole of it: the slot after lands on `liveStar` and stays.
+    field.setFrame(source, forward(TOUCH + MONTH + 1))
     expect(toHex(colorOf(field.points, star))).toBe(THEME.liveStar)
     field.dispose()
   })
@@ -452,18 +452,18 @@ describe('contribution flash fade', () => {
     const shades: number[] = []
     // Backward playback meets a contribution at its own step and walks away
     // from it toward the past, so the flash ages down the timeline, not up it.
-    for (let age = 0; age <= WEEK; age++) {
+    for (let age = 0; age <= MONTH; age++) {
       field.setFrame(source, universeFrame(FADING, TOUCH - age, 'backward'))
       shades.push(mix(colorOf(field.points, star)))
     }
     expect(shades[0]).toBeCloseTo(0, 6)
-    expect(shades[WEEK]).toBeCloseTo(1, 6)
-    for (let age = 1; age <= WEEK; age++)
+    expect(shades[MONTH]).toBeCloseTo(1, 6)
+    for (let age = 1; age <= MONTH; age++)
       expect(shades[age]).toBeGreaterThan(shades[age - 1] ?? 1)
     field.dispose()
   })
 
-  it('writes the week behind the step, never the whole field', () => {
+  it('writes the month behind the step, never the whole field', () => {
     const source = fading()
     const field = createStarField(source, THEME)
     field.setFrame(source, forward(TOUCH))
@@ -471,7 +471,7 @@ describe('contribution flash fade', () => {
     const before = Float32Array.from(colors)
     const written = field.setFrame(source, forward(TOUCH + 1))
     // One star sits inside the fade window. Every other vertex in the disc is
-    // named by nothing this week and must not be written at all.
+    // named by nothing this month and must not be written at all.
     expect(written).toBe(1)
     expect(changedVertices(before, colors)).toEqual([indexOf(source, 0, 'a.ts')])
     expect(source.starCount).toBeGreaterThan(1)
