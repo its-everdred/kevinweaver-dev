@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The daily bundle workflow dispatches CI on its generated branch because
+  # pull requests opened by github.token otherwise await manual approval.
+  workflow_dispatch:
 
 # Never use `paths-ignore` on a required check — PRs that touch only ignored paths
 # deadlock forever at "Expected — Waiting for status". Skip work inside the jobs instead.

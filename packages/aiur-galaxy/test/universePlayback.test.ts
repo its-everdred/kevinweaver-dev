@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   PLAYBACK_WINDOW_STEPS,
+  RECENT_FILE_STEPS,
   RECENT_REPO_STEPS,
   activeSteps,
   clampStep,
@@ -78,6 +79,7 @@ describe('universeFrame', () => {
     const frame = universeFrame(empty, 0, 'forward')
     expect(frame.currentFiles).toEqual([])
     expect(frame.currentRepos.size).toBe(0)
+    expect(frame.recentFiles.size).toBe(0)
     expect(frame.recentRepos.size).toBe(0)
     expect(frame.progress).toBe(0)
   })
@@ -127,6 +129,17 @@ describe('the frame recency window', () => {
     // Repo 0 touched a.ts at step 0 and b.ts at step 1; step 2 is one step on.
     expect(frame.recentRepos.get(0)).toBe(1)
     expect(frame.recentRepos.get(1)).toBe(0)
+  })
+
+  it('reports file ages across the complete flash window', () => {
+    const age = Math.floor(RECENT_FILE_STEPS / 2)
+    const forward = universeFrame(TRAIL, TOUCH_STEP + age, 'forward')
+    const backward = universeFrame(TRAIL, TOUCH_STEP - age, 'backward')
+    expect(forward.recentFiles.get('7:t.ts')).toBe(age)
+    expect(backward.recentFiles.get('7:t.ts')).toBe(age)
+    expect(
+      universeFrame(TRAIL, TOUCH_STEP + RECENT_FILE_STEPS, 'forward').recentFiles.size
+    ).toBe(0)
   })
 })
 
