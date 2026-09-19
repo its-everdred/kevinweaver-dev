@@ -52,6 +52,33 @@ jobs:
           fi
           echo "REFRESH_DATE=$refresh_date" >> "$GITHUB_ENV"
 
+      # Close superseded refresh PRs before opening today's.
+      #
+      # Every refresh is a FULL regeneration of the bundle from upstream, so an
+      # older refresh PR carries no content that today's does not. Left open they
+      # are actively harmful in two ways: each one rewrites the same 89 files, so
+      # the first merge makes every other refresh PR CONFLICTING and unmergeable
+      # forever; and merging an old one *after* a newer one silently rolls the
+      # published bundle backwards, because each branch holds a whole snapshot
+      # rather than a delta. Fifteen had accumulated back to 2026-09-01 this way,
+      # every one of them conflicting, which is why auto-merge never landed and
+      # production served a bundle days older than main.
+      #
+      # Closing them is safe precisely because they are snapshots, not deltas.
+      - name: close superseded refresh pull requests
+        if: env.REFRESH_DATE != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr list --state open --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("data/bundle-")) | select(.headRefName != "data/bundle-'"$REFRESH_DATE"'") | .number' \
+          | while read -r stale; do
+              [ -n "$stale" ] || continue
+              echo "Closing superseded refresh PR #$stale"
+              gh pr close "$stale" --delete-branch \
+                --comment "Superseded by the ${REFRESH_DATE} refresh. Each refresh regenerates the whole bundle, so this snapshot carries nothing the newer one lacks." || true
+            done
+
       - uses: actions/setup-node@v7.0.0
         with:
           node-version-file: .nvmrc

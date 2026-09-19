@@ -1,0 +1,15 @@
+# The activity bundle under public/data is a build artifact: the scheduled
+# `data-bundle` workflow regenerates all of it from upstream sources every day
+# and commits the result. Each file is minified to a single line, so a change of
+# a few bytes renders as a whole-file rewrite — a daily refresh is 89 files and
+# ~3.3 MB of patch text for what is semantically a handful of new events.
+#
+# `linguist-generated` collapses these files in pull request diffs, so a refresh
+# PR shows its summary rather than thousands of unreadable lines. `-diff` stops
+# git from generating the textual patch at all, which is what makes the
+# collapse consistent in the GitHub UI and keeps `git log -p` usable.
+#
+# These files are still tracked, still reviewed by CI, and still served
+# verbatim — this changes presentation only, never content.
+public/data/** linguist-generated=true -diff
+data/.pipeline-state.json linguist-generated=true -diff
