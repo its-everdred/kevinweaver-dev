@@ -1,5 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "installCommand": "npm ci"
+  "installCommand": "npm ci",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "gym.kevinweaver.dev" }],
+      "destination": "https://applekid.tailee0e71.ts.net:8443/:path*",
+      "permanent": false
+    }
+  ]
 }
