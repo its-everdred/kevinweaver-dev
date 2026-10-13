@@ -6,7 +6,7 @@
     {
       "source": "/(.*)",
       "has": [{ "type": "host", "value": "gym.kevinweaver.dev" }],
-      "destination": "https://applekid.tailee0e71.ts.net:8443/$1",
+      "destination": "https://gym.amicooked.chat/$1",
       "permanent": false
     }
   ]
