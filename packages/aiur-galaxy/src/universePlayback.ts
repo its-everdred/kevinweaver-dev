@@ -12,6 +12,8 @@ export interface UniverseFrame {
   readonly liveFiles: ReadonlySet<string>
   /** Files touched at the current step (repo-qualified), in snapshot order. */
   readonly currentFiles: readonly string[]
+  /** Files still fading from recent activity, mapped to their age in days. */
+  readonly recentFiles: ReadonlyMap<string, number>
   /** Repos that contributed at the current step, by repo id. */
   readonly currentRepos: ReadonlySet<number>
   /**
@@ -35,6 +37,9 @@ export interface UniverseFrame {
  * the whole history would take over an hour.
  */
 export const PLAYBACK_WINDOW_STEPS = 365
+
+/** Day slots a file's contribution flash takes to settle on its lit color. */
+export const RECENT_FILE_STEPS = 30
 
 /**
  * Steps a repo stays in a frame's recent set after contributing. One step is
@@ -204,6 +209,7 @@ export function universeFrame(
   const clamped = clampStep(step, total)
   const liveFiles = universeLiveAt(snapshot.contributions, clamped, direction)
   const currentFiles: string[] = []
+  const recentFiles = new Map<string, number>()
   const currentRepos = new Set<number>()
   const recentRepos = new Map<number, number>()
   const currentContributions: UniverseContribution[] = []
@@ -216,6 +222,11 @@ export function universeFrame(
         direction === 'forward'
           ? clamped - contribution.step
           : contribution.step - clamped
+      if (age >= 0 && age < RECENT_FILE_STEPS) {
+        const file = key(contribution.repo, contribution.file)
+        const previous = recentFiles.get(file)
+        if (previous === undefined || age < previous) recentFiles.set(file, age)
+      }
       if (age >= 0 && age < RECENT_REPO_STEPS) {
         const previous = recentRepos.get(contribution.repo)
         if (previous === undefined || age < previous)
@@ -231,6 +242,7 @@ export function universeFrame(
     step: clamped,
     liveFiles,
     currentFiles,
+    recentFiles,
     currentRepos,
     recentRepos,
     currentContributions,
